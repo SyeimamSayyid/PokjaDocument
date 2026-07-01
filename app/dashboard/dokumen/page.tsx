@@ -2,40 +2,89 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import LoaderPage from '@/components/LoaderPage';
-import { 
-  FiFolder, FiFile, FiEdit, FiTrash2, FiSearch, FiFilter,
+import {
+  FiFolder, FiEdit, FiTrash2, FiSearch,
   FiEye, FiExternalLink, FiCheckCircle, FiClock, FiAlertCircle,
-  FiCalendar, FiUser, FiTag, FiGrid, FiList, FiPlus,
-  FiX, FiSave, FiArrowLeft, FiImage, FiInfo, FiDatabase,
-  FiFileText, FiFolderPlus, FiLayers, FiActivity
+  FiCalendar, FiGrid, FiPlus,
+  FiX, FiSave, FiArrowLeft, FiImage, FiDatabase,
+  FiFileText, FiActivity, FiChevronDown, FiChevronRight, FiMessageCircle,
+  FiUser, FiBookOpen, FiInfo,
 } from 'react-icons/fi';
-import { 
-  FaFileAlt, FaFileSignature, FaUser, FaBuilding,
-  FaGoogleDrive, FaFolderOpen,
-  FaFolder, FaRegFile, FaRegFolder
-} from 'react-icons/fa';
+import { FaFileSignature, FaFileAlt, FaBuilding, FaFolderOpen } from 'react-icons/fa';
 import { SiGoogledocs } from 'react-icons/si';
-import { STATUS_DOKUMEN, STATUS_COLOR } from '@/lib/constants';
+import { STATUS_DOKUMEN } from '@/lib/constants';
 
 interface DokumenItem {
   id: string; jenis: string; judul: string; namaMitra: string;
   tglDibuat: string; tglBerlaku: string; tglBerakhir: string;
   durasi: string; status: string; kode: string; kodeExpire: string;
   docsId: string; docsUrl: string; folderId: string; dibuatOleh: string;
+  catatan?: string;
 }
+interface KontakInfo { namaPIC: string; jurusan: string; }
+interface NotifInfo { count: number; hasUnread: boolean; }
 
-// Gunakan STATUS_DOKUMEN sebagai STATUS_LIST
 const STATUS_LIST = STATUS_DOKUMEN;
+const FONT = "'Plus Jakarta Sans', -apple-system, sans-serif";
+const BLUE = '#1D4ED8';
+const BLUE_LIGHT = '#2563EB';
+const BLUE_DARK = '#1E3A8A';
+const GOLD = '#D97706';
 
-// Buat STATUS_ICON lokal karena tidak ada di constants
+const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
+  'Draft':                     { bg: '#f1f3f2', color: '#5b6b66' },
+  'Dalam Proses':              { bg: '#EDE9FE', color: '#5B21B6' },
+  'Selesai':                   { bg: '#FEF3C7', color: '#92400E' },
+  'Kegiatan Akan Berlangsung': { bg: '#FEF3C7', color: '#92400E' },
+  'Kegiatan Berlangsung':      { bg: '#FEF3C7', color: '#B45309' },
+  'Kegiatan Selesai':          { bg: '#DBEAFE', color: '#1E40AF' },
+  'MOU/PKS Berlaku':           { bg: '#DBEAFE', color: BLUE },
+  'Kedaluwarsa':               { bg: '#FCEBEB', color: '#A32D2D' },
+};
+
 const STATUS_ICON: Record<string, React.ReactNode> = {
   'Draft': <FiFileText size={10} />,
   'Dalam Proses': <FiActivity size={10} />,
   'Selesai': <FiCheckCircle size={10} />,
+  'Kegiatan Akan Berlangsung': <FiClock size={10} />,
   'Kegiatan Berlangsung': <FiClock size={10} />,
   'Kegiatan Selesai': <FiCheckCircle size={10} />,
+  'MOU/PKS Berlaku': <FiCheckCircle size={10} />,
   'Kedaluwarsa': <FiAlertCircle size={10} />,
 };
+
+// Tahap status — dari halaman Tata Kelola lama, dipakai sbg filter tambahan
+const STAGE_FILTER: { key: string; label: string; statuses: string[] }[] = [
+  { key: 'draft',       label: 'Draft',       statuses: ['Draft'] },
+  { key: 'proses',      label: 'Proses',      statuses: ['Dalam Proses'] },
+  { key: 'berlangsung', label: 'Berlangsung', statuses: ['Selesai', 'Kegiatan Akan Berlangsung', 'Kegiatan Berlangsung'] },
+  { key: 'selesai',     label: 'Selesai',     statuses: ['Kegiatan Selesai', 'MOU/PKS Berlaku', 'Kedaluwarsa'] },
+];
+
+function normNama(s: string): string {
+  return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function groupByInstitusi(list: DokumenItem[]): [string, DokumenItem[]][] {
+  const map = new Map<string, DokumenItem[]>();
+  list.forEach(d => {
+    const key = d.namaMitra || 'Tanpa Institusi';
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(d);
+  });
+  return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+}
+
+// Ringkasan poin kerja sama — dari halaman Tata Kelola lama
+function generatePreviewPoin(d: DokumenItem): string[] {
+  return [
+    `Jenis kerja sama: ${d.jenis === 'MOU' ? 'Memorandum of Understanding' : 'Perjanjian Kerja Sama'}`,
+    `Mitra: ${d.namaMitra}`,
+    `Masa berlaku: ${d.tglBerlaku} s.d. ${d.tglBerakhir} (${d.durasi} tahun)`,
+    `Dibuat oleh: ${d.dibuatOleh}`,
+    d.catatan ? `Catatan: ${d.catatan}` : `Perihal: ${d.judul}`,
+  ];
+}
 
 export default function DokumenPage() {
   const [role, setRole]       = useState('');
@@ -45,7 +94,16 @@ export default function DokumenPage() {
   const [msg, setMsg]         = useState('');
   const [search, setSearch]   = useState('');
   const [filterJenis, setFilterJenis] = useState('');
+  const [filterStage, setFilterStage] = useState('');
   const [viewMode, setViewMode] = useState<'folder' | 'table'>('folder');
+  const [expandedMou, setExpandedMou] = useState(true);
+  const [expandedPks, setExpandedPks] = useState(true);
+  const [expandedInstitusi, setExpandedInstitusi] = useState<Set<string>>(new Set());
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [previewId, setPreviewId] = useState<string | null>(null);
+
+  const [kontakMap, setKontakMap] = useState<Record<string, KontakInfo>>({});
+  const [notifMap, setNotifMap]   = useState<Record<string, NotifInfo>>({});
 
   const [editItem, setEditItem]     = useState<DokumenItem | null>(null);
   const [eStatus, setEStatus]       = useState('');
@@ -60,6 +118,36 @@ export default function DokumenPage() {
       .catch(() => { setError('Gagal memuat dokumen.'); setLoading(false); });
   }, []);
 
+  const loadKontak = useCallback(() => {
+    fetch('/api/kontak-mitra')
+      .then(r => r.json())
+      .then(d => {
+        const map: Record<string, KontakInfo> = {};
+        (d.data || []).forEach((k: any) => {
+          const key = normNama(k.namaInstitusi);
+          if (!map[key] || k.namaPIC) map[key] = { namaPIC: k.namaPIC || map[key]?.namaPIC || '', jurusan: k.jurusan || map[key]?.jurusan || '' };
+        });
+        setKontakMap(map);
+      })
+      .catch(() => {});
+  }, []);
+
+  const loadNotif = useCallback(() => {
+    fetch('/api/notifikasi-admin')
+      .then(r => r.json())
+      .then(d => {
+        const map: Record<string, NotifInfo> = {};
+        (d.notifikasi || []).forEach((n: any) => {
+          if (!n.idDokumen) return;
+          if (!map[n.idDokumen]) map[n.idDokumen] = { count: 0, hasUnread: false };
+          map[n.idDokumen].count += 1;
+          if (!n.dibaca) map[n.idDokumen].hasUnread = true;
+        });
+        setNotifMap(map);
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     const raw = localStorage.getItem('paktasign_user');
     if (!raw) { window.location.href = '/login'; return; }
@@ -67,12 +155,14 @@ export default function DokumenPage() {
     if (!['admin','superadmin'].includes(u.role)) { window.location.href = '/login'; return; }
     setRole(u.role);
     load();
-  }, [load]);
+    loadKontak();
+    loadNotif();
+  }, [load, loadKontak, loadNotif]);
 
   const backUrl = role === 'superadmin' ? '/dashboard/superadmin' : '/dashboard/admin';
 
   const openEdit = (d: DokumenItem) => {
-    setEditItem(d); setEStatus(d.status); setECatatan('');
+    setEditItem(d); setEStatus(d.status); setECatatan(d.catatan || '');
     setMsg(''); setError('');
   };
 
@@ -107,6 +197,23 @@ export default function DokumenPage() {
     } catch { setError('Terjadi kesalahan.'); }
   };
 
+  const toggleRow = (id: string) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleInstitusi = (key: string) => {
+    setExpandedInstitusi(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  const stageStatuses = STAGE_FILTER.find(f => f.key === filterStage)?.statuses || [];
   const filtered = data.filter(d => {
     const matchSearch =
       d.namaMitra?.toLowerCase().includes(search.toLowerCase()) ||
@@ -114,320 +221,224 @@ export default function DokumenPage() {
       d.status?.toLowerCase().includes(search.toLowerCase()) ||
       d.kode?.toLowerCase().includes(search.toLowerCase());
     const matchJenis = filterJenis ? d.jenis === filterJenis : true;
-    return matchSearch && matchJenis;
+    const matchStage = filterStage ? stageStatuses.includes(d.status) : true;
+    return matchSearch && matchJenis && matchStage;
   });
 
-  if (loading) return <LoaderPage text="Memuat Semua Dokumen Kerja Sama..." />; 
+  const countPerStage = STAGE_FILTER.map(f => ({ ...f, count: data.filter(d => f.statuses.includes(d.status)).length }));
+
+  if (loading) return <LoaderPage text="Memuat Semua Dokumen Kerja Sama..." />;
 
   const mouList = filtered.filter(d => d.jenis === 'MOU');
   const pksList = filtered.filter(d => d.jenis === 'PKS');
 
   return (
-    <>
-      <style>{`
-        *{box-sizing:border-box}
-        :root{--font:system-ui,-apple-system,sans-serif}
-        .tree-ul{list-style:none;padding:0;margin:0}
-        .tree-ul ul{margin-left:11px;padding-left:11px;border-left:2px solid #e5e7eb}
-        .tree-item{position:relative;margin-top:3px}
-        .tree-ul ul .tree-item::before{content:"";position:absolute;left:-11px;top:14px;width:11px;height:1px;background:#e5e7eb}
-        .tree-toggle{display:none}
-        .tree-label{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:13px;color:#1a1a2e;user-select:none;transition:background .15s;height:32px}
-        .tree-label:hover{background:#f4f4f5}
-        .folder-open-icon{display:none}
-        .folder-closed-icon{display:block}
-        .tree-toggle:checked ~ .tree-label .folder-open-icon{display:block;color:#0F6E56}
-        .tree-toggle:checked ~ .tree-label .folder-closed-icon{display:none}
-        .tree-children-wrapper{display:grid;grid-template-rows:0fr;transition:grid-template-rows .25s ease}
-        .tree-children{overflow:hidden}
-        .tree-toggle:checked ~ .tree-children-wrapper{grid-template-rows:1fr}
-        .file-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:12px;color:#1a1a2e;transition:background .15s;flex-wrap:wrap}
-        .file-row:hover{background:#f9fafb}
-        .file-left{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
-        .file-actions{display:flex;gap:4px;flex-shrink:0;opacity:0;transition:opacity .15s}
-        .file-row:hover .file-actions{opacity:1}
-        .icon{width:16px;height:16px;color:#6b7280;flex-shrink:0}
-        .icon-folder{color:#0F6E56}
-        .icon-mou{color:#185FA5}
-        .icon-pks{color:#854F0B}
-        .jenis-root{font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px}
-        .jenis-root.mou{background:#E6F1FB;color:#0C447C}
-        .jenis-root.pks{background:#FAEEDA;color:#633806}
-        .badge-status{font-size:10px;font-weight:500;padding:2px 8px;border-radius:10px}
-        .act-btn{font-size:10px;padding:4px 10px;border-radius:5px;border:1px solid #e5e7eb;background:#fff;color:#374151;cursor:pointer;font-family:inherit;white-space:nowrap;transition:all .15s}
-        .act-btn:hover{background:#f9fafb}
-        .act-btn.red{border-color:#FCEBEB;color:#A32D2D}
-        .act-btn.red:hover{background:#FCEBEB}
-      `}</style>
+    <div style={{ minHeight:'100vh', fontFamily: FONT, background: 'radial-gradient(1000px 480px at 85% -10%, #dbeafe 0%, rgba(219,234,254,0) 55%), linear-gradient(180deg,#f7f9fc,#eef2f8)' }}>
+      <GlobalStyle />
 
-      <div style={{ minHeight:'100vh', background:'linear-gradient(135deg, #f5f5f5 0%, #e8f0f8 100%)', fontFamily:'system-ui,sans-serif' }}>
-        <nav style={navStyle}>
-          <a href={backUrl} style={backLink}>
-            <FiArrowLeft size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />
-            Dashboard
-          </a>
-          <div style={{ fontWeight:600, fontSize:14, display:'flex', alignItems:'center', gap: 6 }}>
-            <FiDatabase size={16} style={{ color: '#0F6E56' }} />
-            Daftar Dokumen MOU/PKS
+      <div style={{ maxWidth:1080, margin:'0 auto', padding:'1.4rem 1.25rem 0' }}>
+        <nav style={navPill} className="fld">
+          <a href={backUrl} style={backLink}><FiArrowLeft size={13} /> Dashboard</a>
+          <div style={{ fontWeight:800, fontSize:14, display:'flex', alignItems:'center', gap:8, color:'#0f1f3d' }}>
+            <FiDatabase size={16} style={{ color: BLUE }} />
+            Dokumen &amp; Tata Kelola Kerja Sama
           </div>
-          <a href="/dashboard/superadmin/generate-kode" style={{ ...btnOutline, display:'flex', alignItems:'center', gap:4 }}>
-            <FiPlus size={14} /> Generate
+          <a href="/dashboard/superadmin/generate-kode" style={btnPrimary} className="btn-hover">
+            <FiPlus size={13} style={{ marginRight:5, verticalAlign:'middle' }} /> Generate
           </a>
         </nav>
+      </div>
 
-        <div style={{ maxWidth:1000, margin:'0 auto', padding:'1.25rem' }}>
+      <div style={{ maxWidth:1080, margin:'0 auto', padding:'1.25rem 1.25rem 3rem' }}>
 
-          {msg && (
-            <div style={{ ...msgBox('#085041','#E1F5EE'), display:'flex', alignItems:'center', gap:6 }}>
-              <FiCheckCircle size={14} /> {msg}
-            </div>
-          )}
-          {error && (
-            <div style={{ ...msgBox('#A32D2D','#FCEBEB'), display:'flex', alignItems:'center', gap:6 }}>
-              <FiAlertCircle size={14} /> {error}
-            </div>
-          )}
+        {msg   && <div style={{ ...msgBox(BLUE_DARK,'#DBEAFE'), marginBottom:14 }} className="fld"><FiCheckCircle size={14} style={{ marginRight:6, verticalAlign:'middle' }} />{msg}</div>}
+        {error && <div style={{ ...msgBox('#A32D2D','#FCEBEB'), marginBottom:14 }} className="fld"><FiAlertCircle size={14} style={{ marginRight:6, verticalAlign:'middle' }} />{error}</div>}
 
-          {/* Toolbar */}
-          <div style={{ display:'flex', gap:8, marginBottom:14, flexWrap:'wrap', alignItems:'center' }}>
-            <div style={{ position:'relative', flex:1, minWidth:180 }}>
-              <FiSearch size={14} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'#9ca3af' }} />
+        {/* Toolbar */}
+        <div style={{ ...shellStyle, marginBottom:12 }} className="fld">
+          <div style={{ ...coreStyle, padding:'0.9rem 1.1rem', display:'flex', gap:10, flexWrap:'wrap', alignItems:'center' }}>
+            <div style={{ position:'relative', flex:1, minWidth:200 }}>
+              <FiSearch size={14} style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:'#94a3b8' }} />
               <input
-                style={{ 
-                  padding:'9px 12px 9px 32px', 
-                  borderRadius:8, 
-                  border:'2px solid #e5e7eb', 
-                  fontSize:12, 
-                  flex:1, 
-                  minWidth:180, 
-                  fontFamily:'inherit',
-                  width:'100%',
-                  outline:'none',
-                  transition:'border-color .2s'
-                }}
+                style={searchInput}
                 placeholder="Cari mitra, judul, kode, status..."
-                value={search} 
+                value={search}
                 onChange={e => setSearch(e.target.value)}
               />
             </div>
             <div style={{ display:'flex', gap:4 }}>
               {['','MOU','PKS'].map(j => (
-                <button 
-                  key={j} 
-                  onClick={() => setFilterJenis(j)} 
-                  style={{
-                    padding:'8px 14px', 
-                    borderRadius:7, 
-                    border:'2px solid', 
-                    fontSize:12, 
-                    cursor:'pointer', 
-                    fontFamily:'inherit',
-                    background: filterJenis === j ? 'linear-gradient(135deg, #0F6E56 0%, #1a8f70 100%)' : '#fff',
-                    color: filterJenis === j ? '#fff' : '#374151',
-                    borderColor: filterJenis === j ? '#0F6E56' : '#e5e7eb',
-                    transition:'all .2s',
-                    fontWeight: filterJenis === j ? 600 : 400,
-                    display:'flex',
-                    alignItems:'center',
-                    gap:4
-                  }}
-                >
-                  {j === 'MOU' && <FaFileSignature size={12} />}
-                  {j === 'PKS' && <FaFileAlt size={12} />}
-                  {j || 'Semua'}
+                <button key={j} onClick={() => setFilterJenis(j)} style={{ ...pillBtn, ...(filterJenis === j ? pillBtnActive : {}) }} className="btn-hover">
+                  {j === 'MOU' && <FaFileSignature size={11} />}
+                  {j === 'PKS' && <FaFileAlt size={11} />}
+                  {j || 'Semua Jenis'}
                 </button>
               ))}
             </div>
-            {/* Toggle view */}
-            <div style={{ display:'flex', border:'2px solid #e5e7eb', borderRadius:8, overflow:'hidden' }}>
-              <button
-                onClick={() => setViewMode('folder')}
-                style={{ 
-                  padding:'8px 14px', 
-                  border:'none', 
-                  fontSize:13, 
-                  cursor:'pointer', 
-                  fontFamily:'inherit',
-                  background: viewMode === 'folder' ? 'linear-gradient(135deg, #0F6E56 0%, #1a8f70 100%)' : '#fff',
-                  color: viewMode === 'folder' ? '#fff' : '#374151',
-                  transition:'all .2s',
-                  display:'flex',
-                  alignItems:'center',
-                  gap:4
-                }}
-                title="Tampilan Folder"
-              >
+            <div style={{ display:'flex', border:'1.5px solid rgba(29,78,216,0.10)', borderRadius:11, overflow:'hidden' }}>
+              <button onClick={() => setViewMode('folder')} style={{ ...toggleBtn, ...(viewMode === 'folder' ? toggleBtnActive : {}) }} title="Tampilan Folder" className="btn-hover">
                 <FiFolder size={14} />
               </button>
-              <button
-                onClick={() => setViewMode('table')}
-                style={{ 
-                  padding:'8px 14px', 
-                  border:'none', 
-                  fontSize:13, 
-                  cursor:'pointer', 
-                  fontFamily:'inherit',
-                  background: viewMode === 'table' ? 'linear-gradient(135deg, #0F6E56 0%, #1a8f70 100%)' : '#fff',
-                  color: viewMode === 'table' ? '#fff' : '#374151',
-                  transition:'all .2s',
-                  display:'flex',
-                  alignItems:'center',
-                  gap:4
-                }}
-                title="Tampilan Tabel"
-              >
+              <button onClick={() => setViewMode('table')} style={{ ...toggleBtn, ...(viewMode === 'table' ? toggleBtnActive : {}) }} title="Tampilan Tabel" className="btn-hover">
                 <FiGrid size={14} />
               </button>
             </div>
-            <div style={{ fontSize:12, color:'#9ca3af', display:'flex', alignItems:'center', gap:4 }}>
+            <div style={{ fontSize:11.5, color:'#94a3b8', display:'flex', alignItems:'center', gap:5, whiteSpace:'nowrap' }}>
               <FiDatabase size={12} /> {filtered.length} dokumen
             </div>
           </div>
+        </div>
 
-          {loading ? (
-            <div style={{ ...card, textAlign:'center', padding:'2rem', color:'#9ca3af' }}>Memuat...</div>
-          ) : filtered.length === 0 ? (
-            <div style={{ ...card, textAlign:'center', padding:'2rem', color:'#9ca3af' }}>
-              <FiFileText size={32} style={{ opacity:0.3, marginBottom:8 }} />
-              <div>Belum ada dokumen.</div>
-              <a href="/dashboard/superadmin/generate-kode" style={{ color:'#0F6E56', textDecoration:'none', display:'inline-flex', alignItems:'center', gap:4, marginTop:8 }}>
-                <FiPlus size={14} /> Generate
+        {/* Filter tahap status */}
+        <div style={{ display:'flex', gap:6, marginBottom:16, flexWrap:'wrap' }} className="fld">
+          <button onClick={() => setFilterStage('')} style={{ ...stagePill, ...(filterStage === '' ? stagePillActive : {}) }} className="btn-hover">
+            Semua Tahap
+          </button>
+          {countPerStage.map(f => (
+            <button key={f.key} onClick={() => setFilterStage(f.key)} style={{ ...stagePill, ...(filterStage === f.key ? stagePillActive : {}) }} className="btn-hover">
+              {f.label}
+              <span style={{ marginLeft:6, fontSize:10, padding:'1px 7px', borderRadius:100, background: filterStage === f.key ? 'rgba(255,255,255,.25)' : '#eef2f6', color: filterStage === f.key ? '#fff' : '#64748b' }}>
+                {f.count}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {filtered.length === 0 ? (
+          <div style={shellStyle} className="fld">
+            <div style={{ ...coreStyle, textAlign:'center', padding:'3rem 2rem' }}>
+              <FiFileText size={34} style={{ color:'#cbd5e1', marginBottom:10 }} />
+              <div style={{ fontSize:13.5, color:'#64748b', marginBottom:10 }}>Tidak ada dokumen pada filter ini.</div>
+              <a href="/dashboard/superadmin/generate-kode" style={{ color: BLUE, textDecoration:'none', display:'inline-flex', alignItems:'center', gap:5, fontWeight:600, fontSize:12.5 }}>
+                <FiPlus size={14} /> Generate dokumen pertama
               </a>
             </div>
-          ) : viewMode === 'folder' ? (
+          </div>
+        ) : viewMode === 'folder' ? (
 
-            /* ══ MODE FOLDER ══ */
-            <div style={card}>
-              <ul className="tree-ul">
-                <li className="tree-item">
-                  <input type="checkbox" id="root" className="tree-toggle" defaultChecked />
-                  <label htmlFor="root" className="tree-label">
-                    <FaFolderOpen size={16} style={{ color: '#0F6E56' }} />
-                    <strong>PaktaSign_Arsip</strong>
-                    <span style={{ fontSize:11, color:'#9ca3af' }}>{filtered.length} dokumen</span>
-                  </label>
-                  <div className="tree-children-wrapper">
-                    <ul className="tree-children">
+          /* ══ MODE FOLDER — dikelompokkan per Jenis, lalu per Institusi ══ */
+          <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+            {[
+              { jenis: 'MOU', label: 'MOU', list: mouList, color: BLUE, bg: '#DBEAFE', open: expandedMou, setOpen: setExpandedMou },
+              { jenis: 'PKS', label: 'PKS', list: pksList, color: GOLD, bg: '#FEF3C7', open: expandedPks, setOpen: setExpandedPks },
+            ].filter(g => (!filterJenis || filterJenis === g.jenis) && g.list.length > 0).map((g, gi) => {
+              const institusiGroups = groupByInstitusi(g.list);
+              return (
+                <div key={g.jenis} style={{ ...shellStyle, animationDelay: `${gi * 0.05}s` }} className="fld">
+                  <div style={coreStyle}>
+                    <button onClick={() => g.setOpen(o => !o)} style={folderHeaderBtn}>
+                      <span style={{ color: g.color, display:'flex', alignItems:'center' }}>
+                        {g.open ? <FiChevronDown size={15} /> : <FiChevronRight size={15} />}
+                      </span>
+                      <div style={{ width:34, height:34, borderRadius:11, background: g.bg, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                        <FaFolderOpen size={15} style={{ color: g.color }} />
+                      </div>
+                      <span style={{ fontSize:14, fontWeight:800, color:'#0f1f3d' }}>{g.label}</span>
+                      <span style={{ fontSize:11, color:'#94a3b8', fontWeight:500 }}>{g.list.length} dokumen · {institusiGroups.length} institusi</span>
+                    </button>
 
-                      {/* Folder MOU */}
-                      {(!filterJenis || filterJenis === 'MOU') && mouList.length > 0 && (
-                        <li className="tree-item">
-                          <input type="checkbox" id="mou-root" className="tree-toggle" defaultChecked />
-                          <label htmlFor="mou-root" className="tree-label">
-                            <FaFolder size={16} style={{ color: '#185FA5' }} />
-                            <span className="jenis-root mou">MOU</span>
-                            <span style={{ fontSize:11, color:'#9ca3af' }}>{mouList.length} dokumen</span>
-                          </label>
-                          <div className="tree-children-wrapper">
-                            <ul className="tree-children">
-                              {mouList.map(d => <DokFileRow key={d.id} d={d} onEdit={openEdit} onHapus={hapus} />)}
-                            </ul>
-                          </div>
-                        </li>
-                      )}
-
-                      {/* Folder PKS */}
-                      {(!filterJenis || filterJenis === 'PKS') && pksList.length > 0 && (
-                        <li className="tree-item">
-                          <input type="checkbox" id="pks-root" className="tree-toggle" defaultChecked />
-                          <label htmlFor="pks-root" className="tree-label">
-                            <FaFolder size={16} style={{ color: '#854F0B' }} />
-                            <span className="jenis-root pks">PKS</span>
-                            <span style={{ fontSize:11, color:'#9ca3af' }}>{pksList.length} dokumen</span>
-                          </label>
-                          <div className="tree-children-wrapper">
-                            <ul className="tree-children">
-                              {pksList.map(d => <DokFileRow key={d.id} d={d} onEdit={openEdit} onHapus={hapus} />)}
-                            </ul>
-                          </div>
-                        </li>
-                      )}
-
-                    </ul>
+                    {g.open && (
+                      <div style={{ marginTop:10, display:'flex', flexDirection:'column', gap:8 }}>
+                        {institusiGroups.map(([namaInstitusi, docs]) => {
+                          const instKey = `${g.jenis}::${namaInstitusi}`;
+                          const instOpen = expandedInstitusi.has(instKey);
+                          return (
+                            <div key={instKey} style={institusiBox}>
+                              <button onClick={() => toggleInstitusi(instKey)} style={{ ...folderHeaderBtn, padding:'8px 10px' }}>
+                                <span style={{ color:'#94a3b8', display:'flex', alignItems:'center' }}>
+                                  {instOpen ? <FiChevronDown size={13} /> : <FiChevronRight size={13} />}
+                                </span>
+                                <FaBuilding size={13} style={{ color:'#64748b' }} />
+                                <span style={{ fontSize:12.5, fontWeight:700, color:'#334155' }}>{namaInstitusi}</span>
+                                <span style={{ fontSize:10.5, color:'#94a3b8' }}>{docs.length} dok</span>
+                              </button>
+                              {instOpen && (
+                                <div style={{ padding:'0 10px 10px', display:'flex', flexDirection:'column', gap:7 }}>
+                                  {docs.map(d => (
+                                    <DokFileRow key={d.id} d={d} kontak={kontakMap[normNama(d.namaMitra)]} notif={notifMap[d.id]}
+                                      expanded={expandedRows.has(d.id)} onToggle={() => toggleRow(d.id)} onEdit={openEdit} onHapus={hapus} />
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                </li>
-              </ul>
-            </div>
+                </div>
+              );
+            })}
+          </div>
 
-          ) : (
+        ) : (
 
-            /* ══ MODE TABEL ══ */
-            <div style={{ ...card, padding:0, overflow:'hidden' }}>
+          /* ══ MODE TABEL ══ */
+          <div style={{ ...shellStyle, padding:6 }} className="fld">
+            <div style={{ ...coreStyle, padding:0, overflow:'hidden' }}>
               <div style={{ overflowX:'auto' }}>
                 <table style={{ width:'100%', fontSize:12, borderCollapse:'collapse' }}>
                   <thead>
-                    <tr style={{ background:'#f9fafb', borderBottom:'2px solid #e5e7eb' }}>
-                      <th style={th}><FiTag size={12} style={{ marginRight:4 }} />Jenis</th>
-                      <th style={th}><FiFileText size={12} style={{ marginRight:4 }} />Judul</th>
-                      <th style={th}><FaBuilding size={12} style={{ marginRight:4 }} />Mitra</th>
-                      <th style={th}><FiCalendar size={12} style={{ marginRight:4 }} />Berlaku s.d.</th>
-                      <th style={th}><FiActivity size={12} style={{ marginRight:4 }} />Status</th>
-                      <th style={th}><FiTag size={12} style={{ marginRight:4 }} />Kode</th>
-                      <th style={{ ...th, textAlign: 'center' }}>Aksi</th>
+                    <tr style={{ background:'#f8fafc' }}>
+                      {['','Jenis','Judul','Mitra / PIC','Berlaku s.d.','Status','Kode',''].map(h => (
+                        <th key={h} style={th}>{h}</th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {filtered.map((d, i) => {
-                      const sc = STATUS_COLOR[d.status] || { bg:'#f3f4f6', color:'#6b7280' };
+                    {filtered.map(d => {
+                      const sc = STATUS_COLOR[d.status] || { bg:'#f1f5f9', color:'#64748b' };
+                      const kontak = kontakMap[normNama(d.namaMitra)];
+                      const notif = notifMap[d.id];
+                      const previewOpen = previewId === d.id;
                       return (
-                        <tr key={d.id} style={{ borderBottom:'1px solid #f3f4f6', transition:'background .15s' }}>
+                        <tr key={d.id} className="trow" style={{ position:'relative' }}>
+                          <td style={td}>{notif && <NotifBadge notif={notif} />}</td>
                           <td style={td}>
-                            <span style={{ fontSize:10, fontWeight:600, padding:'3px 8px', borderRadius:4, background:d.jenis==='MOU'?'#E6F1FB':'#FAEEDA', color:d.jenis==='MOU'?'#0C447C':'#854F0B', display:'inline-flex', alignItems:'center', gap:4 }}>
+                            <span style={{ fontSize:10, fontWeight:700, padding:'3px 9px', borderRadius:100, background:d.jenis==='MOU'?'#DBEAFE':'#FEF3C7', color:d.jenis==='MOU'?BLUE_DARK:'#92400E', display:'inline-flex', alignItems:'center', gap:4 }}>
                               {d.jenis === 'MOU' ? <FaFileSignature size={10} /> : <FaFileAlt size={10} />}
                               {d.jenis}
                             </span>
                           </td>
-                          <td style={{ ...td, fontWeight:500, maxWidth:200 }}>
-                            <div style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.judul}</div>
+                          <td style={{ ...td, fontWeight:600, color:'#0f1f3d', maxWidth:200, position:'relative' }}>
+                            <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                              <div style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.judul}</div>
+                              <button onClick={() => setPreviewId(previewOpen ? null : d.id)} style={infoBtn} title="Ringkasan poin kerja sama" className="btn-hover">
+                                <FiInfo size={11} />
+                              </button>
+                            </div>
+                            {previewOpen && (
+                              <div style={previewPopover} className="fld">
+                                <div style={{ fontWeight:700, marginBottom:6, color: GOLD, fontSize:11 }}>Ringkasan {d.jenis}</div>
+                                {generatePreviewPoin(d).map((p, i) => (
+                                  <div key={i} style={{ display:'flex', gap:6, marginBottom:3, fontSize:11, lineHeight:1.5 }}>
+                                    <span style={{ color: GOLD, flexShrink:0 }}>·</span>
+                                    <span>{p}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </td>
-                          <td style={{ ...td, color:'#6b7280' }}>
-                            <FaUser size={10} style={{ marginRight:4 }} />
-                            {d.namaMitra}
+                          <td style={{ ...td, color:'#64748b' }}>
+                            <div>{d.namaMitra}</div>
+                            {kontak?.namaPIC && <div style={{ fontSize:10, color:'#94a3b8', marginTop:2 }}>PIC: {kontak.namaPIC}</div>}
+                            {d.jenis === 'PKS' && kontak?.jurusan && <div style={{ fontSize:10, color:'#94a3b8' }}>{kontak.jurusan}</div>}
                           </td>
-                          <td style={{ ...td, color:'#6b7280', whiteSpace:'nowrap' }}>
-                            <FiCalendar size={10} style={{ marginRight:4 }} />
-                            {d.tglBerakhir}
-                          </td>
+                          <td style={{ ...td, color:'#64748b', whiteSpace:'nowrap' }}>{d.tglBerakhir}</td>
                           <td style={td}>
-                            <span style={{ fontSize:10, fontWeight:500, padding:'3px 10px', borderRadius:100, background:sc.bg, color:sc.color, display:'inline-flex', alignItems:'center', gap:4 }}>
+                            <span style={{ fontSize:10, fontWeight:600, padding:'3px 10px', borderRadius:100, background:sc.bg, color:sc.color, display:'inline-flex', alignItems:'center', gap:4 }}>
                               {STATUS_ICON[d.status]}
                               {d.status}
                             </span>
                           </td>
-                          <td style={{ ...td, fontFamily:'monospace', color:'#0F6E56', fontWeight:600 }}>
-                            {d.kode}
-                          </td>
+                          <td style={{ ...td, fontFamily:'monospace', color: BLUE, fontWeight:700 }}>{d.kode}</td>
                           <td style={td}>
-                            <div style={{ display:'flex', gap:4, justifyContent:'center', flexWrap:'wrap' }}>
-                              {/* Detail Button */}
-                              <a 
-                                href={`/dashboard/dokumen/${d.id}`}
-                                style={{ 
-                                  ...btnSm, 
-                                  textDecoration:'none', 
-                                  fontSize:11,
-                                  padding:'5px 10px',
-                                  display:'inline-flex',
-                                  alignItems:'center',
-                                  gap:4
-                                }}
-                              >
-                                <FiEye size={12} /> Detail
-                              </a>
-                              {d.docsUrl && (
-                                <a href={d.docsUrl} target="_blank" rel="noopener noreferrer" style={{ ...actBtn, textDecoration:'none', display:'inline-flex', alignItems:'center', gap:4 }}>
-                                  <SiGoogledocs size={12} /> Docs
-                                </a>
-                              )}
-                              <a href={`/dashboard/dokumen/foto?id=${d.id}&judul=${encodeURIComponent(d.judul)}`} style={{ ...actBtn, textDecoration:'none', display:'inline-flex', alignItems:'center', gap:4 }}>
-                                <FiImage size={12} /> Foto
-                              </a>
-                              <button onClick={() => openEdit(d)} style={{ ...actBtn, display:'inline-flex', alignItems:'center', gap:4 }}>
-                                <FiEdit size={12} />
-                              </button>
-                              <button onClick={() => hapus(d.id, d.judul)} style={{ ...actBtn, color:'#A32D2D', borderColor:'#FCEBEB', display:'inline-flex', alignItems:'center', gap:4 }}>
-                                <FiTrash2 size={12} />
-                              </button>
+                            <div style={{ display:'flex', gap:5, justifyContent:'flex-end', flexWrap:'nowrap' }}>
+                              <a href={`/dashboard/dokumen/${d.id}`} style={iconLinkBtn} title="Detail" className="btn-hover"><FiEye size={13} /></a>
+                              {d.docsUrl && <a href={d.docsUrl} target="_blank" rel="noopener noreferrer" style={iconLinkBtn} title="Buka Docs" className="btn-hover"><SiGoogledocs size={13} /></a>}
+                              <a href={`/dashboard/dokumen/foto?id=${d.id}&judul=${encodeURIComponent(d.judul)}`} style={iconLinkBtn} title="Kelola Foto" className="btn-hover"><FiImage size={13} /></a>
+                              <button onClick={() => openEdit(d)} style={iconBtn} title="Edit Status" className="btn-hover"><FiEdit size={13} /></button>
+                              <button onClick={() => hapus(d.id, d.judul)} style={{ ...iconBtn, color:'#A32D2D', borderColor:'#FCEBEB' }} title="Hapus" className="btn-hover"><FiTrash2 size={13} /></button>
                             </div>
                           </td>
                         </tr>
@@ -437,310 +448,166 @@ export default function DokumenPage() {
                 </table>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Modal edit status */}
       {editItem && (
         <div style={overlay} onClick={() => setEditItem(null)}>
-          <div style={modalBox} onClick={e => e.stopPropagation()}>
-            <div style={{ fontSize:15, fontWeight:600, marginBottom:4, display:'flex', alignItems:'center', gap:6 }}>
-              <FiEdit size={18} style={{ color: '#0F6E56' }} />
+          <div style={modalBox} onClick={e => e.stopPropagation()} className="fld">
+            <div style={{ fontSize:15, fontWeight:700, marginBottom:4, display:'flex', alignItems:'center', gap:8, color:'#0f1f3d' }}>
+              <FiEdit size={17} style={{ color: BLUE }} />
               Edit Status Dokumen
             </div>
-            <div style={{ fontSize:12, color:'#6b7280', marginBottom:14 }}>
-              <FiFileText size={12} style={{ marginRight:4 }} />
-              {editItem.judul} · <FaUser size={12} style={{ marginRight:4 }} />
-              {editItem.namaMitra}
+            <div style={{ fontSize:12, color:'#64748b', marginBottom:16 }}>
+              {editItem.judul} · {editItem.namaMitra}
             </div>
-            {error && (
-              <div style={{ ...msgBox('#A32D2D','#FCEBEB'), display:'flex', alignItems:'center', gap:6 }}>
-                <FiAlertCircle size={14} /> {error}
-              </div>
-            )}
-            <label style={labelSt}>
-              <FiActivity size={12} style={{ marginRight:4 }} />
-              Status Baru
-            </label>
-            <select style={{ ...inputFull, marginBottom:10 }} value={eStatus} onChange={e => setEStatus(e.target.value)}>
-              {STATUS_LIST.map(s => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
+            {error && <div style={{ ...msgBox('#A32D2D','#FCEBEB') }}><FiAlertCircle size={13} style={{ marginRight:5, verticalAlign:'middle' }} />{error}</div>}
+            <label style={labelSt}>Status Baru</label>
+            <select style={{ ...inputFull, marginBottom:12 }} value={eStatus} onChange={e => setEStatus(e.target.value)}>
+              {STATUS_LIST.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
-            <label style={labelSt}>
-              <FiInfo size={12} style={{ marginRight:4 }} />
-              Catatan (opsional)
-            </label>
+            <label style={labelSt}>Catatan (opsional)</label>
             <textarea
-              style={{ ...inputFull, height:70, resize:'none', marginBottom:14 }}
+              style={{ ...inputFull, height:70, resize:'none', marginBottom:16 }}
               value={eCatatan} onChange={e => setECatatan(e.target.value)}
               placeholder="Catatan perubahan status..."
             />
             <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
-              <button onClick={() => setEditItem(null)} style={btnSm}>
-                <FiX size={14} style={{ marginRight:4, verticalAlign:'middle' }} />
-                Batal
+              <button onClick={() => setEditItem(null)} style={btnSm} className="btn-hover">
+                <FiX size={13} style={{ marginRight:5, verticalAlign:'middle' }} /> Batal
               </button>
-              <button onClick={submitEdit} disabled={submitting} style={btnPrimary}>
-                <FiSave size={14} style={{ marginRight:4, verticalAlign:'middle' }} />
+              <button onClick={submitEdit} disabled={submitting} style={btnPrimarySolid} className="btn-hover">
+                <FiSave size={13} style={{ marginRight:5, verticalAlign:'middle' }} />
                 {submitting ? 'Menyimpan...' : 'Simpan'}
               </button>
             </div>
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
 
-// ── Komponen baris file di tree ────────────────────────────
-function DokFileRow({ d, onEdit, onHapus }: {
-  d: DokumenItem;
+function NotifBadge({ notif }: { notif: NotifInfo }) {
+  return (
+    <span style={{ position:'relative', display:'inline-flex', color: notif.hasUnread ? GOLD : '#cbd5e1' }} title={`${notif.count} notifikasi terkait dokumen ini`}>
+      <FiMessageCircle size={14} />
+      {notif.hasUnread && <span style={notifDot} />}
+    </span>
+  );
+}
+
+// ── Baris dokumen dalam mode folder — aksi selalu terlihat, ringkasan bisa diklik ──
+function DokFileRow({ d, kontak, notif, expanded, onToggle, onEdit, onHapus }: {
+  d: DokumenItem; kontak?: KontakInfo; notif?: NotifInfo;
+  expanded: boolean; onToggle: () => void;
   onEdit: (d: DokumenItem) => void;
   onHapus: (id: string, judul: string) => void;
 }) {
-  const sc = STATUS_COLOR[d.status] || { bg:'#f3f4f6', color:'#6b7280' };
+  const sc = STATUS_COLOR[d.status] || { bg:'#f1f5f9', color:'#64748b' };
+  const [showRingkasan, setShowRingkasan] = useState(false);
   return (
-    <li className="tree-item">
-      <input type="checkbox" id={`dok-${d.id}`} className="tree-toggle" />
-      <label htmlFor={`dok-${d.id}`} className="tree-label">
-        <FaRegFile size={14} style={{ color: '#6b7280' }} />
-        <span style={{ fontSize:12, fontWeight:500, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.judul}</span>
-        <span style={{ fontSize:9, fontWeight:500, padding:'2px 8px', borderRadius:10, background:sc.bg, color:sc.color, flexShrink:0, display:'inline-flex', alignItems:'center', gap:3 }}>
+    <div style={rowBox}>
+      <div onClick={onToggle} style={rowHeader}>
+        <span style={{ color:'#94a3b8', display:'flex', flexShrink:0 }}>{expanded ? <FiChevronDown size={13} /> : <FiChevronRight size={13} />}</span>
+        <FiFileText size={14} style={{ color:'#94a3b8', flexShrink:0 }} />
+        <span style={{ fontSize:12.5, fontWeight:600, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:'#0f1f3d' }}>{d.judul}</span>
+        {notif && <NotifBadge notif={notif} />}
+        <span style={{ fontSize:9.5, fontWeight:600, padding:'3px 9px', borderRadius:100, background:sc.bg, color:sc.color, flexShrink:0, display:'inline-flex', alignItems:'center', gap:4 }}>
           {STATUS_ICON[d.status]}
           {d.status}
         </span>
-      </label>
-      <div className="tree-children-wrapper">
-        <ul className="tree-children">
-          {/* Detail */}
-          <li className="tree-item">
-            <div className="file-row">
-              <div className="file-left" style={{ fontSize:11, color:'#6b7280', paddingLeft:4 }}>
-                <FaBuilding size={12} style={{ marginRight:4 }} />
-                {d.namaMitra} · <FiCalendar size={12} style={{ marginRight:4 }} />
-                {d.tglBerlaku} s.d. {d.tglBerakhir} · Kode: <strong style={{ color:'#0F6E56' }}>{d.kode}</strong>
-              </div>
-            </div>
-          </li>
-          {/* Docs */}
-          <li className="tree-item">
-            <div className="file-row">
-              <div className="file-left">
-                <SiGoogledocs size={14} style={{ color: '#1a73e8' }} />
-                <span style={{ fontSize:11 }}>{d.judul}.docx</span>
-              </div>
-              <div className="file-actions" style={{ opacity:1 }}>
-                {d.docsUrl && (
-                  <a href={d.docsUrl} target="_blank" rel="noopener noreferrer" className="act-btn" style={{ textDecoration:'none', fontSize:10, padding:'3px 8px', borderRadius:5, border:'1px solid #e5e7eb', background:'#fff', color:'#374151', fontFamily:'inherit', display:'inline-flex', alignItems:'center', gap:4 }}>
-                    <FiExternalLink size={10} /> Buka Docs
-                  </a>
-                )}
-              </div>
-            </div>
-          </li>
-          {/* Foto Kegiatan */}
-          <li className="tree-item">
-            <div className="file-row">
-              <div className="file-left">
-                <FiImage size={14} style={{ color: '#6b7280' }} />
-                <span style={{ fontSize:11 }}>Foto_Kegiatan/</span>
-              </div>
-              <div className="file-actions" style={{ opacity:1 }}>
-                <a href={`/dashboard/dokumen/foto?id=${d.id}&judul=${encodeURIComponent(d.judul)}`}
-                  className="act-btn" style={{ textDecoration:'none', fontSize:10, padding:'3px 8px', borderRadius:5, border:'1px solid #e5e7eb', background:'#fff', color:'#374151', fontFamily:'inherit', display:'inline-flex', alignItems:'center', gap:4 }}>
-                  <FiFolder size={10} /> Kelola Foto
-                </a>
-              </div>
-            </div>
-          </li>
-          {/* Aksi - Added Detail button here too */}
-          <li className="tree-item">
-            <div className="file-row">
-              <div className="file-left" style={{ gap:6, flexWrap:'wrap' }}>
-                <a 
-                  href={`/dashboard/dokumen/${d.id}`}
-                  style={{ 
-                    textDecoration:'none', 
-                    fontSize:10, 
-                    padding:'4px 10px', 
-                    borderRadius:5, 
-                    border:'1px solid #e5e7eb', 
-                    background:'#fff', 
-                    color:'#374151', 
-                    fontFamily:'inherit',
-                    display:'inline-flex',
-                    alignItems:'center',
-                    gap:4,
-                    transition:'all .15s'
-                  }}
-                  className="act-btn"
-                >
-                  <FiEye size={10} /> Detail
-                </a>
-                <button onClick={() => onEdit(d)} className="act-btn" style={{ display:'inline-flex', alignItems:'center', gap:4 }}>
-                  <FiEdit size={10} /> Edit Status
-                </button>
-                <button onClick={() => onHapus(d.id, d.judul)} className="act-btn red" style={{ display:'inline-flex', alignItems:'center', gap:4 }}>
-                  <FiTrash2 size={10} /> Hapus
-                </button>
-              </div>
-            </div>
-          </li>
-        </ul>
       </div>
-    </li>
+
+      {expanded && (
+        <div style={{ padding:'0 14px 12px 33px', display:'flex', flexDirection:'column', gap:8 }} className="fld">
+          <div style={{ fontSize:11, color:'#64748b', display:'flex', alignItems:'center', gap:5, flexWrap:'wrap' }}>
+            <FaBuilding size={11} /> {d.namaMitra}
+            <span style={{ opacity:0.4 }}>·</span>
+            <FiCalendar size={11} /> {d.tglBerlaku} s.d. {d.tglBerakhir}
+            <span style={{ opacity:0.4 }}>·</span>
+            Kode: <strong style={{ color: BLUE }}>{d.kode}</strong>
+          </div>
+          {(kontak?.namaPIC || (d.jenis === 'PKS' && kontak?.jurusan)) && (
+            <div style={{ fontSize:11, color:'#64748b', display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+              {kontak?.namaPIC && <span style={{ display:'flex', alignItems:'center', gap:4 }}><FiUser size={11} /> {kontak.namaPIC}</span>}
+              {d.jenis === 'PKS' && kontak?.jurusan && <span style={{ display:'flex', alignItems:'center', gap:4 }}><FiBookOpen size={11} /> {kontak.jurusan}</span>}
+            </div>
+          )}
+
+          <button onClick={() => setShowRingkasan(s => !s)} style={{ ...actBtn, alignSelf:'flex-start' }} className="btn-hover">
+            <FiInfo size={11} /> {showRingkasan ? 'Sembunyikan Ringkasan' : 'Lihat Ringkasan Poin'}
+          </button>
+          {showRingkasan && (
+            <div style={ringkasanBox} className="fld">
+              {generatePreviewPoin(d).map((p, i) => (
+                <div key={i} style={{ display:'flex', gap:6, marginBottom:3, fontSize:11, lineHeight:1.5, color:'#92400E' }}>
+                  <span style={{ color: GOLD, flexShrink:0 }}>·</span>
+                  <span>{p}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+            <a href={`/dashboard/dokumen/${d.id}`} style={actBtn} className="btn-hover"><FiEye size={11} /> Detail</a>
+            {d.docsUrl && <a href={d.docsUrl} target="_blank" rel="noopener noreferrer" style={actBtn} className="btn-hover"><FiExternalLink size={11} /> Buka Docs</a>}
+            <a href={`/dashboard/dokumen/foto?id=${d.id}&judul=${encodeURIComponent(d.judul)}`} style={actBtn} className="btn-hover"><FiImage size={11} /> Kelola Foto</a>
+            <button onClick={() => onEdit(d)} style={actBtn} className="btn-hover"><FiEdit size={11} /> Edit Status</button>
+            <button onClick={() => onHapus(d.id, d.judul)} style={{ ...actBtn, color:'#A32D2D', borderColor:'#FCEBEB' }} className="btn-hover"><FiTrash2 size={11} /> Hapus</button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
-// ── Styles ─────────────────────────────────────────────────
-const navStyle: React.CSSProperties = { 
-  display:'flex', 
-  alignItems:'center', 
-  justifyContent:'space-between', 
-  padding:'0.85rem 1.5rem', 
-  background:'#fff', 
-  borderBottom:'2px solid #e5e7eb', 
-  position:'sticky', 
-  top:0, 
-  zIndex:100,
-  boxShadow: '0 1px 4px rgba(0,0,0,0.04)'
-};
+function GlobalStyle() {
+  return (
+    <style>{`
+      @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+      @keyframes fadeUp { from { opacity:0; transform: translateY(12px); filter: blur(3px);} to { opacity:1; transform: translateY(0); filter: blur(0);} }
+      .fld { animation: fadeUp 0.5s cubic-bezier(0.32,0.72,0,1) both; }
+      .btn-hover { transition: all 0.3s cubic-bezier(0.32,0.72,0,1); }
+      .btn-hover:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.05); }
+      .trow { transition: background 0.2s ease; }
+      .trow:hover { background: #f8fafc; }
+      .trow td { padding: 12px; border-bottom: 1px solid rgba(29,78,216,0.05); }
+    `}</style>
+  );
+}
 
-const backLink: React.CSSProperties = { 
-  fontSize:12, 
-  color:'#6b7280', 
-  textDecoration:'none',
-  display:'flex',
-  alignItems:'center'
-};
-
-const card: React.CSSProperties = { 
-  background:'#fff', 
-  borderRadius:12, 
-  padding:'1rem 1.25rem', 
-  border:'2px solid #e5e7eb',
-  boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
-};
-
-const labelSt: React.CSSProperties = { 
-  display:'flex',
-  alignItems:'center',
-  fontSize:11, 
-  color:'#6b7280', 
-  marginBottom:4,
-  fontWeight:500
-};
-
-const inputFull: React.CSSProperties = { 
-  width:'100%', 
-  padding:'9px 12px', 
-  borderRadius:8, 
-  border:'2px solid #e5e7eb', 
-  fontSize:12, 
-  fontFamily:'inherit', 
-  boxSizing:'border-box',
-  outline:'none',
-  transition:'border-color .2s'
-};
-
-const btnPrimary: React.CSSProperties = { 
-  padding:'9px 18px', 
-  borderRadius:8, 
-  border:'none', 
-  background:'linear-gradient(135deg, #0F6E56 0%, #1a8f70 100%)', 
-  color:'#fff', 
-  fontSize:12, 
-  fontWeight:500, 
-  cursor:'pointer', 
-  fontFamily:'inherit',
-  display:'inline-flex',
-  alignItems:'center',
-  transition:'all .2s',
-  boxShadow: '0 2px 8px rgba(15, 110, 86, 0.2)'
-};
-
-const btnSm: React.CSSProperties = { 
-  padding:'8px 16px', 
-  borderRadius:8, 
-  border:'2px solid #e5e7eb', 
-  background:'#fff', 
-  color:'#374151', 
-  fontSize:12, 
-  cursor:'pointer', 
-  fontFamily:'inherit',
-  display:'inline-flex',
-  alignItems:'center',
-  transition:'all .2s'
-};
-
-const btnOutline: React.CSSProperties = { 
-  fontSize:12, 
-  padding:'7px 14px', 
-  borderRadius:8, 
-  border:'2px solid #e5e7eb', 
-  textDecoration:'none', 
-  color:'#374151', 
-  background:'#fff',
-  transition:'all .2s'
-};
-
-const overlay: React.CSSProperties = { 
-  position:'fixed', 
-  inset:0, 
-  background:'rgba(0,0,0,0.5)', 
-  backdropFilter:'blur(4px)',
-  display:'flex', 
-  alignItems:'center', 
-  justifyContent:'center', 
-  zIndex:200, 
-  padding:'1rem' 
-};
-
-const modalBox: React.CSSProperties = { 
-  background:'#fff', 
-  borderRadius:16, 
-  padding:'1.5rem', 
-  width:'100%', 
-  maxWidth:440,
-  boxShadow: '0 20px 60px rgba(0,0,0,0.2)'
-};
-
-const th: React.CSSProperties = { 
-  padding:'12px 12px', 
-  fontWeight:600, 
-  fontSize:11, 
-  color:'#6b7280', 
-  textAlign:'left',
-  textTransform:'uppercase',
-  letterSpacing:0.3
-};
-
-const td: React.CSSProperties = { 
-  padding:'12px 12px' 
-};
-
-const actBtn: React.CSSProperties = { 
-  fontSize:11, 
-  padding:'5px 10px', 
-  borderRadius:6, 
-  border:'2px solid #e5e7eb', 
-  background:'#fff', 
-  color:'#374151', 
-  cursor:'pointer', 
-  fontFamily:'inherit',
-  transition:'all .15s'
-};
-
-const msgBox = (color: string, bg: string): React.CSSProperties => ({ 
-  fontSize:13, 
-  color, 
-  background:bg, 
-  padding:'10px 14px', 
-  borderRadius:8, 
-  marginBottom:10,
-  border:`1px solid ${color}20`
-});
+const navPill: React.CSSProperties = { display:'flex', alignItems:'center', justifyContent:'space-between', background:'rgba(255,255,255,0.72)', backdropFilter:'blur(12px)', border:'1px solid rgba(29,78,216,0.08)', borderRadius:100, padding:'9px 10px 9px 18px', boxShadow:'0 10px 26px -18px rgba(15,23,42,0.25)' };
+const backLink: React.CSSProperties = { fontSize:12.5, color:'#64748b', textDecoration:'none', fontWeight:600, display:'flex', alignItems:'center', gap:6 };
+const shellStyle: React.CSSProperties = { background:'rgba(255,255,255,0.65)', borderWidth:1, borderStyle:'solid', borderColor:'rgba(29,78,216,0.08)', borderRadius:20, padding:6, boxShadow:'0 1px 2px rgba(15,23,42,0.03), 0 20px 40px -30px rgba(15,23,42,0.18)' };
+const coreStyle: React.CSSProperties = { background:'#fff', borderRadius:15, padding:'1.1rem 1.2rem', boxShadow:'inset 0 1px 1px rgba(255,255,255,0.9)' };
+const searchInput: React.CSSProperties = { padding:'9px 12px 9px 34px', borderRadius:10, borderWidth:1.5, borderStyle:'solid', borderColor:'rgba(29,78,216,0.10)', fontSize:12, fontFamily:FONT, width:'100%', outline:'none', background:'#f8fafc', boxSizing:'border-box' };
+const pillBtn: React.CSSProperties = { padding:'8px 14px', borderRadius:10, borderWidth:1.5, borderStyle:'solid', borderColor:'rgba(29,78,216,0.10)', fontSize:11.5, cursor:'pointer', fontFamily:FONT, background:'#fff', color:'#334155', display:'flex', alignItems:'center', gap:5, fontWeight:500 };
+const pillBtnActive: React.CSSProperties = { background:`linear-gradient(135deg,${BLUE_LIGHT},${BLUE_DARK})`, color:'#fff', borderColor:'transparent', fontWeight:700 };
+const stagePill: React.CSSProperties = { padding:'7px 15px', borderRadius:100, borderWidth:1.5, borderStyle:'solid', borderColor:'rgba(217,119,6,0.16)', fontSize:11.5, cursor:'pointer', fontFamily:FONT, background:'#fff', color:'#92400E', fontWeight:500 };
+const stagePillActive: React.CSSProperties = { background: GOLD, color:'#fff', borderColor:'transparent', fontWeight:700 };
+const toggleBtn: React.CSSProperties = { padding:'8px 13px', border:'none', fontSize:13, cursor:'pointer', fontFamily:FONT, background:'#fff', color:'#334155', display:'flex', alignItems:'center' };
+const toggleBtnActive: React.CSSProperties = { background:`linear-gradient(135deg,${BLUE_LIGHT},${BLUE_DARK})`, color:'#fff' };
+const folderHeaderBtn: React.CSSProperties = { display:'flex', alignItems:'center', gap:10, width:'100%', background:'none', border:'none', cursor:'pointer', padding:0, fontFamily:FONT, textAlign:'left' };
+const institusiBox: React.CSSProperties = { border:'1px solid rgba(29,78,216,0.06)', borderRadius:13, background:'#fdfefe' };
+const rowBox: React.CSSProperties = { border:'1px solid rgba(29,78,216,0.07)', borderRadius:13, background:'#fbfcfe', overflow:'hidden' };
+const rowHeader: React.CSSProperties = { display:'flex', alignItems:'center', gap:9, padding:'10px 12px', cursor:'pointer' };
+const actBtn: React.CSSProperties = { fontSize:10.5, padding:'6px 11px', borderRadius:8, borderWidth:1, borderStyle:'solid', borderColor:'rgba(29,78,216,0.10)', background:'#fff', color:'#334155', cursor:'pointer', fontFamily:FONT, textDecoration:'none', display:'inline-flex', alignItems:'center', gap:4, whiteSpace:'nowrap' };
+const iconBtn: React.CSSProperties = { width:28, height:28, borderRadius:8, borderWidth:1, borderStyle:'solid', borderColor:'rgba(29,78,216,0.10)', background:'#fff', color:'#334155', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 };
+const iconLinkBtn: React.CSSProperties = { ...iconBtn, textDecoration:'none' };
+const infoBtn: React.CSSProperties = { width:20, height:20, borderRadius:6, border:'1px solid rgba(217,119,6,0.2)', background:'#FFFBEB', color: GOLD, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 };
+const labelSt: React.CSSProperties = { display:'block', fontSize:11, color:'#334155', marginBottom:5, fontWeight:600 };
+const inputFull: React.CSSProperties = { width:'100%', padding:'9px 12px', borderRadius:10, borderWidth:1.5, borderStyle:'solid', borderColor:'rgba(29,78,216,0.10)', fontSize:12, fontFamily:FONT, boxSizing:'border-box', outline:'none', background:'#f8fafc' };
+const btnPrimary: React.CSSProperties = { fontSize:12, padding:'9px 16px', borderRadius:100, border:'none', background:`linear-gradient(135deg,${BLUE_LIGHT},${BLUE_DARK})`, color:'#fff', fontWeight:700, textDecoration:'none', display:'flex', alignItems:'center', boxShadow:`0 6px 16px -6px ${BLUE}60` };
+const btnPrimarySolid: React.CSSProperties = { padding:'9px 18px', borderRadius:10, border:'none', background:`linear-gradient(135deg,${BLUE_LIGHT},${BLUE_DARK})`, color:'#fff', fontSize:12, fontWeight:700, cursor:'pointer', fontFamily:FONT, display:'inline-flex', alignItems:'center' };
+const btnSm: React.CSSProperties = { padding:'9px 16px', borderRadius:10, borderWidth:1.5, borderStyle:'solid', borderColor:'rgba(29,78,216,0.10)', background:'#fff', color:'#334155', fontSize:12, cursor:'pointer', fontFamily:FONT, display:'inline-flex', alignItems:'center' };
+const overlay: React.CSSProperties = { position:'fixed', inset:0, background:'rgba(15,23,42,0.5)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200, padding:'1rem' };
+const modalBox: React.CSSProperties = { background:'#fff', borderRadius:18, padding:'1.6rem', width:'100%', maxWidth:440, boxShadow:'0 20px 60px rgba(15,23,42,0.25)' };
+const th: React.CSSProperties = { padding:'12px', fontWeight:700, fontSize:10.5, color:'#94a3b8', textAlign:'left', textTransform:'uppercase', letterSpacing:0.5, borderBottom:'1px solid rgba(29,78,216,0.08)' };
+const td: React.CSSProperties = { padding:'12px' };
+const msgBox = (color: string, bg: string): React.CSSProperties => ({ fontSize:12.5, color, background:bg, padding:'10px 14px', borderRadius:10 });
+const notifDot: React.CSSProperties = { position:'absolute', top:-2, right:-2, width:6, height:6, borderRadius:'50%', background:'#A32D2D' };
+const previewPopover: React.CSSProperties = { position:'absolute', top:'100%', left:0, marginTop:6, background:'#fff', border:'1px solid rgba(217,119,6,0.2)', borderRadius:12, padding:'12px 14px', minWidth:260, maxWidth:340, boxShadow:'0 16px 40px -14px rgba(15,23,42,0.3)', zIndex:60, whiteSpace:'normal' };
+const ringkasanBox: React.CSSProperties = { background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:10, padding:'10px 12px' };

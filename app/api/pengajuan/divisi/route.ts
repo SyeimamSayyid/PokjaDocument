@@ -6,15 +6,28 @@ const COL_ID = 0;
 const COL_DIVISI = 17; // kolom R (index 17) — sesuai header yang dirapikan
 
 const DIVISI_VALID = ['pencegahan', 'pemberantasan', 'rehabilitasi', 'pemberdayaan'];
+const MAKS_DIVISI = 4;
 
-// ── PATCH: Assign / ubah divisi pengajuan ──────────────────
+function parseDivisi(raw: string): string[] {
+  return String(raw || '').split(',').map(s => s.trim()).filter(Boolean);
+}
+
+// ── PATCH: Assign / ubah divisi pengajuan (mendukung multi, maks 4) ──
 export async function PATCH(req: NextRequest) {
   try {
     const { id, divisi } = await req.json();
     if (!id) return NextResponse.json({ message: 'ID pengajuan wajib.' }, { status: 400 });
 
-    if (divisi && !DIVISI_VALID.includes(divisi)) {
-      return NextResponse.json({ message: 'Divisi tidak valid.' }, { status: 400 });
+    // Terima array (baru) ATAU string tunggal (kompatibilitas lama)
+    const divisiArr: string[] = Array.isArray(divisi)
+      ? divisi.filter(Boolean)
+      : (divisi ? [divisi] : []);
+
+    if (divisiArr.length > MAKS_DIVISI) {
+      return NextResponse.json({ message: `Maksimal ${MAKS_DIVISI} divisi.` }, { status: 400 });
+    }
+    if (divisiArr.some(d => !DIVISI_VALID.includes(d))) {
+      return NextResponse.json({ message: 'Ada divisi yang tidak valid.' }, { status: 400 });
     }
 
     const rows = await getSheetData(SHEET);
@@ -22,9 +35,10 @@ export async function PATCH(req: NextRequest) {
     if (idx === -1) return NextResponse.json({ message: 'Pengajuan tidak ditemukan.' }, { status: 404 });
 
     const rowNumber = idx + 2;
-    await updateCell(SHEET, rowNumber, COL_DIVISI + 1, divisi || ''); // kolom R = 18 (1-based)
+    const nilaiSimpan = divisiArr.join(',');
+    await updateCell(SHEET, rowNumber, COL_DIVISI + 1, nilaiSimpan);
 
-    return NextResponse.json({ message: 'Divisi pengajuan diperbarui.', divisi: divisi || '' });
+    return NextResponse.json({ message: 'Divisi pengajuan diperbarui.', divisi: divisiArr });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
@@ -44,11 +58,11 @@ export async function GET(req: NextRequest) {
       status:       String(r[9] || ''),
       kodeTracking: String(r[10] || ''),
       tglSubmit:    String(r[11] || ''),
-      divisi:       String(r[COL_DIVISI] || ''),
+      divisi:       parseDivisi(String(r[COL_DIVISI] || '')),
     })).reverse();
 
-    if (divisiFilter === 'belum') data = data.filter(d => !d.divisi);
-    else if (divisiFilter)        data = data.filter(d => d.divisi === divisiFilter);
+    if (divisiFilter === 'belum') data = data.filter(d => d.divisi.length === 0);
+    else if (divisiFilter)        data = data.filter(d => d.divisi.includes(divisiFilter));
 
     return NextResponse.json({ data });
   } catch (err) {

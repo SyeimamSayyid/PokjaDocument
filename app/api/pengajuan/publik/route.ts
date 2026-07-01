@@ -47,6 +47,23 @@ async function uploadDokumenMitra(params: {
   }
 }
 
+// Beri tahu admin ada pengajuan baru masuk — non-blocking, tidak menggagalkan submit kalau gagal
+async function kirimNotifikasiAdminPengajuanBaru(namaInstitusi: string, jenis: string) {
+  try {
+    await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'buatNotifikasiAdminManual',
+        idDokumen: '',
+        tipe: 'pengajuan-baru',
+        judul: 'Pengajuan kerja sama baru',
+        pesan: `${namaInstitusi} mengajukan kerja sama ${jenis} baru. Silakan tinjau di Kelola Pengajuan.`,
+      }),
+    });
+  } catch (e) { console.error('[NOTIF ADMIN - PENGAJUAN BARU]', e); }
+}
+
 // ── POST: Submit form pengajuan publik ─────────────────────
 export async function POST(req: NextRequest) {
   try {
@@ -144,6 +161,9 @@ export async function POST(req: NextRequest) {
       kodeTracking, formatTanggalWaktu(now), formatTanggalWaktu(kodeExpire),
       'Aktif', 'Sistem (Form Publik)',
     ]);
+
+    // Beri tahu admin — pengajuan baru masuk (non-blocking)
+    kirimNotifikasiAdminPengajuanBaru(namaInstitusi.trim(), jenis);
 
     return NextResponse.json({
       message: 'Pengajuan berhasil dikirim.',

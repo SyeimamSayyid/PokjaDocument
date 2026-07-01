@@ -3,6 +3,13 @@
 import { useEffect, useState, use } from 'react';
 import KomentarRevisi from '@/components/KomentarRevisi';
 import KomentarDocs from '@/components/KomentarDocs';
+import NotifikasiAdminBell from '@/components/NotifikasiAdminBell';
+import {
+  FiArrowLeft, FiExternalLink, FiEyeOff, FiEye, FiCheckCircle, FiCornerUpLeft,
+  FiClock, FiInfo, FiHome, FiCalendar, FiDownload, FiImage, FiCheck,
+  FiX as FiClose, FiBriefcase, FiFileText, FiLoader, FiMail, FiPhone, FiUser, FiCopy,
+  FiEdit3, FiSend, FiPenTool,
+} from 'react-icons/fi';
 
 interface Dokumen {
   id: string; jenis: string; judul: string; namaMitra: string;
@@ -12,6 +19,7 @@ interface Dokumen {
   folderId: string; dibuatOleh: string; catatan: string; fotoFolderId: string;
   tglKegiatanMulai: string; tglKegiatanSelesai: string; pdfId: string;
   sisaHari: number | null;
+  ttdTipe: string; ttdTglDiajukan: string; ttdStatus: string; ttdTglFinal: string; ttdCatatan: string;
 }
 
 interface Kandidat { fileId: string; namaFile: string; fileUrl: string; tglSubmit: string; namaInstansi: string; sumber: string; }
@@ -24,10 +32,10 @@ const STATUS_LIST = [
 const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   'Draft':                { bg: '#f1f3f2', color: '#5b6b66' },
   'Dalam Proses':         { bg: '#EDE9FE', color: '#5B21B6' },
-  'Selesai':              { bg: '#FEF3E2', color: '#854F0B' },
-  'Kegiatan Berlangsung': { bg: '#D1FAE5', color: '#065F46' },
-  'Kegiatan Selesai':     { bg: '#A7F3D0', color: '#065F46' },
-  'MOU/PKS Berlaku':      { bg: '#E1F5EE', color: '#0F6E56' },
+  'Selesai':              { bg: '#FEF3C7', color: '#92400E' },
+  'Kegiatan Berlangsung': { bg: '#FEF3C7', color: '#B45309' },
+  'Kegiatan Selesai':     { bg: '#DBEAFE', color: '#1E40AF' },
+  'MOU/PKS Berlaku':      { bg: '#DBEAFE', color: '#1D4ED8' },
   'Kedaluwarsa':          { bg: '#FCEBEB', color: '#A32D2D' },
 };
 
@@ -42,6 +50,10 @@ const STATUS_DESC: Record<string, string> = {
 };
 
 const FONT = "'Plus Jakarta Sans', -apple-system, sans-serif";
+const BLUE = '#1D4ED8';
+const BLUE_LIGHT = '#2563EB';
+const BLUE_DARK = '#1E3A8A';
+const GOLD = '#D97706';
 
 export default function AdminDokumenDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -63,6 +75,18 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
   const [templateKandidat, setTemplateKandidat]   = useState<Kandidat[]>([]);
   const [templateChecked, setTemplateChecked]     = useState(false);
   const [applyingTemplate, setApplyingTemplate]   = useState<string | null>(null);
+
+  const [kontak, setKontak] = useState<{ namaPIC: string; email: string; noWa: string; waLink: string } | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const [showKembaliBox, setShowKembaliBox] = useState(false);
+  const [alasanKembali, setAlasanKembali] = useState('');
+
+  const [ttdSaving, setTtdSaving] = useState(false);
+  const [showTolakTtd, setShowTolakTtd] = useState(false);
+  const [alasanTolakTtd, setAlasanTolakTtd] = useState('');
+  const [showInputBasah, setShowInputBasah] = useState(false);
+  const [tglBasah, setTglBasah] = useState('');
 
   const loadDok = () => {
     fetch(`/api/dokumen/${id}`)
@@ -98,12 +122,26 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
       .catch(() => setTemplateChecked(true));
   }, [dok, id]);
 
-  const transisi = async (statusBaru: string) => {
+  useEffect(() => {
+    if (!dok) return;
+    fetch(`/api/dokumen/pic?idDokumen=${id}`)
+      .then(r => r.json())
+      .then(d => setKontak({ namaPIC: d.namaPIC || '', email: d.email || '', noWa: d.noWa || '', waLink: d.waLink || '' }))
+      .catch(() => {});
+  }, [dok, id]);
+
+  const salinTeks = (teks: string, label: string) => {
+    navigator.clipboard.writeText(teks);
+    setCopied(label);
+    setTimeout(() => setCopied(null), 1500);
+  };
+
+  const transisi = async (statusBaru: string, alasan?: string) => {
     setSaving(true); setError(''); setMsg('');
     try {
       const res = await fetch(`/api/dokumen/${id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transisi: statusBaru }),
+        body: JSON.stringify({ transisi: statusBaru, alasanKembali: alasan }),
       });
       const d = await res.json();
       if (!res.ok) { setError(d.message); return; }
@@ -112,6 +150,42 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
       setMsg(`Status berhasil diubah ke "${statusBaru}".`);
     } catch { setError('Terjadi kesalahan.'); }
     finally { setSaving(false); }
+  };
+
+  const kembalikanKeDraft = async () => {
+    if (!alasanKembali.trim()) { setError('Alasan pengembalian ke Draft wajib diisi.'); return; }
+    await transisi('Draft', alasanKembali.trim());
+    setShowKembaliBox(false); setAlasanKembali('');
+  };
+
+  const ttdRequest = async (body: Record<string, unknown>) => {
+    setTtdSaving(true); setError(''); setMsg('');
+    try {
+      const res = await fetch(`/api/dokumen/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const d = await res.json();
+      if (!res.ok) { setError(d.message); return false; }
+      setMsg(d.message);
+      loadDok();
+      return true;
+    } catch { setError('Terjadi kesalahan.'); return false; }
+    finally { setTtdSaving(false); }
+  };
+
+  const setujuiTtd = () => ttdRequest({ ttdAction: 'setujuiOnline' });
+
+  const tolakTtd = async () => {
+    if (!alasanTolakTtd.trim()) { setError('Alasan penolakan wajib diisi.'); return; }
+    const ok = await ttdRequest({ ttdAction: 'tolakOnline', alasanTolak: alasanTolakTtd.trim() });
+    if (ok) { setShowTolakTtd(false); setAlasanTolakTtd(''); }
+  };
+
+  const inputTtdBasah = async () => {
+    if (!tglBasah) { setError('Tanggal TTD wajib diisi.'); return; }
+    const ok = await ttdRequest({ ttdAction: 'inputBasah', tglFinal: tglBasah });
+    if (ok) { setShowInputBasah(false); setTglBasah(''); }
   };
 
   const saveStatusManual = async () => {
@@ -194,41 +268,46 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
   const kandidatUtama = templateKandidat[0] || null;
 
   return (
-    <div style={{ minHeight:'100vh', background:'linear-gradient(180deg,#f7f9f8,#eef2f0)', fontFamily: FONT }}>
+    <div style={{ minHeight:'100vh', background:'linear-gradient(180deg,#f7f9fc,#eef2f8)', fontFamily: FONT }}>
       <GlobalStyle />
       <nav style={navStyle}>
-        <a href={backUrl} style={backLink}>← Dashboard</a>
-        <div style={{ fontWeight:700, fontSize:13.5, flex:1, textAlign:'center', color:'#0a2e24', letterSpacing:'-0.01em' }}>Detail Dokumen</div>
-        {dok.docsUrl && <a href={dok.docsUrl} target="_blank" rel="noopener noreferrer" style={btnGhost}>Buka Docs ↗</a>}
+        <a href={backUrl} style={backLink}><FiArrowLeft size={13} /> Dashboard</a>
+        <div style={{ fontWeight:700, fontSize:13.5, flex:1, textAlign:'center', color:'#0f1f3d', letterSpacing:'-0.01em' }}>Detail Dokumen</div>
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          <NotifikasiAdminBell />
+          {dok.docsUrl && <a href={dok.docsUrl} target="_blank" rel="noopener noreferrer" style={btnGhost}><FiExternalLink size={12} style={{ marginRight:6, verticalAlign:'middle' }} />Buka Docs</a>}
+        </div>
       </nav>
 
-      {msg   && <div style={{ ...msgBox('#085041','#E1F5EE'), margin:'14px auto', maxWidth:1120 }} className="fld">{msg}</div>}
-      {error && <div style={{ ...msgBox('#A32D2D','#FCEBEB'), margin:'14px auto', maxWidth:1120 }} className="fld">{error}</div>}
+      {msg   && <div style={{ ...msgBox(BLUE_DARK,'#DBEAFE'), margin:'14px auto', maxWidth:1120 }} className="fld"><FiCheckCircle size={14} style={{ marginRight:6, verticalAlign:'middle' }} />{msg}</div>}
+      {error && <div style={{ ...msgBox('#A32D2D','#FCEBEB'), margin:'14px auto', maxWidth:1120 }} className="fld"><FiInfo size={14} style={{ marginRight:6, verticalAlign:'middle' }} />{error}</div>}
 
       <div style={{ maxWidth:1120, margin:'0 auto', padding:'1.5rem 1.25rem 3rem', display:'grid', gridTemplateColumns:'1fr 380px', gap:16 }}>
 
+        {/* Kolom kiri */}
         <div>
           <div style={{ ...shellStyle, marginBottom:14 }} className="fld">
             <div style={coreStyle}>
               <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:10, flexWrap:'wrap' }}>
-                <span style={{ ...pill, background:dok.jenis==='MOU'?'#E6F1FB':'#FAEEDA', color:dok.jenis==='MOU'?'#0C447C':'#854F0B' }}>{dok.jenis}</span>
+                <span style={{ ...pill, background:dok.jenis==='MOU'?'#DBEAFE':'#FEF3C7', color:dok.jenis==='MOU'?BLUE_DARK:'#92400E' }}>{dok.jenis}</span>
                 <span style={{ ...pill, ...sc }}>{dok.status}</span>
                 {dok.status === 'MOU/PKS Berlaku' && dok.sisaHari !== null && (
-                  <span style={{ ...pill, background: dok.sisaHari <= 30 ? '#FCEBEB' : '#E1F5EE', color: dok.sisaHari <= 30 ? '#A32D2D' : '#0F6E56' }}>
-                    ⏳ {dok.sisaHari > 0 ? `${dok.sisaHari} hari tersisa` : 'Berakhir hari ini'}
+                  <span style={{ ...pill, background: dok.sisaHari <= 30 ? '#FCEBEB' : '#FEF3C7', color: dok.sisaHari <= 30 ? '#A32D2D' : GOLD }}>
+                    <FiClock size={10} style={{ marginRight:4, verticalAlign:'middle' }} />
+                    {dok.sisaHari > 0 ? `${dok.sisaHari} hari tersisa` : 'Berakhir hari ini'}
                   </span>
                 )}
               </div>
-              <div style={{ fontSize:19, fontWeight:800, marginBottom:4, color:'#0a2e24', letterSpacing:'-0.02em' }}>{dok.judul}</div>
-              <div style={{ fontSize:13.5, color:'#0F6E56', fontWeight:600, display:'flex', alignItems:'center', gap:6 }}>🏢 {dok.namaMitra}</div>
-              <div style={{ fontSize:11.5, color:'#5b6b66', marginTop:8, lineHeight:1.7 }}>
+              <div style={{ fontSize:19, fontWeight:800, marginBottom:4, color:'#0f1f3d', letterSpacing:'-0.02em' }}>{dok.judul}</div>
+              <div style={{ fontSize:13.5, color:BLUE, fontWeight:600, display:'flex', alignItems:'center', gap:6 }}><FiHome size={13} />{dok.namaMitra}</div>
+              <div style={{ fontSize:11.5, color:'#64748b', marginTop:8, lineHeight:1.7 }}>
                 <strong>Masa berlaku:</strong> {dok.tglBerlaku} s.d. {dok.tglBerakhir} ({dok.durasi} th)<br/>
                 {(dok.tglKegiatanMulai || dok.tglKegiatanSelesai) && (
                   <><strong>Tanggal kegiatan:</strong> {dok.tglKegiatanMulai || '—'} s.d. {dok.tglKegiatanSelesai || '—'}<br/></>
                 )}
                 Dibuat oleh {dok.dibuatOleh}
               </div>
-              <div style={infoNote}>ℹ️ {STATUS_DESC[dok.status] || ''}</div>
+              <div style={infoNote}><FiInfo size={12} style={{ marginRight:6, flexShrink:0, marginTop:1 }} />{STATUS_DESC[dok.status] || ''}</div>
             </div>
           </div>
 
@@ -237,12 +316,15 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
                 <div style={cardTitle}>Preview Dokumen</div>
                 <div style={{ display:'flex', gap:6 }}>
-                  <button onClick={() => setShowIframe(s => !s)} style={btnSm} className="btn-hover">{showIframe ? 'Sembunyikan' : 'Tampilkan'}</button>
-                  {dok.docsUrl && <a href={dok.docsUrl} target="_blank" rel="noopener noreferrer" style={{ ...btnSm, textDecoration:'none' }} className="btn-hover">Edit ↗</a>}
+                  <button onClick={() => setShowIframe(s => !s)} style={btnSm} className="btn-hover">
+                    {showIframe ? <FiEyeOff size={12} style={{ marginRight:5, verticalAlign:'middle' }} /> : <FiEye size={12} style={{ marginRight:5, verticalAlign:'middle' }} />}
+                    {showIframe ? 'Sembunyikan' : 'Tampilkan'}
+                  </button>
+                  {dok.docsUrl && <a href={dok.docsUrl} target="_blank" rel="noopener noreferrer" style={{ ...btnSm, textDecoration:'none' }} className="btn-hover"><FiExternalLink size={12} style={{ marginRight:5, verticalAlign:'middle' }} />Edit</a>}
                 </div>
               </div>
               {showIframe && dok.embedUrl ? (
-                <iframe src={dok.embedUrl} style={{ width:'100%', height:520, border:'1px solid rgba(10,46,36,0.08)', borderRadius:16 }} title={dok.judul} />
+                <iframe src={dok.embedUrl} style={{ width:'100%', height:520, border:'1px solid rgba(29,78,216,0.08)', borderRadius:16 }} title={dok.judul} />
               ) : !showIframe ? null : (
                 <div style={emptyBox}>Preview tidak tersedia.</div>
               )}
@@ -253,25 +335,151 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
           <KomentarDocs docsId={dok.docsId} namaPengirim={namaAdmin} />
         </div>
 
+        {/* Kolom kanan */}
         <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
 
+          {kontak && (kontak.email || kontak.noWa || kontak.namaPIC) && (
+            <div style={shellStyle} className="fld">
+              <div style={coreStyle}>
+                <div style={cardTitle}><FiUser size={13} style={{ marginRight:6, verticalAlign:'middle', color: BLUE }} />Kontak Mitra</div>
+                {kontak.namaPIC && (
+                  <div style={kontakRow}>
+                    <FiUser size={13} style={{ color:'#94a3b8', flexShrink:0 }} />
+                    <span style={{ fontSize:12, color:'#334155', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{kontak.namaPIC}</span>
+                  </div>
+                )}
+                {kontak.email && (
+                  <div style={kontakRow}>
+                    <FiMail size={13} style={{ color:'#94a3b8', flexShrink:0 }} />
+                    <span style={{ fontSize:12, color:'#334155', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{kontak.email}</span>
+                    <button onClick={() => salinTeks(kontak.email, 'email')} style={miniBtn} className="btn-hover" title="Salin email">
+                      {copied === 'email' ? <FiCheck size={11} /> : <FiCopy size={11} />}
+                    </button>
+                  </div>
+                )}
+                {kontak.noWa && (
+                  <div style={kontakRow}>
+                    <FiPhone size={13} style={{ color:'#94a3b8', flexShrink:0 }} />
+                    <span style={{ fontSize:12, color:'#334155', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{kontak.noWa}</span>
+                    {kontak.waLink && (
+                      <a href={kontak.waLink} target="_blank" rel="noopener noreferrer" style={{ ...miniBtn, textDecoration:'none', color:'#16A34A' }} className="btn-hover" title="Buka WhatsApp">
+                        <FiExternalLink size={11} />
+                      </a>
+                    )}
+                  </div>
+                )}
+                {!kontak.namaPIC && !kontak.email && !kontak.noWa && (
+                  <div style={{ fontSize:11, color:'#94a3b8' }}>Kontak mitra belum tersedia.</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {(dok.ttdStatus || dok.ttdTglFinal) && (
+            <div style={shellStyle} className="fld">
+              <div style={coreStyle}>
+                <div style={cardTitle}><FiPenTool size={13} style={{ marginRight:6, verticalAlign:'middle', color: GOLD }} />Penandatanganan Dokumen</div>
+
+                {dok.ttdStatus === 'Disetujui' ? (
+                  <div style={ttdDoneBox}>
+                    <FiCheckCircle size={16} style={{ color: BLUE, flexShrink:0, marginTop:1 }} />
+                    <div>
+                      <div style={{ fontSize:12, fontWeight:700, color:'#0f1f3d' }}>TTD {dok.ttdTipe === 'basah' ? 'Basah' : 'Online'} tercatat</div>
+                      <div style={{ fontSize:11, color:'#64748b', marginTop:2 }}>Tanggal: {dok.ttdTglFinal}</div>
+                    </div>
+                  </div>
+                ) : dok.ttdStatus === 'Menunggu Review' ? (
+                  <div>
+                    <div style={hintText}>Mitra mengajukan TTD Online pada tanggal:</div>
+                    <div style={{ fontSize:14, fontWeight:700, color: BLUE_DARK, marginBottom:10 }}>{dok.ttdTglDiajukan}</div>
+                    {!showTolakTtd ? (
+                      <div style={{ display:'flex', gap:6 }}>
+                        <button onClick={setujuiTtd} disabled={ttdSaving} style={{ ...btnPrimary, flex:1 }} className="btn-hover">
+                          <FiCheck size={13} style={{ marginRight:5, verticalAlign:'middle' }} />Setujui
+                        </button>
+                        <button onClick={() => setShowTolakTtd(true)} disabled={ttdSaving} style={{ ...btnSm, flex:1, color:'#A32D2D', borderColor:'#FCEBEB' }} className="btn-hover">
+                          Tolak
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={kembaliBox}>
+                        <label style={{ ...labelSt, marginBottom:6 }}>Alasan penolakan *</label>
+                        <textarea value={alasanTolakTtd} onChange={e => setAlasanTolakTtd(e.target.value)}
+                          placeholder="Contoh: Tanggal bentrok dengan jadwal internal, mohon ajukan tanggal lain…"
+                          style={{ ...inputFull, height:56, resize:'none', marginBottom:8 }} autoFocus />
+                        <div style={{ display:'flex', gap:6 }}>
+                          <button onClick={() => { setShowTolakTtd(false); setAlasanTolakTtd(''); }} disabled={ttdSaving} style={{ ...btnSm, flex:1 }} className="btn-hover">Batal</button>
+                          <button onClick={tolakTtd} disabled={ttdSaving || !alasanTolakTtd.trim()} style={{ ...btnSm, flex:1, background:'#FCEBEB', color:'#A32D2D', borderColor:'#FCA5A5' }} className="btn-hover">
+                            {ttdSaving ? 'Mengirim…' : 'Kirim Penolakan'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : dok.ttdStatus === 'Menunggu Basah' ? (
+                  <div>
+                    <div style={hintText}>Mitra memilih TTD Basah. Menunggu dokumen fisik diterima.</div>
+                    {!showInputBasah ? (
+                      <button onClick={() => setShowInputBasah(true)} style={{ ...btnPrimary, width:'100%' }} className="btn-hover">
+                        <FiEdit3 size={13} style={{ marginRight:6, verticalAlign:'middle' }} />Input Tanggal TTD
+                      </button>
+                    ) : (
+                      <div style={kembaliBox}>
+                        <label style={{ ...labelSt, marginBottom:6 }}>Tanggal dokumen ditandatangani *</label>
+                        <input type="date" style={{ ...inputFull, marginBottom:8 }} value={tglBasah} onChange={e => setTglBasah(e.target.value)} />
+                        <div style={{ display:'flex', gap:6 }}>
+                          <button onClick={() => { setShowInputBasah(false); setTglBasah(''); }} disabled={ttdSaving} style={{ ...btnSm, flex:1 }} className="btn-hover">Batal</button>
+                          <button onClick={inputTtdBasah} disabled={ttdSaving || !tglBasah} style={{ ...btnPrimary, flex:1 }} className="btn-hover">
+                            {ttdSaving ? 'Menyimpan…' : 'Simpan'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          )}
+
           {(dok.status === 'Dalam Proses' || dok.status === 'Draft') && (
-            <div style={{ ...shellStyle, borderColor:'rgba(15,110,86,0.16)' }} className="fld">
-              <div style={{ ...coreStyle, background:'linear-gradient(170deg,#fafcfb,#f3f8f6)' }}>
+            <div style={{ ...shellStyle, borderColor:'rgba(29,78,216,0.16)' }} className="fld">
+              <div style={{ ...coreStyle, background:'linear-gradient(170deg,#f8fafc,#eef4fc)' }}>
                 <div style={cardTitle}>Tindakan</div>
                 {dok.status === 'Dalam Proses' && (
                   <>
                     <button onClick={() => transisi('Selesai')} disabled={saving} style={{ ...btnPrimary, width:'100%', marginBottom:8 }} className="btn-hover">
-                      ✓ Setujui Dokumen (Acc)
+                      <FiCheck size={14} style={{ marginRight:6, verticalAlign:'middle' }} />Setujui Dokumen (Acc)
                     </button>
-                    <button onClick={() => transisi('Draft')} disabled={saving} style={{ ...btnSm, width:'100%', color:'#854F0B', borderColor:'#FAEEDA' }} className="btn-hover">
-                      ↩ Kembalikan ke Draft
-                    </button>
+                    {!showKembaliBox ? (
+                      <button onClick={() => setShowKembaliBox(true)} disabled={saving} style={{ ...btnSm, width:'100%', color:'#92400E', borderColor:'#FDE68A' }} className="btn-hover">
+                        <FiCornerUpLeft size={12} style={{ marginRight:6, verticalAlign:'middle' }} />Kembalikan ke Draft
+                      </button>
+                    ) : (
+                      <div style={kembaliBox}>
+                        <label style={{ ...labelSt, marginBottom:6 }}>Alasan pengembalian *</label>
+                        <textarea
+                          value={alasanKembali}
+                          onChange={e => setAlasanKembali(e.target.value)}
+                          placeholder="Contoh: Nomor pihak kedua belum diisi, tolong lengkapi dulu…"
+                          style={{ ...inputFull, height:64, resize:'none', marginBottom:8 }}
+                          autoFocus
+                        />
+                        <div style={{ fontSize:10, color:'#94a3b8', marginBottom:8, lineHeight:1.4 }}>
+                          Alasan ini otomatis tercatat di Komentar Revisi dan mitra akan mendapat notifikasi.
+                        </div>
+                        <div style={{ display:'flex', gap:6 }}>
+                          <button onClick={() => { setShowKembaliBox(false); setAlasanKembali(''); }} disabled={saving} style={{ ...btnSm, flex:1 }} className="btn-hover">Batal</button>
+                          <button onClick={kembalikanKeDraft} disabled={saving || !alasanKembali.trim()} style={{ ...btnSm, flex:1, background:'#FEF3C7', color:'#92400E', borderColor:'#FDE68A' }} className="btn-hover">
+                            {saving ? 'Mengirim…' : 'Kirim & Kembalikan'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     <div style={hintText}>Acc → status &quot;Selesai&quot;. Saat tanggal kegiatan tiba, otomatis jadi &quot;Kegiatan Berlangsung&quot;.</div>
                   </>
                 )}
                 {dok.status === 'Draft' && (
-                  <div style={{ fontSize:11.5, color:'#5b6b66', lineHeight:1.6 }}>
+                  <div style={{ fontSize:11.5, color:'#64748b', lineHeight:1.6 }}>
                     Dokumen masih Draft. Mitra perlu klik &quot;Selesai Mengisi&quot; dari halaman mereka untuk lanjut ke review.
                   </div>
                 )}
@@ -286,13 +494,13 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
                 <div style={hintText}>Pilih sumber naskah kerja yang aktif dipakai.</div>
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginTop:10 }}>
                   <div style={templateCard(false, true)}>
-                    <div style={templateCardIcon}>🏛️</div>
+                    <FiBriefcase size={20} style={{ color: BLUE, marginBottom:6 }} />
                     <div style={templateCardTitle}>Template Resmi BNN</div>
                     <div style={templateCardDesc}>Gunakan template standar BNN Provinsi</div>
                   </div>
                   {!templateChecked ? (
                     <div style={templateCard(false, false)}>
-                      <div style={templateCardIcon}>⏳</div>
+                      <FiLoader size={20} style={{ color:'#94a3b8', marginBottom:6 }} className="spin" />
                       <div style={templateCardTitle}>Memeriksa…</div>
                     </div>
                   ) : kandidatUtama ? (
@@ -302,13 +510,13 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
                       style={{ ...templateCard(true, true), cursor:'pointer', border:'none', textAlign:'left', font:'inherit' }}
                       className="tpl-active"
                     >
-                      <div style={templateCardIcon}>📄</div>
+                      <FiFileText size={20} style={{ color: GOLD, marginBottom:6 }} />
                       <div style={templateCardTitle}>{applyingTemplate ? 'Mengganti…' : 'Dokumen Mitra'}</div>
                       <div style={templateCardDesc}>{kandidatUtama.namaFile}</div>
                     </button>
                   ) : (
                     <div style={templateCard(false, false)} title="Mitra belum mengunggah berkas">
-                      <div style={templateCardIcon}>🚫</div>
+                      <FiClose size={20} style={{ color:'#cbd5e1', marginBottom:6 }} />
                       <div style={templateCardTitle}>Dokumen Mitra</div>
                       <div style={templateCardDesc}>Tidak aktif — belum ada berkas</div>
                     </div>
@@ -318,7 +526,7 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
                   <div style={{ marginTop:10, display:'flex', flexDirection:'column', gap:6 }}>
                     {templateKandidat.slice(1).map(t => (
                       <div key={t.fileId} style={miniCandidateRow}>
-                        <span style={{ fontSize:11, color:'#3a4742', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>{t.namaFile}</span>
+                        <span style={{ fontSize:11, color:'#334155', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>{t.namaFile}</span>
                         <button onClick={() => gantiTemplate(t.fileId)} disabled={applyingTemplate === t.fileId} style={{ ...btnSm, fontSize:10, padding:'4px 10px' }} className="btn-hover">
                           {applyingTemplate === t.fileId ? '…' : 'Gunakan'}
                         </button>
@@ -332,7 +540,7 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
 
           <div style={shellStyle} className="fld">
             <div style={coreStyle}>
-              <div style={cardTitle}>📅 Tanggal Kegiatan</div>
+              <div style={cardTitle}><FiCalendar size={13} style={{ marginRight:6, verticalAlign:'middle', color: BLUE }} />Tanggal Kegiatan</div>
               <div style={hintText}>Memicu perpindahan otomatis status. Terpisah dari masa berlaku dokumen.</div>
               <label style={labelSt}>Mulai</label>
               <input type="date" style={{ ...inputFull, marginBottom:10 }} value={tglMulai} onChange={e => setTglMulai(e.target.value)} />
@@ -346,11 +554,11 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
 
           <div style={shellStyle} className="fld">
             <div style={coreStyle}>
-              <div style={cardTitle}>📄 Unduh PDF</div>
+              <div style={cardTitle}><FiDownload size={13} style={{ marginRight:6, verticalAlign:'middle', color: GOLD }} />Unduh PDF</div>
               {bolehUnduhPdf ? (
                 <>
-                  <button onClick={unduhPdf} disabled={genPdf} style={{ ...btnPrimary, width:'100%', background:'linear-gradient(135deg,#2571c9,#185FA5)' }} className="btn-hover">
-                    {genPdf ? '⏳ Membuat PDF…' : '⬇ Unduh PDF Kualitas Tinggi'}
+                  <button onClick={unduhPdf} disabled={genPdf} style={{ ...btnPrimary, width:'100%', background:`linear-gradient(135deg,${GOLD},#B45309)` }} className="btn-hover">
+                    {genPdf ? 'Membuat PDF…' : 'Unduh PDF Kualitas Tinggi'}
                   </button>
                   <div style={hintText}>PDF dibuat langsung dari Google Docs.</div>
                 </>
@@ -376,7 +584,9 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
           <div style={shellStyle} className="fld">
             <div style={coreStyle}>
               <div style={cardTitle}>Aksi Cepat</div>
-              <a href={`/dashboard/dokumen/foto?id=${dok.id}&judul=${encodeURIComponent(dok.judul)}`} style={{ ...btnSm, textDecoration:'none', textAlign:'center', display:'block' }} className="btn-hover">📷 Kelola Foto Kegiatan</a>
+              <a href={`/dashboard/dokumen/foto?id=${dok.id}&judul=${encodeURIComponent(dok.judul)}`} style={{ ...btnSm, textDecoration:'none', textAlign:'center', display:'block' }} className="btn-hover">
+                <FiImage size={12} style={{ marginRight:6, verticalAlign:'middle' }} />Kelola Foto Kegiatan
+              </a>
             </div>
           </div>
 
@@ -391,42 +601,47 @@ function GlobalStyle() {
     <style>{`
       @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
       @keyframes fadeUp { from { opacity:0; transform: translateY(14px); filter: blur(3px);} to { opacity:1; transform: translateY(0); filter: blur(0);} }
+      @keyframes spin { to { transform: rotate(360deg); } }
       .fld { animation: fadeUp 0.6s cubic-bezier(0.32,0.72,0,1) both; }
+      .spin { animation: spin 1s linear infinite; }
       .btn-hover { transition: all 0.35s cubic-bezier(0.32,0.72,0,1); }
       .btn-hover:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.04); }
       .btn-hover:active:not(:disabled) { transform: scale(0.98); }
       .tpl-active { transition: all 0.35s cubic-bezier(0.32,0.72,0,1); }
-      .tpl-active:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 10px 22px -8px rgba(15,110,86,0.35); }
+      .tpl-active:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 10px 22px -8px rgba(29,78,216,0.3); }
     `}</style>
   );
 }
 
-const navStyle: React.CSSProperties = { display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0.9rem 1.5rem', background:'rgba(255,255,255,0.75)', backdropFilter:'blur(10px)', borderBottom:'1px solid rgba(10,46,36,0.06)', position:'sticky', top:0, zIndex:100, gap:8 };
-const backLink: React.CSSProperties = { fontSize:12.5, color:'#5b6b66', textDecoration:'none', flexShrink:0, fontWeight:600 };
-const shellStyle: React.CSSProperties = { background:'rgba(255,255,255,0.6)', borderWidth:1, borderStyle:'solid', borderColor:'rgba(10,46,36,0.06)', borderRadius:22, padding:6, boxShadow:'0 1px 2px rgba(10,46,36,0.03), 0 20px 40px -30px rgba(10,46,36,0.18)' };
+const navStyle: React.CSSProperties = { display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0.9rem 1.5rem', background:'rgba(255,255,255,0.75)', backdropFilter:'blur(10px)', borderBottom:'1px solid rgba(29,78,216,0.06)', position:'sticky', top:0, zIndex:100, gap:8 };
+const backLink: React.CSSProperties = { fontSize:12.5, color:'#64748b', textDecoration:'none', flexShrink:0, fontWeight:600, display:'flex', alignItems:'center', gap:6 };
+const shellStyle: React.CSSProperties = { background:'rgba(255,255,255,0.65)', borderWidth:1, borderStyle:'solid', borderColor:'rgba(29,78,216,0.08)', borderRadius:22, padding:6, boxShadow:'0 1px 2px rgba(15,23,42,0.03), 0 20px 40px -30px rgba(15,23,42,0.18)' };
 const coreStyle: React.CSSProperties = { background:'#fff', borderRadius:17, padding:'1.15rem 1.3rem', boxShadow:'inset 0 1px 1px rgba(255,255,255,0.9)' };
-const cardTitle: React.CSSProperties = { fontSize:12.5, fontWeight:700, marginBottom:10, color:'#0a2e24' };
-const labelSt: React.CSSProperties = { display:'block', fontSize:11, color:'#5b6b66', marginBottom:5, fontWeight:600 };
-const hintText: React.CSSProperties = { fontSize:10.5, color:'#9aa5a1', marginBottom:8, lineHeight:1.5, marginTop: -2 };
-const inputFull: React.CSSProperties = { width:'100%', padding:'9px 11px', borderRadius:10, border:'1.5px solid rgba(10,46,36,0.10)', fontSize:12, fontFamily:FONT, boxSizing:'border-box', outline:'none', background:'#fafcfb' };
-const btnPrimary: React.CSSProperties = { padding:'10px 16px', borderRadius:11, border:'none', background:'linear-gradient(135deg,#13987a,#0F6E56)', color:'#fff', fontSize:12.5, fontWeight:700, cursor:'pointer', fontFamily:FONT, boxShadow:'0 6px 16px -6px rgba(15,110,86,0.5)' };
-const btnSm: React.CSSProperties = { padding:'8px 13px', borderRadius:10, borderWidth:1.5, borderStyle:'solid', borderColor:'rgba(10,46,36,0.10)', background:'#fff', color:'#3a4742', fontSize:11.5, fontWeight:600, cursor:'pointer', fontFamily:FONT, whiteSpace:'nowrap' };
-const btnGhost: React.CSSProperties = { fontSize:12, padding:'7px 14px', borderRadius:10, border:'1px solid rgba(10,46,36,0.08)', textDecoration:'none', color:'#3a4742', background:'#fff', fontWeight:600 };
+const cardTitle: React.CSSProperties = { fontSize:12.5, fontWeight:700, marginBottom:10, color:'#0f1f3d' };
+const labelSt: React.CSSProperties = { display:'block', fontSize:11, color:'#475569', marginBottom:5, fontWeight:600 };
+const hintText: React.CSSProperties = { fontSize:10.5, color:'#94a3b8', marginBottom:8, lineHeight:1.5, marginTop: -2 };
+const inputFull: React.CSSProperties = { width:'100%', padding:'9px 11px', borderRadius:10, border:'1.5px solid rgba(29,78,216,0.10)', fontSize:12, fontFamily:FONT, boxSizing:'border-box', outline:'none', background:'#f8fafc' };
+const btnPrimary: React.CSSProperties = { padding:'10px 16px', borderRadius:11, border:'none', background:`linear-gradient(135deg,${BLUE_LIGHT},${BLUE_DARK})`, color:'#fff', fontSize:12.5, fontWeight:700, cursor:'pointer', fontFamily:FONT, boxShadow:`0 6px 16px -6px ${BLUE}60` };
+const btnSm: React.CSSProperties = { padding:'8px 13px', borderRadius:10, borderWidth:1.5, borderStyle:'solid', borderColor:'rgba(29,78,216,0.10)', background:'#fff', color:'#334155', fontSize:11.5, fontWeight:600, cursor:'pointer', fontFamily:FONT, whiteSpace:'nowrap' };
+const btnGhost: React.CSSProperties = { fontSize:12, padding:'7px 14px', borderRadius:10, border:'1px solid rgba(29,78,216,0.08)', textDecoration:'none', color:'#334155', background:'#fff', fontWeight:600 };
 const pill: React.CSSProperties = { fontSize:10.5, fontWeight:700, padding:'3px 11px', borderRadius:100 };
-const infoNote: React.CSSProperties = { fontSize:10.5, color:'#9aa5a1', marginTop:10, padding:'7px 11px', background:'#f9fafb', borderRadius:9 };
-const emptyBox: React.CSSProperties = { padding:'2rem', textAlign:'center', color:'#9aa5a1', fontSize:11.5, background:'#f9fafb', borderRadius:12 };
+const infoNote: React.CSSProperties = { fontSize:10.5, color:'#94a3b8', marginTop:10, padding:'7px 11px', background:'#f8fafc', borderRadius:9, display:'flex', alignItems:'flex-start' };
+const emptyBox: React.CSSProperties = { padding:'2rem', textAlign:'center', color:'#94a3b8', fontSize:11.5, background:'#f8fafc', borderRadius:12 };
 const msgBox = (color: string, bg: string): React.CSSProperties => ({ fontSize:12, color, background:bg, padding:'10px 14px', borderRadius:12 });
-const centerStyle: React.CSSProperties = { minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#f5f7f6', color:'#6b7280', fontSize:13 };
-const miniCandidateRow: React.CSSProperties = { display:'flex', alignItems:'center', gap:8, padding:'6px 10px', background:'#fafcfb', borderRadius:8, border:'1px solid rgba(10,46,36,0.06)' };
+const centerStyle: React.CSSProperties = { minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#f5f7fa', color:'#6b7280', fontSize:13 };
+const miniCandidateRow: React.CSSProperties = { display:'flex', alignItems:'center', gap:8, padding:'6px 10px', background:'#f8fafc', borderRadius:8, border:'1px solid rgba(29,78,216,0.06)' };
+const kontakRow: React.CSSProperties = { display:'flex', alignItems:'center', gap:8, padding:'7px 2px', borderBottom:'1px solid rgba(29,78,216,0.05)' };
+const miniBtn: React.CSSProperties = { width:24, height:24, borderRadius:8, border:'1px solid rgba(29,78,216,0.10)', background:'#fff', color:'#475569', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 };
+const kembaliBox: React.CSSProperties = { background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:12, padding:'10px 12px' };
+const ttdDoneBox: React.CSSProperties = { display:'flex', gap:10, padding:'10px 12px', background:'#EFF6FF', borderRadius:12, border:'1px solid rgba(29,78,216,0.12)' };
 
 const templateCard = (active: boolean, enabled: boolean): React.CSSProperties => ({
   padding:'14px 12px', borderRadius:14, textAlign:'center',
-  border: `1.5px solid ${active ? '#0F6E56' : 'rgba(10,46,36,0.08)'}`,
-  background: active ? 'linear-gradient(160deg,#f1fbf7,#e2f3eb)' : (enabled ? '#fff' : '#f7f8f7'),
+  border: `1.5px solid ${active ? BLUE : 'rgba(29,78,216,0.08)'}`,
+  background: active ? 'linear-gradient(160deg,#EFF6FF,#DBEAFE)' : (enabled ? '#fff' : '#f7f8f7'),
   opacity: enabled ? 1 : 0.55,
   cursor: enabled ? 'default' : 'not-allowed',
   width: '100%',
 });
-const templateCardIcon: React.CSSProperties = { fontSize:20, marginBottom:6 };
-const templateCardTitle: React.CSSProperties = { fontSize:11.5, fontWeight:700, color:'#0a2e24' };
+const templateCardTitle: React.CSSProperties = { fontSize:11.5, fontWeight:700, color:'#0f1f3d' };
 const templateCardDesc: React.CSSProperties = { fontSize:9.5, color:'#7d8985', marginTop:3, lineHeight:1.4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' };

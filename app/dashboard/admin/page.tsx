@@ -8,7 +8,8 @@ import {
   FiUsers, FiCalendar, FiBell, FiLogOut, FiUser, FiActivity,
   FiFile, FiPieChart, FiTrendingUp, FiList, FiArrowUpRight, FiArchive
 } from 'react-icons/fi';
-import { FaHandshake, FaFileSignature, FaFileAlt } from 'react-icons/fa';
+import { FaFileSignature, FaFileAlt } from 'react-icons/fa';
+import NotifikasiAdminBell from '@/components/NotifikasiAdminBell';
 
 interface Stats {
   pengajuanMenunggu: number; pengajuanDiterima: number; pengajuanDitolak: number;
@@ -102,11 +103,9 @@ export default function AdminDashboard() {
     { href:'/dashboard/superadmin/generate-kode', icon:<FiKey size={19} strokeWidth={1.7} />, label:'Generate Kode',
       desc:'Buat kode status atau akses dokumen MOU/PKS', notif:null, c:'#0C447C', bg:'#e9f1fb' },
     { href:'/dashboard/dokumen', icon:<FiFolder size={19} strokeWidth={1.7} />, label:'Daftar Dokumen',
-      desc:'Lihat & edit status seluruh dokumen MOU/PKS', notif:null, c:'#5B21B6', bg:'#f0ecfb' },
+      desc:'Folder per institusi, filter tahap status, edit & hapus dokumen', notif:null, c:'#5B21B6', bg:'#f0ecfb' },
     { href:'/dashboard/kelola-kegiatan', icon:<FiActivity size={19} strokeWidth={1.7} />, label:'Kelola Kegiatan',
       desc:'Pantau kegiatan & foto dokumentasi mitra', notif:null, c:'#065F46', bg:'#e6f7ef' },
-    { href:'/dashboard/dokumen/tata-kelola', icon:<FaHandshake size={18} />, label:'Tata Kelola Kerja Sama',
-      desc:'Folder per mitra, filter, preview dokumen', notif:null, c:'#065F46', bg:'#e6f7ef' },
     { href:'/dashboard/kontak', icon:<FiUsers size={19} strokeWidth={1.7} />, label:'Kontak Mitra',
       desc:'Direktori email, WhatsApp & PIC seluruh mitra', notif:null, c:'#0C447C', bg:'#e9f1fb' },
     { href:'/dashboard/dokumen/extract-poin', icon:<FiList size={19} strokeWidth={1.7} />, label:'Extract Poin Publik',
@@ -161,7 +160,7 @@ export default function AdminDashboard() {
             SI-POKJA HUMKER
           </div>
           <div style={{ display:'flex', alignItems:'center', gap:9 }}>
-            <button style={navIcon}><FiBell size={15} strokeWidth={1.8} /></button>
+            <NotifikasiAdminBell />
             <div style={{ width:34, height:34, borderRadius:'50%', background:'linear-gradient(150deg,#dff3ec,#b8e6d9)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12.5, fontWeight:800, color:'#085041', border:'1.5px solid #9FE1CB' }}>
               {nama.split(' ').map(n => n[0]).join('').toUpperCase().slice(0,2)}
             </div>

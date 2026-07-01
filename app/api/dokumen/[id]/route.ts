@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSheetData, updateCell } from '@/lib/sheet';
+import { getSheetData, updateCell, appendRow } from '@/lib/sheet';
+import { generateId, formatTanggalWaktu } from '@/lib/utils';
 import { google } from 'googleapis';
+
+const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_WEBAPP_URL!;
 
 const COL = {
   ID:0, JENIS:1, JUDUL:2, ID_MITRA:3, NAMA_MITRA:4, TGL_DIBUAT:5,
@@ -8,9 +11,10 @@ const COL = {
   KODE_EXP:11, DOCS_ID:12, DOCS_URL:13, FOLDER_ID:14,
   DIBUAT_OLEH:15, CATATAN:16, TERAKHIR_DIAKSES:17, FOTO_FOLDER:18,
   TEMPLATE_MITRA:19, TGL_KEG_MULAI:20, TGL_KEG_SELESAI:21, PDF_ID:22,
+  // Penandatanganan (TTD) — kolom baru, ditaruh di akhir (non-breaking)
+  TTD_TIPE:23, TTD_TGL_DIAJUKAN:24, TTD_STATUS:25, TTD_TGL_FINAL:26, TTD_CATATAN:27,
 };
 
-// Urutan status untuk validasi transisi maju
 const URUTAN_STATUS = [
   'Draft','Dalam Proses','Selesai','Kegiatan Berlangsung',
   'Kegiatan Selesai','MOU/PKS Berlaku','Kedaluwarsa',
@@ -61,6 +65,34 @@ function extractPoinDariParagraf(paragraphs: string[]): string[] {
   return poin;
 }
 
+async function kirimNotifikasi(idDokumen: string, tipe: string, judul: string, pesan: string) {
+  try {
+    await fetch(APPS_SCRIPT_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'buatNotifikasiManual', idDokumen, tipe, judul, pesan }),
+    });
+  } catch (e) { console.error('[NOTIF MITRA]', e); }
+}
+
+// Notifikasi ke kotak masuk ADMIN (bukan mitra) — dipakai utk kejadian yg mitra picu tapi perlu perhatian admin
+async function kirimNotifikasiAdmin(idDokumen: string, tipe: string, judul: string, pesan: string) {
+  try {
+    await fetch(APPS_SCRIPT_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'buatNotifikasiAdminManual', idDokumen, tipe, judul, pesan }),
+    });
+  } catch (e) { console.error('[NOTIF ADMIN]', e); }
+}
+
+async function catatKomentarSistem(idDokumen: string, pesan: string) {
+  try {
+    await appendRow('Komentar Revisi', [
+      generateId('KMT'), idDokumen, 'admin', 'sistem', 'Sistem',
+      pesan, formatTanggalWaktu(new Date()), '',
+    ]);
+  } catch (e) { console.error('[KOMENTAR SISTEM]', e); }
+}
+
 // ── GET: Detail dokumen ────────────────────────────────────
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -78,7 +110,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const status = String(row[COL.STATUS]);
     const tglBerakhir = String(row[COL.TGL_BERAKHIR] || '');
 
-    // Hitung sisa hari (untuk status MOU/PKS Berlaku)
     let sisaHari: number | null = null;
     if (status === 'MOU/PKS Berlaku' && tglBerakhir) {
       try {
@@ -108,6 +139,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       tglKegiatanSelesai: String(row[COL.TGL_KEG_SELESAI] || ''),
       pdfId:        String(row[COL.PDF_ID] || ''),
       sisaHari,
+      // Penandatanganan
+      ttdTipe:         String(row[COL.TTD_TIPE] || ''),
+      ttdTglDiajukan:  String(row[COL.TTD_TGL_DIAJUKAN] || ''),
+      ttdStatus:       String(row[COL.TTD_STATUS] || ''),
+      ttdTglFinal:     String(row[COL.TTD_TGL_FINAL] || ''),
+      ttdCatatan:      String(row[COL.TTD_CATATAN] || ''),
     };
 
     let poinOtomatis: string[] = [];
@@ -140,11 +177,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 }
 
-// ── PATCH: Update poin / status / tanggal kegiatan ─────────
+// ── PATCH: Update poin / status / tanggal kegiatan / TTD ───
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const { poin, status, catatan, tglKegiatanMulai, tglKegiatanSelesai, transisi } = await req.json();
+    const body = await req.json();
+    const {
+      poin, status, catatan, tglKegiatanMulai, tglKegiatanSelesai, transisi, alasanKembali,
+      ttdAction, tglDiajukan, alasanTolak, tglFinal,
+    } = body;
 
     const rows = await getSheetData('Dokumen Kerja sama');
     const idx  = rows.findIndex(r => String(r[COL.ID]).trim() === id.trim());
@@ -152,18 +193,98 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const rowNumber = idx + 2;
     const statusSkrg = String(rows[idx][COL.STATUS]).trim();
+    const judulDok = String(rows[idx][COL.JUDUL] || '');
 
-    // Transisi terkontrol (tombol mitra/admin) — validasi maju
+    // ── Alur Penandatanganan (TTD) ──────────────────────────
+    if (ttdAction) {
+      if (ttdAction === 'pilihBasah') {
+        await updateCell('Dokumen Kerja sama', rowNumber, COL.TTD_TIPE + 1, 'basah');
+        await updateCell('Dokumen Kerja sama', rowNumber, COL.TTD_STATUS + 1, 'Menunggu Basah');
+        await kirimNotifikasiAdmin(id, 'ttd-basah', 'Mitra memilih TTD Basah',
+          `Mitra memilih tanda tangan basah untuk dokumen "${judulDok}". Siapkan penerimaan dokumen fisik.`);
+        await catatKomentarSistem(id, '✒ Mitra memilih metode TTD Basah. Menunggu dokumen fisik diterima admin.');
+        return NextResponse.json({ message: 'TTD Basah dipilih. Admin telah diberi tahu.' });
+      }
+
+      if (ttdAction === 'ajukanOnline') {
+        const tgl = String(tglDiajukan || '').trim();
+        if (!tgl) return NextResponse.json({ message: 'Tanggal TTD wajib diisi.' }, { status: 400 });
+        await updateCell('Dokumen Kerja sama', rowNumber, COL.TTD_TIPE + 1, 'online');
+        await updateCell('Dokumen Kerja sama', rowNumber, COL.TTD_TGL_DIAJUKAN + 1, tgl);
+        await updateCell('Dokumen Kerja sama', rowNumber, COL.TTD_STATUS + 1, 'Menunggu Review');
+        await kirimNotifikasiAdmin(id, 'ttd-online', 'Mitra mengajukan tanggal TTD Online',
+          `Mitra mengajukan tanggal TTD Online (${tgl}) untuk dokumen "${judulDok}". Mohon ditinjau.`);
+        await catatKomentarSistem(id, `✒ Mitra mengajukan TTD Online pada tanggal ${tgl}. Menunggu review admin.`);
+        return NextResponse.json({ message: 'Tanggal TTD diajukan. Menunggu review admin.' });
+      }
+
+      if (ttdAction === 'setujuiOnline') {
+        const tglAjuan = String(rows[idx][COL.TTD_TGL_DIAJUKAN] || '');
+        if (!tglAjuan) return NextResponse.json({ message: 'Tidak ada tanggal yang diajukan.' }, { status: 400 });
+        await updateCell('Dokumen Kerja sama', rowNumber, COL.TTD_STATUS + 1, 'Disetujui');
+        await updateCell('Dokumen Kerja sama', rowNumber, COL.TTD_TGL_FINAL + 1, tglAjuan);
+        await kirimNotifikasi(id, 'ttd-disetujui', 'Tanggal TTD disetujui',
+          `Tanggal TTD Online (${tglAjuan}) untuk dokumen "${judulDok}" telah disetujui admin.`);
+        await catatKomentarSistem(id, `✓ Tanggal TTD Online (${tglAjuan}) disetujui admin.`);
+        return NextResponse.json({ message: 'Tanggal TTD disetujui.', ttdTglFinal: tglAjuan });
+      }
+
+      if (ttdAction === 'tolakOnline') {
+        const alasan = String(alasanTolak || '').trim();
+        if (!alasan) return NextResponse.json({ message: 'Alasan penolakan wajib diisi.' }, { status: 400 });
+        await updateCell('Dokumen Kerja sama', rowNumber, COL.TTD_STATUS + 1, '');
+        await updateCell('Dokumen Kerja sama', rowNumber, COL.TTD_TIPE + 1, '');
+        await updateCell('Dokumen Kerja sama', rowNumber, COL.TTD_TGL_DIAJUKAN + 1, '');
+        await updateCell('Dokumen Kerja sama', rowNumber, COL.TTD_CATATAN + 1, alasan);
+        await kirimNotifikasi(id, 'ttd-ditolak', 'Tanggal TTD ditolak',
+          `Tanggal TTD Online untuk dokumen "${judulDok}" ditolak admin. Alasan: ${alasan}. Silakan ajukan ulang.`);
+        await catatKomentarSistem(id, `✕ Tanggal TTD Online ditolak admin. Alasan: ${alasan}`);
+        return NextResponse.json({ message: 'Tanggal TTD ditolak, mitra diminta ajukan ulang.' });
+      }
+
+      if (ttdAction === 'inputBasah') {
+        const tgl = String(tglFinal || '').trim();
+        if (!tgl) return NextResponse.json({ message: 'Tanggal TTD wajib diisi.' }, { status: 400 });
+        await updateCell('Dokumen Kerja sama', rowNumber, COL.TTD_STATUS + 1, 'Disetujui');
+        await updateCell('Dokumen Kerja sama', rowNumber, COL.TTD_TGL_FINAL + 1, tgl);
+        await kirimNotifikasi(id, 'ttd-disetujui', 'Tanggal TTD Basah tercatat',
+          `Dokumen fisik "${judulDok}" diterima. Tanggal TTD tercatat: ${tgl}.`);
+        await catatKomentarSistem(id, `✓ Dokumen fisik diterima. Tanggal TTD Basah tercatat: ${tgl}.`);
+        return NextResponse.json({ message: 'Tanggal TTD Basah tercatat.', ttdTglFinal: tgl });
+      }
+
+      return NextResponse.json({ message: 'Aksi TTD tidak dikenali.' }, { status: 400 });
+    }
+
+    // ── Transisi terkontrol (tombol mitra/admin) — validasi maju ──
     if (transisi) {
       const posSkrg = URUTAN_STATUS.indexOf(statusSkrg);
       const posBaru = URUTAN_STATUS.indexOf(transisi);
-      // Izinkan maju 1 langkah, atau mundur (admin kembalikan ke Draft)
       const bolehMaju  = posBaru === posSkrg + 1;
       const bolehMundur = transisi === 'Draft' && statusSkrg === 'Dalam Proses';
       if (!bolehMaju && !bolehMundur) {
         return NextResponse.json({ message: `Transisi dari "${statusSkrg}" ke "${transisi}" tidak diizinkan.` }, { status: 400 });
       }
+
+      const alasanBersih = String(alasanKembali || '').trim();
+      if (transisi === 'Draft' && bolehMundur && !alasanBersih) {
+        return NextResponse.json({ message: 'Alasan pengembalian ke Draft wajib diisi.' }, { status: 400 });
+      }
+
       await updateCell('Dokumen Kerja sama', rowNumber, COL.STATUS + 1, transisi);
+
+      if (transisi === 'Draft' && bolehMundur && alasanBersih) {
+        await catatKomentarSistem(id, `↩ Dokumen dikembalikan ke Draft. Alasan: ${alasanBersih}`);
+        await kirimNotifikasi(id, 'kembali-draft', 'Dokumen dikembalikan ke Draft',
+          `Dokumen "${judulDok}" dikembalikan admin ke tahap Draft. Alasan: ${alasanBersih}`);
+      }
+
+      // Mitra klik "Selesai Mengisi" (Draft -> Dalam Proses) — beri tahu admin
+      if (transisi === 'Dalam Proses' && statusSkrg === 'Draft') {
+        await kirimNotifikasiAdmin(id, 'selesai-mengisi', 'Dokumen siap ditinjau',
+          `Mitra telah selesai mengisi dokumen "${judulDok}" dan mengirimkannya untuk ditinjau.`);
+      }
+
       return NextResponse.json({ message: 'Status diperbarui.', statusBaru: transisi });
     }
 

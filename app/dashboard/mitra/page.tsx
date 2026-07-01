@@ -2,16 +2,13 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import LoaderPage from '@/components/LoaderPage';
-import { 
-  FiFileText, FiImage, FiDownload, FiTrash2, 
+import {
+  FiFileText, FiImage, FiDownload, FiTrash2,
   FiClock, FiAlertCircle, FiCheckCircle, FiInfo, FiUpload,
-  FiCalendar, FiDatabase, FiLogOut,
-  FiGrid, FiRefreshCw, FiHome
+  FiCalendar, FiDatabase, FiLogOut, FiBell,
+  FiGrid, FiHome, FiEdit2, FiCheck, FiX, FiZap, FiArrowUpRight,
 } from 'react-icons/fi';
-import { 
-  FaBuilding, FaFileSignature, FaFileAlt, FaGoogleDrive,
-  FaDatabase as FaDataBase
-} from 'react-icons/fa';
+import { FaBuilding, FaFileSignature, FaFileAlt } from 'react-icons/fa';
 import { SiGoogledocs } from 'react-icons/si';
 
 interface MitraUser {
@@ -22,8 +19,16 @@ interface MitraUser {
 }
 interface FotoItem {
   fileId: string; nama: string; ukuran: number;
-  url: string; thumbnailUrl: string; tanggalUpload: string;
+  url: string; thumbnailUrl: string; tanggalUpload: string; caption?: string;
 }
+interface Notif { id: string; tipe: string; judul: string; pesan: string; dibaca: boolean; tglDibuat: string; }
+
+const FONT = "'Plus Jakarta Sans', -apple-system, sans-serif";
+const EASE = 'cubic-bezier(0.32, 0.72, 0, 1)';
+const BLUE = '#1D4ED8';
+const BLUE_LIGHT = '#2563EB';
+const BLUE_DARK = '#1E3A8A';
+const GOLD = '#D97706';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -33,8 +38,8 @@ function formatBytes(bytes: number): string {
 
 function barColor(persen: number): string {
   if (persen >= 90) return '#A32D2D';
-  if (persen >= 70) return '#854F0B';
-  return '#0F6E56';
+  if (persen >= 70) return GOLD;
+  return BLUE;
 }
 
 export default function DashboardMitraPage() {
@@ -47,8 +52,17 @@ export default function DashboardMitraPage() {
   const [uploading, setUploading] = useState(false);
   const [error, setError]         = useState('');
   const [msg, setMsg]             = useState('');
-  const [aktivitas, setAktivitas] = useState('');
   const fileInputRef              = useRef<HTMLInputElement>(null);
+
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingCaption, setPendingCaption] = useState('');
+  const [editingCaption, setEditingCaption] = useState<string | null>(null);
+  const [captionDraft, setCaptionDraft] = useState('');
+  const [savingCaption, setSavingCaption] = useState(false);
+
+  const [notif, setNotif] = useState<Notif[]>([]);
+  const [showNotif, setShowNotif] = useState(false);
+  const [labelMitra, setLabelMitra] = useState('');
 
   const loadFoto = useCallback((idDokumen: string) => {
     fetch(`/api/dokumen/foto?idDokumen=${idDokumen}`)
@@ -56,78 +70,90 @@ export default function DashboardMitraPage() {
       .then(d => {
         if (d.files) {
           setFiles(d.files); setTerpakai(d.terpakai);
-          setMaksimal(d.maksimal); setPersen(d.persenTerpakai);
+          setMaksimal(d.maksimal || 5 * 1024 * 1024); setPersen(d.persenTerpakai || 0);
         }
       })
       .catch(() => {});
   }, []);
 
-  const loadAktivitas = useCallback((idDokumen: string) => {
-    fetch(`/api/dokumen/aktivitas?idDokumen=${idDokumen}`)
+  const loadNotif = useCallback((idDokumen: string) => {
+    fetch(`/api/notifikasi?idDokumen=${idDokumen}`)
       .then(r => r.json())
-      .then(d => setAktivitas(d.manualLog || ''))
+      .then(d => setNotif(d.notifikasi || []))
       .catch(() => {});
   }, []);
 
   useEffect(() => {
     const raw = localStorage.getItem('paktasign_mitra');
     if (!raw) { window.location.href = '/login-mitra'; return; }
-
     try {
       const u: MitraUser = JSON.parse(raw);
       setUser(u);
       loadFoto(u.idDokumen);
-      loadAktivitas(u.idDokumen);
-
+      loadNotif(u.idDokumen);
+      fetch(`/api/dokumen/pic?idDokumen=${u.idDokumen}`)
+        .then(r => r.json())
+        .then(d => setLabelMitra(d.label || u.namaMitra))
+        .catch(() => setLabelMitra(u.namaMitra));
       fetch('/api/dokumen/aktivitas', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idDokumen: u.idDokumen, aktor: u.namaMitra, peran: 'mitra' }),
       }).catch(() => {});
-
       setLoading(false);
-    } catch {
-      window.location.href = '/login-mitra';
-    }
-  }, [loadFoto, loadAktivitas]);
+    } catch { window.location.href = '/login-mitra'; }
+  }, [loadFoto, loadNotif]);
 
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !user) return;
+  const belumDibaca = notif.filter(n => !n.dibaca).length;
 
-    const allowedMime = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    if (!allowedMime.includes(file.type)) {
-      setError('Tipe file harus JPG, PNG, atau WEBP.');
-      return;
-    }
-
-    setUploading(true); setError(''); setMsg('');
-
-    const reader = new FileReader();
-    reader.onload = async () => {
+  const bukaNotif = async () => {
+    if (!user) return;
+    setShowNotif(s => !s);
+    if (!showNotif && belumDibaca > 0) {
       try {
-        const base64 = (reader.result as string).split(',')[1];
-        const res = await fetch('/api/dokumen/foto', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            idDokumen: user.idDokumen, namaFile: file.name, base64Data: base64, mimeType: file.type,
-          }),
+        await fetch('/api/notifikasi', {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idDokumen: user.idDokumen, semua: true }),
         });
-        const d = await res.json();
+        setNotif(prev => prev.map(n => ({ ...n, dibaca: true })));
+      } catch {}
+    }
+  };
 
-        if (!res.ok) { setError(d.message || 'Gagal upload.'); setUploading(false); return; }
+  const pilihFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const allowedMime = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (!allowedMime.includes(file.type)) { setError('Tipe file harus JPG, PNG, atau WEBP.'); return; }
+    setPendingFile(file); setPendingCaption(''); setError('');
+  };
 
-        setMsg('Foto berhasil diupload.');
-        loadFoto(user.idDokumen);
-      } catch {
-        setError('Terjadi kesalahan koneksi.');
-      } finally {
-        setUploading(false);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-      }
-    };
-    reader.readAsDataURL(file);
+  const batalPilihFile = () => {
+    setPendingFile(null); setPendingCaption('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const uploadFoto = async () => {
+    if (!pendingFile || !user) return;
+    setUploading(true); setError(''); setMsg('');
+    try {
+      const base64 = await new Promise<string>((res, rej) => {
+        const reader = new FileReader();
+        reader.onload  = () => res((reader.result as string).split(',')[1]);
+        reader.onerror = () => rej(new Error('Gagal baca'));
+        reader.readAsDataURL(pendingFile);
+      });
+      const res = await fetch('/api/dokumen/foto', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idDokumen: user.idDokumen, namaFile: pendingFile.name, base64Data: base64, mimeType: pendingFile.type, caption: pendingCaption }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setError(d.message || 'Gagal upload.'); return; }
+      setMsg('Foto berhasil diupload.');
+      setPendingFile(null); setPendingCaption('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      loadFoto(user.idDokumen);
+    } catch { setError('Terjadi kesalahan koneksi.'); }
+    finally { setUploading(false); }
   };
 
   const hapusFoto = async (fileId: string, nama: string) => {
@@ -135,8 +161,7 @@ export default function DashboardMitraPage() {
     setError(''); setMsg('');
     try {
       const res = await fetch('/api/dokumen/foto', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idDokumen: user.idDokumen, fileId }),
       });
       const d = await res.json();
@@ -146,536 +171,272 @@ export default function DashboardMitraPage() {
     } catch { setError('Terjadi kesalahan koneksi.'); }
   };
 
-  const logout = () => {
-    localStorage.removeItem('paktasign_mitra');
-    window.location.href = '/login-mitra';
+  const mulaiEditCaption = (f: FotoItem) => { setEditingCaption(f.fileId); setCaptionDraft(f.caption || ''); };
+
+  const simpanCaption = async (fileId: string) => {
+    setSavingCaption(true);
+    try {
+      const r = await fetch('/api/dokumen/foto/caption', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileId, caption: captionDraft }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setError(d.message || 'Gagal menyimpan deskripsi.'); return; }
+      setFiles(prev => prev.map(f => f.fileId === fileId ? { ...f, caption: d.caption } : f));
+      setEditingCaption(null);
+    } catch { setError('Gagal menyimpan deskripsi.'); }
+    finally { setSavingCaption(false); }
   };
 
+  const logout = () => { localStorage.removeItem('paktasign_mitra'); window.location.href = '/login-mitra'; };
+
   if (loading || !user) return <LoaderPage text="Memuat Dokumen Kerja Sama..." />;
-  
+
   const statusColor: Record<string, { bg: string; color: string; icon: React.ReactNode }> = {
-    'draft':        { bg: '#f3f4f6', color: '#6b7280', icon: <FiFileText size={12} /> },
-    'terkirim':     { bg: '#E6F1FB', color: '#0C447C', icon: <FiCheckCircle size={12} /> },
-    'ditinjau':     { bg: '#FAEEDA', color: '#854F0B', icon: <FiClock size={12} /> },
-    'menunggu ttd': { bg: '#EDE9FE', color: '#5B21B6', icon: <FiClock size={12} /> },
-    'aktif':        { bg: '#E1F5EE', color: '#085041', icon: <FiCheckCircle size={12} /> },
-    'selesai':      { bg: '#E1F5EE', color: '#085041', icon: <FiCheckCircle size={12} /> },
+    'draft':        { bg: '#f1f3f2', color: '#5b6b66', icon: <FiFileText size={12} /> },
+    'terkirim':     { bg: '#DBEAFE', color: BLUE_DARK, icon: <FiCheckCircle size={12} /> },
+    'ditinjau':     { bg: '#FEF3C7', color: '#92400E', icon: <FiClock size={12} /> },
+    'menunggu ttd': { bg: '#DBEAFE', color: BLUE_DARK, icon: <FiClock size={12} /> },
+    'aktif':        { bg: '#FEF3C7', color: GOLD, icon: <FiZap size={12} /> },
+    'selesai':      { bg: '#DBEAFE', color: BLUE_DARK, icon: <FiCheckCircle size={12} /> },
     'kedaluwarsa':  { bg: '#FCEBEB', color: '#A32D2D', icon: <FiAlertCircle size={12} /> },
   };
   const sc = statusColor[user.status.toLowerCase()] || statusColor['draft'];
+  const inisial = user.namaMitra.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 
   return (
-    <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #f5f5f5 0%, #e8f0f8 100%)', fontFamily: 'sans-serif' }}>
+    <div style={{ minHeight: '100dvh', fontFamily: FONT, background: 'radial-gradient(1000px 480px at 85% -10%, #dbeafe 0%, rgba(219,234,254,0) 55%), linear-gradient(180deg,#f7f9fc,#eef2f8)' }}>
+      <GlobalStyle />
 
-      <nav style={navStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 600, fontSize: 14 }}>
-          <div style={{ 
-            width: 36, height: 36, borderRadius: 10, 
-            background: 'linear-gradient(135deg, #0F6E56 0%, #1a8f70 100%)', 
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 2px 8px rgba(15, 110, 86, 0.2)'
-          }}>
-            <FaBuilding size={16} color="#fff" />
+      {/* Nav pill mengambang */}
+      <div style={{ maxWidth: 880, margin: '0 auto', padding: '1.3rem 1.25rem 0' }}>
+        <nav style={navPill} className="rise">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 800, fontSize: 14, color: '#0f1f3d' }}>
+            <div style={{ width: 34, height: 34, borderRadius: 11, background: `linear-gradient(150deg, ${BLUE_LIGHT}, ${BLUE_DARK})`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 8px 18px -8px ${BLUE}70` }}>
+              <FaBuilding size={15} color="#fff" />
+            </div>
+            <span style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{labelMitra || user.namaMitra}</span>
           </div>
-          <span style={{ color: '#1a1a1a' }}>{user.namaMitra}</span>
-        </div>
-        <button 
-          onClick={logout} 
-          style={{ 
-            fontSize: 12, 
-            padding: '8px 16px', 
-            borderRadius: 8, 
-            border: '2px solid #e5e7eb', 
-            cursor: 'pointer', 
-            background: '#fff', 
-            color: '#374151', 
-            fontFamily: 'sans-serif',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            transition: 'all 0.2s ease'
-          }}
-        >
-          <FiLogOut size={14} /> Keluar
-        </button>
-      </nav>
-
-      <div style={{ maxWidth: 720, margin: '0 auto', padding: '1.25rem' }}>
-
-        {msg && (
-          <div style={{ 
-            ...msgBox('#085041', '#E1F5EE'),
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8
-          }}>
-            <FiCheckCircle size={16} /> {msg}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button onClick={bukaNotif} style={navIcon} className="btn-hover" title="Notifikasi">
+              <FiBell size={15} strokeWidth={1.8} />
+              {belumDibaca > 0 && <span style={notifBadge}>{belumDibaca}</span>}
+            </button>
+            <div style={avatarCircle}>{inisial}</div>
+            <button onClick={logout} style={{ ...navIcon, width: 'auto', padding: '0 13px', gap: 6, fontSize: 12, fontWeight: 600, color: '#54635e' }} className="btn-hover">
+              <FiLogOut size={13} strokeWidth={1.8} /> Keluar
+            </button>
           </div>
-        )}
-        {error && (
-          <div style={{ 
-            ...msgBox('#A32D2D', '#FCEBEB'),
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8
-          }}>
-            <FiAlertCircle size={16} /> {error}
+        </nav>
+      </div>
+
+      <div style={{ maxWidth: 880, margin: '0 auto', padding: '1.5rem 1.25rem 3rem' }}>
+
+        {showNotif && (
+          <div style={{ ...shellStyle, borderColor: '#FDE68A', marginBottom: 16 }} className="fld">
+            <div style={coreStyle}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <div style={cardTitle}><FiBell size={13} style={{ marginRight: 6, verticalAlign: 'middle', color: GOLD }} />Notifikasi</div>
+                <button onClick={() => setShowNotif(false)} style={btnSm} className="btn-hover">Tutup</button>
+              </div>
+              {notif.length === 0 ? (
+                <div style={emptyBox}>Belum ada notifikasi.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 280, overflowY: 'auto' }}>
+                  {notif.map(n => (
+                    <div key={n.id} style={{ display: 'flex', gap: 10, padding: '10px 12px', background: n.tipe === 'hapus-foto' ? '#FFF5F5' : n.tipe === 'publikasi' ? '#FFFBEB' : '#f8fafc', borderRadius: 12, border: `1px solid ${n.tipe === 'hapus-foto' ? '#F7C1C1' : n.tipe === 'publikasi' ? '#FDE68A' : 'rgba(29,78,216,0.1)'}` }}>
+                      {n.tipe === 'hapus-foto' ? <FiTrash2 size={15} style={{ color: '#A32D2D', flexShrink: 0, marginTop: 2 }} />
+                        : n.tipe === 'publikasi' ? <FiZap size={15} style={{ color: GOLD, flexShrink: 0, marginTop: 2 }} />
+                        : <FiInfo size={15} style={{ color: BLUE, flexShrink: 0, marginTop: 2 }} />}
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: n.tipe === 'hapus-foto' ? '#A32D2D' : '#1e293b' }}>{n.judul}</div>
+                        <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 2, lineHeight: 1.5 }}>{n.pesan}</div>
+                        <div style={{ fontSize: 9.5, color: '#94a3b8', marginTop: 4 }}>{n.tglDibuat}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
+
+        {msg   && <div style={{ ...msgBox(BLUE_DARK, '#DBEAFE'), marginBottom: 14 }} className="fld"><FiCheckCircle size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />{msg}</div>}
+        {error && <div style={{ ...msgBox('#A32D2D', '#FCEBEB'), marginBottom: 14 }} className="fld"><FiAlertCircle size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />{error}</div>}
 
         {/* Info dokumen */}
-        <div style={{ ...card, border: '2px solid #e5e7eb' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-            <span style={{ 
-              fontSize: 11, 
-              fontWeight: 600, 
-              padding: '4px 12px', 
-              borderRadius: 100, 
-              background: user.jenis === 'MOU' ? '#E6F1FB' : '#FAEEDA', 
-              color: user.jenis === 'MOU' ? '#0C447C' : '#854F0B',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4
-            }}>
-              {user.jenis === 'MOU' ? <FaFileSignature size={12} /> : <FaFileAlt size={12} />}
-              {user.jenis}
-            </span>
-            <span style={{ 
-              fontSize: 11, 
-              fontWeight: 500, 
-              padding: '4px 12px', 
-              borderRadius: 100, 
-              background: sc.bg, 
-              color: sc.color,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4
-            }}>
-              {sc.icon}
-              {user.status}
-            </span>
-            <span style={{ 
-              fontSize: 10, 
-              padding: '3px 10px', 
-              borderRadius: 100, 
-              background: '#f3f4f6', 
-              color: '#6b7280',
-              marginLeft: 'auto',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4
-            }}>
-              <FiHome size={10} /> ID: {user.idDokumen.slice(0, 8)}
-            </span>
-          </div>
-          <div style={{ 
-            fontSize: 18, 
-            fontWeight: 700, 
-            color: '#1a1a1a',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8
-          }}>
-            <FiFileText size={20} style={{ color: '#0F6E56' }} />
-            {user.judul}
-          </div>
-          <div style={{ 
-            fontSize: 13, 
-            color: '#6b7280', 
-            marginTop: 8,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            flexWrap: 'wrap'
-          }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <FiCalendar size={14} /> Berlaku: {user.tglBerlaku}
-            </span>
-            <span style={{ opacity: 0.3 }}>→</span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <FiClock size={14} /> {user.tglBerakhir}
-            </span>
-          </div>
-          <div style={{ 
-            fontSize: 12, 
-            color: '#9ca3af', 
-            marginTop: 6,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4
-          }}>
-            <FiInfo size={12} /> Kode akses berlaku hingga: {user.kodeExpire}
+        <div style={{ ...shellStyle, marginBottom: 16 }} className="fld">
+          <div style={coreStyle}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+              <span style={{ ...pill, background: user.jenis === 'MOU' ? '#DBEAFE' : '#FEF3C7', color: user.jenis === 'MOU' ? BLUE_DARK : '#92400E' }}>
+                {user.jenis === 'MOU' ? <FaFileSignature size={11} /> : <FaFileAlt size={11} />}
+                {user.jenis}
+              </span>
+              <span style={{ ...pill, background: sc.bg, color: sc.color }}>{sc.icon}{user.status}</span>
+              <span style={{ ...pill, background: '#f1f3f2', color: '#7d8985', marginLeft: 'auto' }}>
+                <FiHome size={10} /> ID {user.idDokumen.slice(0, 8)}
+              </span>
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: '#0f1f3d', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <FiFileText size={22} style={{ color: BLUE, flexShrink: 0 }} />
+              {user.judul}
+            </div>
+            <div style={{ fontSize: 12.5, color: '#64748b', marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><FiCalendar size={13} /> Berlaku: {user.tglBerlaku}</span>
+              <span style={{ opacity: 0.3 }}>→</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><FiClock size={13} /> {user.tglBerakhir}</span>
+            </div>
+            <div style={infoNoteBlue}><FiInfo size={12} style={{ marginRight: 6, flexShrink: 0, marginTop: 1 }} />Kode akses berlaku hingga: {user.kodeExpire}</div>
           </div>
         </div>
 
-        {/* Aktivitas terakhir */}
-        {aktivitas && (
-          <div style={{ 
-            ...card, 
-            padding: '0.75rem 1.25rem',
-            background: 'linear-gradient(135deg, #f9fafb 0%, #f0f4f8 100%)',
-            border: '1px solid #e5e7eb'
-          }}>
-            <div style={{ 
-              fontSize: 12, 
-              color: '#6b7280',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8
-            }}>
-              <FiClock size={14} style={{ color: '#0F6E56' }} />
-              Terakhir diakses: <strong style={{ color: '#374151' }}>{aktivitas}</strong>
+        {/* Kartu utama: Lihat Dokumen */}
+        <a href={`/mitra/dokumen/${user.idDokumen}`} style={{ ...shellStyle, textDecoration: 'none', color: 'inherit', display: 'block', marginBottom: 16 }} className="fld lift">
+          <div style={{ ...coreStyle, display: 'flex', alignItems: 'center', gap: 16, padding: '1.25rem 1.4rem', position: 'relative' }}>
+            <FiArrowUpRight className="arr" size={17} style={{ position: 'absolute', top: 16, right: 16, color: GOLD }} />
+            <div style={{ width: 54, height: 54, borderRadius: 17, background: `linear-gradient(150deg, ${BLUE_LIGHT}, ${BLUE_DARK})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: `0 12px 26px -12px ${BLUE}60` }} className="ic-wrap">
+              <SiGoogledocs size={26} color="#fff" />
+            </div>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#0f1f3d' }}>Lihat Dokumen</div>
+              <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 3 }}>Preview dokumen & diskusi revisi dengan admin</div>
             </div>
           </div>
-        )}
+        </a>
 
-        {/* Dua ikon utama: Docs & Drive */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: '1rem' }}>
-          <a 
-            href={`/mitra/dokumen/${user.idDokumen}`}
-            style={{ 
-              ...iconCard, 
-              cursor: 'pointer', 
-              border: '2px solid #e5e7eb',
-              transition: 'all 0.2s ease',
-              background: 'linear-gradient(135deg, #fff 0%, #f8fafc 100%)',
-              textDecoration: 'none',
-              color: 'inherit',
-              display: 'block'
-            }}
-          >
-            <div style={{ 
-              width: 56, 
-              height: 56, 
-              borderRadius: '50%', 
-              background: 'linear-gradient(135deg, #1a73e8 0%, #0d47a1 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 10px',
-              boxShadow: '0 4px 12px rgba(26, 115, 232, 0.3)'
-            }}>
-              <SiGoogledocs size={28} color="#fff" />
+        {/* Kuota + upload */}
+        <div style={{ ...shellStyle, marginBottom: 16 }} className="fld">
+          <div style={coreStyle}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={cardTitle}><FiDatabase size={13} style={{ marginRight: 6, verticalAlign: 'middle', color: GOLD }} />Penyimpanan Foto Kegiatan</div>
+              <div style={{ fontSize: 11.5, color: barColor(persen), fontWeight: 700, background: `${barColor(persen)}15`, padding: '4px 12px', borderRadius: 100 }}>
+                {formatBytes(terpakai)} / {formatBytes(maksimal)}
+              </div>
             </div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a' }}>Lihat Dokumen</div>
-            <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>Preview & poin perjanjian</div>
-          </a>
+            <div style={{ height: 10, background: '#eef2f6', borderRadius: 100, overflow: 'hidden', boxShadow: 'inset 0 1px 2px rgba(15,23,42,0.06)' }}>
+              <div style={{ height: '100%', borderRadius: 100, width: `${Math.min(100, persen)}%`, background: `linear-gradient(90deg, ${barColor(persen)}, ${barColor(persen)}cc)`, transition: `width 0.7s ${EASE}` }} />
+            </div>
+            <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 8, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+              <FiInfo size={12} />{persen}% terpakai · {files.length} foto
+              {persen >= 100 && <span style={{ color: '#A32D2D', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}><FiAlertCircle size={12} /> Kuota penuh, hapus foto untuk upload baru</span>}
+            </div>
 
-          <div style={{ 
-            ...iconCard, 
-            border: '2px solid #e5e7eb',
-            background: 'linear-gradient(135deg, #fff 0%, #f8fafc 100%)'
-          }}>
-            <div style={{ 
-              width: 56, 
-              height: 56, 
-              borderRadius: '50%', 
-              background: 'linear-gradient(135deg, #0F6E56 0%, #1a8f70 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 10px',
-              boxShadow: '0 4px 12px rgba(15, 110, 86, 0.3)'
-            }}>
-              <FaGoogleDrive size={28} color="#fff" />
+            <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid rgba(15,23,42,0.06)' }}>
+              {!pendingFile ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <label htmlFor="file-upload" style={{ ...btnPrimary, opacity: persen >= 100 ? 0.5 : 1, cursor: persen >= 100 ? 'not-allowed' : 'pointer' }} className="btn-hover">
+                    <FiUpload size={14} style={{ marginRight: 7, verticalAlign: 'middle' }} />Pilih Foto
+                  </label>
+                  <input ref={fileInputRef} id="file-upload" type="file" accept="image/jpeg,image/png,image/webp" onChange={pilihFile} disabled={persen >= 100} style={{ display: 'none' }} />
+                  <span style={{ fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 4 }}><FiInfo size={12} /> JPG, PNG, WEBP</span>
+                </div>
+              ) : (
+                <div style={pendingBox} className="fld">
+                  <div style={{ fontSize: 11.5, fontWeight: 700, color: '#0f1f3d', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <FiImage size={13} /> {pendingFile.name}
+                  </div>
+                  <textarea value={pendingCaption} onChange={e => setPendingCaption(e.target.value)} placeholder="Tulis deskripsi foto ini (opsional)…" style={{ ...inputStyle, height: 58, resize: 'none', marginBottom: 9 }} />
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={batalPilihFile} disabled={uploading} style={{ ...btnSm, flex: 1 }} className="btn-hover">Batal</button>
+                    <button onClick={uploadFoto} disabled={uploading} style={{ ...btnPrimary, flex: 2, width: '100%' }} className="btn-hover">
+                      {uploading ? 'Mengunggah…' : 'Unggah Foto'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a' }}>Penyimpanan Foto</div>
-            <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
-              <FiImage size={12} style={{ display: 'inline', marginRight: 4 }} />
-              {files.length} foto · {formatBytes(terpakai)} / 5MB
-            </div>
-          </div>
-        </div>
-
-        {/* Bar kuota foto */}
-        <div style={{ ...card, border: '2px solid #e5e7eb' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <div style={{ 
-              fontSize: 13, 
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6
-            }}>
-              <FaDataBase size={14} style={{ color: '#0F6E56' }} />
-              Penyimpanan Foto Kegiatan
-            </div>
-            <div style={{ 
-              fontSize: 12, 
-              color: barColor(persen), 
-              fontWeight: 600,
-              background: `${barColor(persen)}15`,
-              padding: '4px 12px',
-              borderRadius: 100
-            }}>
-              {formatBytes(terpakai)} / {formatBytes(maksimal)}
-            </div>
-          </div>
-          <div style={{ height: 12, background: '#f3f4f6', borderRadius: 100, overflow: 'hidden', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.05)' }}>
-            <div style={{ 
-              height: '100%', 
-              borderRadius: 100, 
-              width: `${Math.min(100, persen)}%`, 
-              background: `linear-gradient(90deg, ${barColor(persen)} 0%, ${barColor(persen)}dd 100%)`, 
-              transition: 'width .6s ease, background .4s ease',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-            }}></div>
-          </div>
-          <div style={{ 
-            fontSize: 12, 
-            color: '#9ca3af', 
-            marginTop: 8,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4
-          }}>
-            <FiInfo size={12} />
-            {persen}% terpakai · {files.length} foto
-            {persen >= 100 && (
-              <span style={{ color: '#A32D2D', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4 }}>
-                <FiAlertCircle size={12} /> Kuota penuh, hapus foto untuk upload baru
-              </span>
-            )}
-          </div>
-
-          <div style={{ 
-            marginTop: 14, 
-            paddingTop: 14, 
-            borderTop: '2px solid #f3f4f6',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12
-          }}>
-            <label 
-              htmlFor="file-upload"
-              style={{ 
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '10px 20px',
-                background: persen >= 100 ? '#f3f4f6' : 'linear-gradient(135deg, #0F6E56 0%, #1a8f70 100%)',
-                color: persen >= 100 ? '#9ca3af' : '#fff',
-                borderRadius: 8,
-                cursor: persen >= 100 ? 'not-allowed' : 'pointer',
-                fontSize: 13,
-                fontWeight: 500,
-                border: 'none',
-                fontFamily: 'sans-serif',
-                transition: 'all 0.2s ease',
-                boxShadow: persen >= 100 ? 'none' : '0 2px 8px rgba(15, 110, 86, 0.2)'
-              }}
-            >
-              <FiUpload size={16} />
-              {uploading ? 'Mengupload...' : 'Upload Foto'}
-            </label>
-            <input
-              ref={fileInputRef}
-              id="file-upload"
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              onChange={handleFileSelect}
-              disabled={uploading || persen >= 100}
-              style={{ display: 'none' }}
-            />
-            {uploading && (
-              <span style={{ 
-                fontSize: 12, 
-                color: '#6b7280',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6
-              }}>
-                <FiRefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} />
-                Uploading...
-              </span>
-            )}
-            <span style={{ 
-              fontSize: 11, 
-              color: '#9ca3af',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4
-            }}>
-              <FiInfo size={12} />
-              JPG, PNG, WEBP
-            </span>
           </div>
         </div>
 
         {/* Galeri foto */}
-        <div style={{ ...card, border: '2px solid #e5e7eb' }}>
-          <div style={{ 
-            fontSize: 13, 
-            fontWeight: 600, 
-            marginBottom: 12,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6
-          }}>
-            <FiGrid size={14} style={{ color: '#0F6E56' }} />
-            Foto Kegiatan ({files.length})
-          </div>
-          {files.length === 0 ? (
-            <div style={{ 
-              textAlign: 'center', 
-              padding: '2rem 1rem',
-              background: '#f9fafb',
-              borderRadius: 8,
-              border: '2px dashed #e5e7eb'
-            }}>
-              <FiImage size={32} style={{ color: '#9ca3af', opacity: 0.5 }} />
-              <p style={{ fontSize: 13, color: '#9ca3af', marginTop: 8 }}>
-                Belum ada foto diupload. Upload bukti kegiatan di atas.
-              </p>
-            </div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))', gap: 12 }}>
-              {files.map(f => (
-                <div key={f.fileId} style={{ 
-                  border: '2px solid #e5e7eb', 
-                  borderRadius: 12, 
-                  overflow: 'hidden',
-                  transition: 'all 0.2s ease',
-                  background: '#fff'
-                }}>
-                  <img
-                    src={`/api/foto/${f.fileId}`}
-                    alt={f.nama}
-                    style={{ 
-                      width: '100%', 
-                      height: 130, 
-                      objectFit: 'cover', 
-                      display: 'block', 
-                      background: '#f3f4f6' 
-                    }}
-                  />
-                  <div style={{ padding: '8px 10px' }}>
-                    <div style={{ 
-                      fontSize: 11, 
-                      fontWeight: 500, 
-                      whiteSpace: 'nowrap', 
-                      overflow: 'hidden', 
-                      textOverflow: 'ellipsis',
-                      color: '#1a1a1a'
-                    }}>
-                      {f.nama}
-                    </div>
-                    <div style={{ 
-                      fontSize: 10, 
-                      color: '#9ca3af', 
-                      marginTop: 2,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 4
-                    }}>
-                      <FiDatabase size={10} /> {formatBytes(f.ukuran)}
-                    </div>
-                    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                      <a
-                        href={`/api/foto/${f.fileId}?download=1`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ 
-                          flex: 1, 
-                          fontSize: 11, 
-                          padding: '5px 8px', 
-                          borderRadius: 6, 
-                          border: '1px solid #e5e7eb', 
-                          background: '#f9fafb', 
-                          color: '#374151', 
-                          cursor: 'pointer', 
-                          fontFamily: 'sans-serif', 
-                          textDecoration: 'none', 
-                          textAlign: 'center',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: 4,
-                          transition: 'all 0.2s ease'
-                        }}
-                      >
-                        <FiDownload size={12} /> Unduh
-                      </a>
-                      <button
-                        onClick={() => hapusFoto(f.fileId, f.nama)}
-                        style={{ 
-                          flex: 1, 
-                          fontSize: 11, 
-                          padding: '5px 8px', 
-                          borderRadius: 6, 
-                          border: '1px solid #FCEBEB', 
-                          background: '#fff', 
-                          color: '#A32D2D', 
-                          cursor: 'pointer', 
-                          fontFamily: 'sans-serif',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: 4,
-                          transition: 'all 0.2s ease'
-                        }}
-                      >
-                        <FiTrash2 size={12} /> Hapus
-                      </button>
+        <div style={shellStyle} className="fld">
+          <div style={coreStyle}>
+            <div style={cardTitle}><FiGrid size={13} style={{ marginRight: 6, verticalAlign: 'middle', color: BLUE }} />Foto Kegiatan ({files.length})</div>
+            {files.length === 0 ? (
+              <div style={{ ...emptyBox, padding: '2.5rem 1rem', border: '2px dashed rgba(29,78,216,0.14)', background: '#f8fafc' }}>
+                <FiImage size={30} style={{ color: '#cbd5e1', marginBottom: 8 }} />
+                <p style={{ fontSize: 12.5, color: '#94a3b8', margin: 0 }}>Belum ada foto diupload. Upload bukti kegiatan di atas.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))', gap: 12 }}>
+                {files.map((f, i) => (
+                  <div key={f.fileId} style={fotoCard} className="fld" >
+                    <img src={`/api/foto/${f.fileId}`} alt={f.nama} style={{ width: '100%', height: 130, objectFit: 'cover', display: 'block', background: '#eef2f6' }} />
+                    <div style={{ padding: '9px 10px' }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#0f1f3d' }}>{f.nama}</div>
+                      <div style={{ fontSize: 9.5, color: '#94a3b8', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <FiDatabase size={9} /> {formatBytes(f.ukuran)}
+                      </div>
+
+                      {editingCaption === f.fileId ? (
+                        <div style={{ marginTop: 7 }}>
+                          <textarea value={captionDraft} onChange={e => setCaptionDraft(e.target.value)} style={{ ...inputStyle, height: 44, resize: 'none', fontSize: 10.5, padding: '6px 8px', marginBottom: 5 }} autoFocus />
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button onClick={() => setEditingCaption(null)} style={miniIconBtn} className="btn-hover"><FiX size={11} /></button>
+                            <button onClick={() => simpanCaption(f.fileId)} disabled={savingCaption} style={{ ...miniIconBtn, background: BLUE, color: '#fff', borderColor: BLUE }} className="btn-hover"><FiCheck size={11} /></button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div onClick={() => mulaiEditCaption(f)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'flex-start', gap: 4, marginTop: 7 }}>
+                          <span style={{ fontSize: 10.5, color: f.caption ? '#334155' : '#cbd5e1', lineHeight: 1.4, flex: 1 }}>{f.caption || 'Tambah deskripsi…'}</span>
+                          <FiEdit2 size={10} style={{ color: '#94a3b8', flexShrink: 0, marginTop: 2 }} />
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', gap: 6, marginTop: 9 }}>
+                        <a href={`/api/foto/${f.fileId}?download=1`} target="_blank" rel="noopener noreferrer" style={{ ...btnSm, flex: 1, textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }} className="btn-hover">
+                          <FiDownload size={11} /> Unduh
+                        </a>
+                        <button onClick={() => hapusFoto(f.fileId, f.nama)} style={{ ...btnSm, flex: 1, color: '#A32D2D', borderColor: '#FCEBEB', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }} className="btn-hover">
+                          <FiTrash2 size={11} /> Hapus
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        <style jsx>{`
-          @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-          }
-        `}</style>
       </div>
     </div>
   );
 }
 
-const navStyle: React.CSSProperties = { 
-  display: 'flex', 
-  alignItems: 'center', 
-  justifyContent: 'space-between', 
-  padding: '0.85rem 1.5rem', 
-  background: '#fff', 
-  borderBottom: '2px solid #e5e7eb', 
-  position: 'sticky', 
-  top: 0, 
-  zIndex: 100,
-  boxShadow: '0 1px 4px rgba(0,0,0,0.04)'
-};
+function GlobalStyle() {
+  return (
+    <style>{`
+      @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+      @keyframes fadeUp { from { opacity:0; transform: translateY(14px); filter: blur(3px);} to { opacity:1; transform: translateY(0); filter: blur(0);} }
+      .fld, .rise { animation: fadeUp 0.6s cubic-bezier(0.32,0.72,0,1) both; }
+      .btn-hover { transition: all 0.35s cubic-bezier(0.32,0.72,0,1); }
+      .btn-hover:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.04); }
+      .btn-hover:active:not(:disabled) { transform: scale(0.98); }
+      .lift { transition: all 0.4s cubic-bezier(0.32,0.72,0,1); }
+      .lift:hover { transform: translateY(-3px); box-shadow: 0 22px 40px -26px rgba(29,78,216,0.3) !important; }
+      .lift:hover .ic-wrap { transform: scale(1.06) rotate(-3deg); }
+      .ic-wrap { transition: transform 0.4s cubic-bezier(0.32,0.72,0,1); }
+      .lift:hover .arr { opacity: 1; transform: translate(2px,-2px); }
+      .arr { transition: all 0.4s cubic-bezier(0.32,0.72,0,1); opacity: 0; }
+    `}</style>
+  );
+}
 
-const card: React.CSSProperties = { 
-  background: '#fff', 
-  borderRadius: 12, 
-  padding: '1rem 1.25rem', 
-  border: '1px solid #e5e7eb', 
-  marginBottom: '1rem',
-  boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
-};
-
-const iconCard: React.CSSProperties = { 
-  background: '#fff', 
-  borderRadius: 12, 
-  padding: '1.5rem 1.25rem', 
-  border: '1px solid #e5e7eb', 
-  textAlign: 'center', 
-  fontFamily: 'sans-serif', 
-  color: 'inherit',
-  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-  transition: 'all 0.2s ease'
-};
-
-const msgBox = (color: string, bg: string): React.CSSProperties => ({ 
-  fontSize: 13, 
-  color, 
-  background: bg, 
-  padding: '10px 14px', 
-  borderRadius: 8, 
-  marginBottom: 10,
-  border: `1px solid ${color}20`
-});
+const navPill: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.72)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(29,78,216,0.08)', borderRadius: 100, padding: '9px 12px 9px 16px', boxShadow: '0 10px 26px -18px rgba(15,23,42,0.25)' };
+const navIcon: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: 100, border: '1px solid rgba(29,78,216,0.08)', background: '#fff', color: '#54635e', cursor: 'pointer', fontFamily: FONT, position: 'relative' };
+const avatarCircle: React.CSSProperties = { width: 32, height: 32, borderRadius: '50%', background: `linear-gradient(150deg, ${BLUE_LIGHT}, ${GOLD})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 800, color: '#fff', boxShadow: `0 4px 10px -3px ${GOLD}70` };
+const shellStyle: React.CSSProperties = { background: 'rgba(255,255,255,0.65)', borderWidth: 1, borderStyle: 'solid', borderColor: 'rgba(29,78,216,0.08)', borderRadius: 22, padding: 6, boxShadow: '0 1px 2px rgba(15,23,42,0.03), 0 20px 40px -30px rgba(15,23,42,0.18)' };
+const coreStyle: React.CSSProperties = { background: '#fff', borderRadius: 17, padding: '1.15rem 1.3rem', boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.9)' };
+const cardTitle: React.CSSProperties = { fontSize: 12.5, fontWeight: 700, marginBottom: 12, color: '#0f1f3d' };
+const pill: React.CSSProperties = { fontSize: 10.5, fontWeight: 700, padding: '4px 11px', borderRadius: 100, display: 'inline-flex', alignItems: 'center', gap: 4 };
+const infoNoteBlue: React.CSSProperties = { fontSize: 10.5, color: BLUE_DARK, marginTop: 12, padding: '8px 11px', background: '#EFF6FF', borderRadius: 9, lineHeight: 1.5, display: 'flex', alignItems: 'flex-start' };
+const emptyBox: React.CSSProperties = { padding: '2rem', textAlign: 'center', color: '#94a3b8', fontSize: 11.5, background: '#f8fafc', borderRadius: 14 };
+const msgBox = (color: string, bg: string): React.CSSProperties => ({ fontSize: 12, color, background: bg, padding: '10px 14px', borderRadius: 12 });
+const notifBadge: React.CSSProperties = { position: 'absolute', top: -3, right: -3, minWidth: 15, height: 15, padding: '0 4px', borderRadius: 100, background: '#A32D2D', color: '#fff', fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' };
+const btnPrimary: React.CSSProperties = { padding: '10px 18px', borderRadius: 11, border: 'none', background: `linear-gradient(135deg, ${BLUE_LIGHT}, ${BLUE_DARK})`, color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, boxShadow: `0 6px 16px -6px ${BLUE}60`, display: 'inline-flex', alignItems: 'center', textDecoration: 'none' };
+const btnSm: React.CSSProperties = { padding: '8px 13px', borderRadius: 10, borderWidth: 1.5, borderStyle: 'solid', borderColor: 'rgba(29,78,216,0.12)', background: '#fff', color: '#334155', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', fontFamily: FONT, whiteSpace: 'nowrap' };
+const inputStyle: React.CSSProperties = { width: '100%', padding: '9px 11px', borderRadius: 10, border: '1.5px solid rgba(29,78,216,0.10)', fontSize: 12, fontFamily: FONT, boxSizing: 'border-box', outline: 'none', background: '#f8fafc' };
+const pendingBox: React.CSSProperties = { background: '#EFF6FF', border: '1px solid rgba(29,78,216,0.14)', borderRadius: 14, padding: '12px 13px' };
+const miniIconBtn: React.CSSProperties = { width: 24, height: 24, borderRadius: 8, border: '1px solid rgba(29,78,216,0.12)', background: '#fff', color: '#475569', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' };
+const fotoCard: React.CSSProperties = { borderRadius: 14, overflow: 'hidden', border: '1px solid rgba(29,78,216,0.08)', background: '#fff' };
