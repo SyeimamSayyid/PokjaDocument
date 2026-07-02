@@ -9,6 +9,7 @@ const COL = {
   TGL_BERLAKU:6, TGL_BERAKHIR:7, DURASI:8, STATUS:9, KODE:10,
   KODE_EXP:11, DOCS_ID:12, DOCS_URL:13, FOLDER_ID:14,
   DIBUAT_OLEH:15, CATATAN:16,
+  DIVISI:23, // sudah ada dari desain awal sheet — dipakai utk tampilan, TIDAK ditulis appendRow di sini
 };
 
 // ── POST: Generate kode + buat Docs + Drive via Apps Script ──
@@ -18,7 +19,7 @@ export async function POST(req: NextRequest) {
     const {
       tipeKode, idMitra, namaMitra, namaPIC, jabatanPIC,
       jenis, judul, durasiTahun, dibuatOleh,
-      templateMitraId, // ← FIX 1: TAMBAH INI
+      templateMitraId, divisi, // ← divisi: array dari Pengajuan, dibawa ke dokumen
     } = body;
 
     if (!namaMitra?.trim() || !jenis || !['MOU','PKS'].includes(jenis)) {
@@ -83,7 +84,11 @@ export async function POST(req: NextRequest) {
         ...(templateMitraId ? { templateMitraId } : {}), // ← FIX 2: Conditional spread
       });
 
-      // Simpan ke Sheets
+      const divisiArr: string[] = Array.isArray(divisi) ? divisi.filter(Boolean) : (divisi ? [divisi] : []);
+      const divisiStr = divisiArr.join(',');
+
+      // Simpan ke Sheets — kolom 19-22 sengaja dikosongkan (diisi flow lain belakangan:
+      // template mitra, tanggal kegiatan, PDF), divisi di kolom 23 dibawa dari Pengajuan.
       await appendRow('Dokumen Kerja sama', [
         idDokumen, jenis, judul.trim(),
         idMitra || '', namaMitra.trim(),
@@ -94,6 +99,8 @@ export async function POST(req: NextRequest) {
         docsId, docsUrl, folderId,
         dibuatOleh || 'Superadmin', '',
         '', fotoFolderId,
+        '', '', '', '', // 19 TemplateMitraID, 20 TglKegMulai, 21 TglKegSelesai, 22 PDFDriveID
+        divisiStr,       // 23 Divisi
       ]);
 
       return NextResponse.json({
@@ -134,6 +141,8 @@ export async function GET() {
       docsUrl:     r[COL.DOCS_URL],
       folderId:    r[COL.FOLDER_ID],
       dibuatOleh:  r[COL.DIBUAT_OLEH],
+      catatan:     String(r[COL.CATATAN] || ''),
+      divisi:      String(r[COL.DIVISI] || '').split(',').map(s => s.trim()).filter(Boolean),
     })).reverse();
     return NextResponse.json({ data });
   } catch (err) {
@@ -181,11 +190,14 @@ export async function PATCH(req: NextRequest) {
       catatan:     COL.CATATAN + 1,
       tglBerlaku:  COL.TGL_BERLAKU + 1,
       tglBerakhir: COL.TGL_BERAKHIR + 1,
+      divisi:      COL.DIVISI + 1,
     };
 
     for (const [key, val] of Object.entries(fields)) {
       const col = map[key];
-      if (col) await updateCell('Dokumen Kerja sama', found.rowNumber, col, val as string);
+      if (!col) continue;
+      const v = key === 'divisi' && Array.isArray(val) ? val.join(',') : (val as string);
+      await updateCell('Dokumen Kerja sama', found.rowNumber, col, v);
     }
 
     return NextResponse.json({ message: 'Dokumen berhasil diperbarui.' });

@@ -188,6 +188,7 @@ export default function PengajuanPage() {
       if (!res.ok) { const d = await res.json(); setError(d.message || 'Gagal ubah divisi.'); return; }
       setData(prev => prev.map(p => p.id === item.id ? { ...p, divisi: next } : p));
       if (detail?.id === item.id) setDetail(prev => prev ? { ...prev, divisi: next } : prev);
+      if (accItem?.id === item.id) setAccItem(prev => prev ? { ...prev, divisi: next } : prev);
     } catch { setError('Gagal mengubah divisi.'); }
   };
 
@@ -211,6 +212,7 @@ export default function PengajuanPage() {
   const handleGenerateFromAcc = async () => {
     if (!accItem) return;
     if (!judulDok.trim()) { setError('Judul dokumen wajib diisi.'); return; }
+    if ((accItem.divisi || []).length === 0) { setError('Tetapkan minimal 1 divisi sebelum generate dokumen.'); return; }
     setGenerating(true); setError('');
     setEmailTerkirim(false);
     setShowPlaneAnimation(false);
@@ -233,6 +235,7 @@ export default function PengajuanPage() {
           namaPIC: '', jabatanPIC: '', jenis: accItem.jenis, judul: judulDok.trim(),
           durasiTahun: durasiDok, dibuatOleh: role,
           templateMitraId: pilihanTemplate === 'mitra' ? (accItem.fileDokumenId || '') : '',
+          divisi: accItem.divisi || [],
         }),
       });
       const d = await res.json();
@@ -686,6 +689,38 @@ export default function PengajuanPage() {
                 <div style={{ marginBottom:12 }}>
                   <label style={labelSt}>
                     <Building size={14} style={{ marginRight:4 }} />
+                    Divisi Penanganan <span style={{ color:'#DC2626' }}>*</span>
+                    <span style={{ fontWeight:400, color:'#94a3b8', marginLeft:6, fontSize:10.5 }}>(wajib, pilih 1–{MAKS_DIVISI})</span>
+                  </label>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                    {DIVISI_LIST.map(dv => {
+                      const dvArr = accItem.divisi || [];
+                      const checked = dvArr.includes(dv.key);
+                      const disabled = !checked && dvArr.length >= MAKS_DIVISI;
+                      return (
+                        <button key={dv.key} type="button" disabled={disabled} onClick={() => toggleDivisi(accItem, dv.key)}
+                          style={{
+                            padding:'9px 10px', borderRadius:9, cursor: disabled ? 'not-allowed' : 'pointer',
+                            fontFamily:'sans-serif', fontSize:12, textAlign:'left',
+                            border:`2px solid ${checked ? dv.color : '#e2e8f0'}`,
+                            background: checked ? dv.bg : '#fff',
+                            color: checked ? dv.color : '#334155',
+                            fontWeight: checked ? 600 : 400,
+                            opacity: disabled ? 0.4 : 1,
+                          }}>
+                          {dv.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {(accItem.divisi || []).length === 0 && (
+                    <div style={{ fontSize:10.5, color:'#DC2626', marginTop:6 }}>Belum ada divisi dipilih — wajib diisi sebelum generate.</div>
+                  )}
+                </div>
+
+                <div style={{ marginBottom:12 }}>
+                  <label style={labelSt}>
+                    <Building size={14} style={{ marginRight:4 }} />
                     Mitra (dari daftar sistem)
                   </label>
                   <select style={inputFull} value={idMitraAcc} onChange={e => setIdMitraAcc(e.target.value)}>
@@ -774,7 +809,7 @@ export default function PengajuanPage() {
                   <div style={{ fontSize:10, color:'#94a3b8', marginTop:4 }}>Minimal 5 tahun</div>
                 </div>
 
-                <button onClick={handleGenerateFromAcc} disabled={generating || !judulDok.trim()} style={{ ...btnPrimary, width:'100%', height:48, fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', gap:8, opacity: (generating || !judulDok.trim()) ? 0.7 : 1 }} className="btn-hover">
+                <button onClick={handleGenerateFromAcc} disabled={generating || !judulDok.trim() || (accItem.divisi || []).length === 0} style={{ ...btnPrimary, width:'100%', height:48, fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', gap:8, opacity: (generating || !judulDok.trim() || (accItem.divisi || []).length === 0) ? 0.6 : 1 }} className="btn-hover">
                   {generating ? (
                     <>
                       <div style={{ width:18, height:18, border:'2px solid rgba(255,255,255,.3)', borderTop:'2px solid #fff', borderRadius:'50%', animation: 'spin 0.8s linear infinite' }} />

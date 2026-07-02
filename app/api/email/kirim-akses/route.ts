@@ -5,7 +5,7 @@ const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_WEBAPP_URL!;
 // Link login mitra — sesuaikan dengan domain produksi bila sudah deploy
 const LINK_LOGIN = process.env.NEXT_PUBLIC_BASE_URL
   ? `${process.env.NEXT_PUBLIC_BASE_URL}/login`
-  : 'https://paktasign.vercel.app/login';
+  : 'https://pokja-document.vercel.app/login-mitra';
 
 export async function POST(req: NextRequest) {
   try {

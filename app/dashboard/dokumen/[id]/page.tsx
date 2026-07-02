@@ -19,6 +19,7 @@ interface Dokumen {
   folderId: string; dibuatOleh: string; catatan: string; fotoFolderId: string;
   tglKegiatanMulai: string; tglKegiatanSelesai: string; pdfId: string;
   sisaHari: number | null;
+  divisi: string[];
   ttdTipe: string; ttdTglDiajukan: string; ttdStatus: string; ttdTglFinal: string; ttdCatatan: string;
 }
 
@@ -50,6 +51,12 @@ const STATUS_DESC: Record<string, string> = {
 };
 
 const FONT = "'Plus Jakarta Sans', -apple-system, sans-serif";
+const DIVISI_LABEL: Record<string, { label: string; color: string; bg: string }> = {
+  pencegahan:    { label: 'Pencegahan',    color: '#1E3A8A', bg: '#DBEAFE' },
+  pemberantasan: { label: 'Pemberantasan', color: '#A32D2D', bg: '#FEE2E2' },
+  rehabilitasi:  { label: 'Rehabilitasi',  color: '#5B21B6', bg: '#EDE9FE' },
+  pemberdayaan:  { label: 'Pemberdayaan',  color: '#92400E', bg: '#FEF3C7' },
+};
 const BLUE = '#1D4ED8';
 const BLUE_LIGHT = '#2563EB';
 const BLUE_DARK = '#1E3A8A';
@@ -82,6 +89,10 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
   const [showKembaliBox, setShowKembaliBox] = useState(false);
   const [alasanKembali, setAlasanKembali] = useState('');
 
+  const [divisiDraft, setDivisiDraft] = useState<string[]>([]);
+  const [divisiSaving, setDivisiSaving] = useState(false);
+  const MAKS_DIVISI = 4;
+
   const [ttdSaving, setTtdSaving] = useState(false);
   const [showTolakTtd, setShowTolakTtd] = useState(false);
   const [alasanTolakTtd, setAlasanTolakTtd] = useState('');
@@ -97,6 +108,7 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
         setEditStatus(d.dokumen.status);
         setTglMulai(d.dokumen.tglKegiatanMulai || '');
         setTglSelesai(d.dokumen.tglKegiatanSelesai || '');
+        setDivisiDraft(d.dokumen.divisi || []);
         setLoading(false);
       })
       .catch(() => { setError('Gagal memuat dokumen.'); setLoading(false); });
@@ -157,6 +169,34 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
     await transisi('Draft', alasanKembali.trim());
     setShowKembaliBox(false); setAlasanKembali('');
   };
+
+  const toggleDivisiDraft = (key: string) => {
+    setDivisiDraft(current => {
+      if (current.includes(key)) return current.filter(d => d !== key);
+      if (current.length >= MAKS_DIVISI) return current;
+      return [...current, key];
+    });
+  };
+
+  const divisiBerubah = dok ? JSON.stringify([...divisiDraft].sort()) !== JSON.stringify([...(dok.divisi || [])].sort()) : false;
+
+  const simpanDivisi = async () => {
+    if (!dok) return;
+    setDivisiSaving(true); setError(''); setMsg('');
+    try {
+      const res = await fetch('/api/superadmin/generate-kode', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: dok.id, fields: { divisi: divisiDraft } }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setError(d.message || 'Gagal ubah divisi.'); return; }
+      setDok(prev => prev ? { ...prev, divisi: divisiDraft } : prev);
+      setMsg('Divisi penanganan berhasil disimpan.');
+    } catch { setError('Gagal mengubah divisi.'); }
+    finally { setDivisiSaving(false); }
+  };
+
+  const batalDivisi = () => { if (dok) setDivisiDraft(dok.divisi || []); };
 
   const ttdRequest = async (body: Record<string, unknown>) => {
     setTtdSaving(true); setError(''); setMsg('');
@@ -297,6 +337,10 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
                     {dok.sisaHari > 0 ? `${dok.sisaHari} hari tersisa` : 'Berakhir hari ini'}
                   </span>
                 )}
+                {(dok.divisi || []).map(dv => {
+                  const info = DIVISI_LABEL[dv] || { label: dv, color:'#64748b', bg:'#f1f5f9' };
+                  return <span key={dv} style={{ ...pill, background: info.bg, color: info.color }}>{info.label}</span>;
+                })}
               </div>
               <div style={{ fontSize:19, fontWeight:800, marginBottom:4, color:'#0f1f3d', letterSpacing:'-0.02em' }}>{dok.judul}</div>
               <div style={{ fontSize:13.5, color:BLUE, fontWeight:600, display:'flex', alignItems:'center', gap:6 }}><FiHome size={13} />{dok.namaMitra}</div>
@@ -337,6 +381,40 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
 
         {/* Kolom kanan */}
         <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+
+          <div style={shellStyle} className="fld">
+            <div style={coreStyle}>
+              <div style={cardTitle}>Divisi Penanganan <span style={{ fontWeight:400, color:'#94a3b8', fontSize:10 }}>(pilih 0–{MAKS_DIVISI})</span></div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom: divisiBerubah ? 10 : 0 }}>
+                {Object.entries(DIVISI_LABEL).map(([key, info]) => {
+                  const checked = divisiDraft.includes(key);
+                  const disabled = !checked && divisiDraft.length >= MAKS_DIVISI;
+                  return (
+                    <button key={key} type="button" disabled={disabled} onClick={() => toggleDivisiDraft(key)}
+                      style={{
+                        padding:'9px 10px', borderRadius:9, cursor: disabled ? 'not-allowed' : 'pointer',
+                        fontFamily:FONT, fontSize:12, textAlign:'left',
+                        border:`1.5px solid ${checked ? info.color : 'rgba(29,78,216,0.10)'}`,
+                        background: checked ? info.bg : '#fff',
+                        color: checked ? info.color : '#334155',
+                        fontWeight: checked ? 700 : 500,
+                        opacity: disabled ? 0.45 : 1,
+                      }} className="btn-hover">
+                      {info.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {divisiBerubah && (
+                <div style={{ display:'flex', gap:6 }} className="fld">
+                  <button onClick={batalDivisi} disabled={divisiSaving} style={{ ...btnSm, flex:1 }} className="btn-hover">Batal</button>
+                  <button onClick={simpanDivisi} disabled={divisiSaving} style={{ ...btnPrimary, flex:1 }} className="btn-hover">
+                    {divisiSaving ? 'Menyimpan…' : 'Simpan Perubahan'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
 
           {kontak && (kontak.email || kontak.noWa || kontak.namaPIC) && (
             <div style={shellStyle} className="fld">

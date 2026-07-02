@@ -11,8 +11,9 @@ const COL = {
   KODE_EXP:11, DOCS_ID:12, DOCS_URL:13, FOLDER_ID:14,
   DIBUAT_OLEH:15, CATATAN:16, TERAKHIR_DIAKSES:17, FOTO_FOLDER:18,
   TEMPLATE_MITRA:19, TGL_KEG_MULAI:20, TGL_KEG_SELESAI:21, PDF_ID:22,
-  // Penandatanganan (TTD) — kolom baru, ditaruh di akhir (non-breaking)
-  TTD_TIPE:23, TTD_TGL_DIAJUKAN:24, TTD_STATUS:25, TTD_TGL_FINAL:26, TTD_CATATAN:27,
+  DIVISI:23, // sudah ada dari desain awal — JANGAN dipakai ulang untuk field lain
+  // Penandatanganan (TTD) — digeser ke 24-28 supaya tidak bentrok dgn DIVISI (23)
+  TTD_TIPE:24, TTD_TGL_DIAJUKAN:25, TTD_STATUS:26, TTD_TGL_FINAL:27, TTD_CATATAN:28,
 };
 
 const URUTAN_STATUS = [
@@ -139,6 +140,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       tglKegiatanSelesai: String(row[COL.TGL_KEG_SELESAI] || ''),
       pdfId:        String(row[COL.PDF_ID] || ''),
       sisaHari,
+      divisi:       String(row[COL.DIVISI] || '').split(',').map(s => s.trim()).filter(Boolean),
       // Penandatanganan
       ttdTipe:         String(row[COL.TTD_TIPE] || ''),
       ttdTglDiajukan:  String(row[COL.TTD_TGL_DIAJUKAN] || ''),

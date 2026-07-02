@@ -8,8 +8,15 @@ const DIVISI_LABEL: Record<string, string> = {
   'rehabilitasi':'Rehabilitasi', 'pemberdayaan':'Pemberdayaan',
 };
 
+// Kolom Kegiatan Eplanning (0-based) — hanya yang dipakai di sini
+const KEG = { TGL_DITETAPKAN:17, TGL_BERAKHIR_MOU:18 };
+
 // Kolom Dokumen Kerja sama (0-based)
 const DOK = { ID:0, FOTO_FOLDER:18, TGL_KEG_MULAI:20, TGL_KEG_SELESAI:21, DIVISI:23 };
+
+function parseDivisi(raw: string): string[] {
+  return String(raw || '').split(',').map(s => s.trim()).filter(Boolean);
+}
 
 // Hitung bucket publikasi dari tanggal kegiatan
 function hitungBucket(tglMulai: string, tglSelesai: string, fallback: string): string {
@@ -60,7 +67,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
 
-    // AKAN DATANG: dari Kegiatan Eplanning yang publik
+    // AKAN DATANG (Rencana PKS): dari Kegiatan Eplanning yang publik
     let akanDatang: Record<string, unknown>[] = [];
     try {
       const kegRows = await getSheetData('Kegiatan Eplanning');
@@ -72,12 +79,17 @@ export async function GET(req: NextRequest) {
         .map(r => {
           const target = parseInt(String(r[6]||'0'))||0;
           const terisi = parseInt(String(r[7]||'0'))||0;
+          const divisiArr = parseDivisi(String(r[2]||''));
           return {
-            id:String(r[0]), divisi:String(r[2]), divisiLabel:DIVISI_LABEL[String(r[2])]||String(r[2]),
+            id:String(r[0]),
+            divisi:divisiArr,
+            divisiLabel:divisiArr.map(d => DIVISI_LABEL[d] || d),
             judul:String(r[3]), deskripsi:String(r[4]), jenis:String(r[5]),
             target, terisi, sisaKuota:target-terisi,
             wilayah:String(r[8]||''), biaya:String(r[9]||''),
             tglMulai:String(r[10]||''), tglTarget:String(r[11]||''),
+            tglDitetapkan:String(r[KEG.TGL_DITETAPKAN]||''),
+            tglBerakhirMou:String(r[KEG.TGL_BERAKHIR_MOU]||''),
             status:String(r[12]), kuotaPenuh:terisi>=target,
           };
         });

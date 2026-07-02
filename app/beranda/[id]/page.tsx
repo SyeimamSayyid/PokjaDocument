@@ -2,37 +2,9 @@
 
 import { useEffect, useState, use } from 'react';
 import {
-  ArrowLeft,
-  ChevronRight,
-  Calendar,
-  MapPin,
-  Building,
-  FileText,
-  Tag,
-  Clock,
-  PlayCircle,
-  CheckCircle,
-  Image,
-  X,
-  Info,
-  Check,
-  List,
-  CalendarDays,
-  Eye,
-  FileCheck,
-  Home,
-  Users,
-  Award,
-  Download,
-  ZoomIn,
-  Maximize2,
-  Minimize2,
-  Grid,
-  List as ListIcon,
-  FolderOpen,
-  ChevronLeft,
-  Pause,
-  Play
+  ArrowLeft, ChevronRight, MapPin, Building, FileText, Tag, Clock,
+  PlayCircle, CheckCircle, Image as ImageIcon, X, Info, Check, List,
+  CalendarDays, Eye, FileCheck, ChevronLeft, Pause, Play,
 } from 'lucide-react';
 
 interface KegiatanDetail {
@@ -44,25 +16,16 @@ interface KegiatanDetail {
   foto: { fileId: string; thumbnailUrl: string; nama: string; ukuran: number }[];
 }
 
+const FONT = "'Plus Jakarta Sans', -apple-system, sans-serif";
+const BLUE = '#1D4ED8';
+const BLUE_LIGHT = '#2563EB';
+const BLUE_DARK = '#1E3A8A';
+const GOLD = '#D97706';
+
 const STATUS_LABEL: Record<string, { label: string; color: string; bg: string; icon: any }> = {
-  'akan-berlangsung': { 
-    label: 'Akan Berlangsung', 
-    color: '#0C447C', 
-    bg: '#E6F1FB',
-    icon: Clock
-  },
-  'berlangsung': { 
-    label: 'Sedang Berlangsung', 
-    color: '#065F46', 
-    bg: '#D1FAE5',
-    icon: PlayCircle
-  },
-  'telah-berlangsung': {
-    label: 'Telah Berlangsung', 
-    color: '#065F46', 
-    bg: '#A7F3D0',
-    icon: CheckCircle
-  },
+  'akan-berlangsung': { label: 'Akan Berlangsung', color: BLUE_DARK, bg: '#DBEAFE', icon: Clock },
+  'berlangsung':       { label: 'Sedang Berlangsung', color: BLUE, bg: '#DBEAFE', icon: PlayCircle },
+  'telah-berlangsung': { label: 'Telah Berlangsung', color: '#334155', bg: '#eef2f6', icon: CheckCircle },
 };
 
 function formatTanggal(tgl: string) {
@@ -70,7 +33,6 @@ function formatTanggal(tgl: string) {
   try { return new Date(tgl).toLocaleDateString('id-ID', { day:'numeric', month:'long', year:'numeric' }); }
   catch { return tgl; }
 }
-
 function formatBytes(b: number) {
   if (b < 1024) return `${b} B`;
   if (b < 1024*1024) return `${(b/1024).toFixed(1)} KB`;
@@ -83,11 +45,8 @@ export default function BeritaDetailPage({ params }: { params: Promise<{ id: str
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
   const [lightbox, setLightbox] = useState<string | null>(null);
-  const [hoveredPhoto, setHoveredPhoto] = useState<string | null>(null);
-  
-  // State untuk slideshow
+
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
-  const [isSlideshowActive, setIsSlideshowActive] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
 
   useEffect(() => {
@@ -101,130 +60,49 @@ export default function BeritaDetailPage({ params }: { params: Promise<{ id: str
       .finally(() => setLoading(false));
   }, [id]);
 
-  // Auto-slide effect
   useEffect(() => {
     if (!item || item.foto.length === 0 || isPaused) return;
-    
     const interval = setInterval(() => {
       setCurrentSlideIndex((prev) => (prev + 1) % item.foto.length);
-    }, 3000); // Ganti setiap 3 detik
-
+    }, 3000);
     return () => clearInterval(interval);
   }, [item, isPaused]);
 
-  // Reset slide index when item changes
-  useEffect(() => {
-    setCurrentSlideIndex(0);
-    setIsPaused(false);
-  }, [item]);
+  useEffect(() => { setCurrentSlideIndex(0); setIsPaused(false); }, [item]);
 
   const goToSlide = (index: number) => {
-    if (item) {
-      setCurrentSlideIndex(index);
-      setIsPaused(true);
-      // Resume setelah 5 detik tidak ada interaksi
-      setTimeout(() => {
-        setIsPaused(false);
-      }, 5000);
-    }
+    if (!item) return;
+    setCurrentSlideIndex(index); setIsPaused(true);
+    setTimeout(() => setIsPaused(false), 5000);
   };
-
   const goToPrevSlide = () => {
-    if (item) {
-      setCurrentSlideIndex((prev) => (prev - 1 + item.foto.length) % item.foto.length);
-      setIsPaused(true);
-      setTimeout(() => {
-        setIsPaused(false);
-      }, 5000);
-    }
+    if (!item) return;
+    setCurrentSlideIndex((prev) => (prev - 1 + item.foto.length) % item.foto.length);
+    setIsPaused(true); setTimeout(() => setIsPaused(false), 5000);
   };
-
   const goToNextSlide = () => {
-    if (item) {
-      setCurrentSlideIndex((prev) => (prev + 1) % item.foto.length);
-      setIsPaused(true);
-      setTimeout(() => {
-        setIsPaused(false);
-      }, 5000);
-    }
+    if (!item) return;
+    setCurrentSlideIndex((prev) => (prev + 1) % item.foto.length);
+    setIsPaused(true); setTimeout(() => setIsPaused(false), 5000);
   };
-
-  const togglePause = () => {
-    setIsPaused(!isPaused);
-  };
+  const togglePause = () => setIsPaused(!isPaused);
 
   if (loading) return (
-    <div style={{ 
-      minHeight:'100vh', 
-      display:'flex', 
-      flexDirection:'column',
-      alignItems:'center', 
-      justifyContent:'center', 
-      fontFamily:'sans-serif', 
-      color:'#6b7280',
-      gap:16
-    }}>
-      <div style={{
-        width:40,
-        height:40,
-        border:'3px solid #f3f4f6',
-        borderTop:'3px solid #0F6E56',
-        borderRadius:'50%',
-        animation: 'spin 0.8s linear infinite'
-      }} />
-      <div style={{ fontSize:14 }}>Memuat detail kegiatan...</div>
-      <style>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
+    <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', fontFamily:FONT, color:'#64748b', gap:16 }}>
+      <div style={{ width:38, height:38, border:'3px solid #eef2f6', borderTop:`3px solid ${BLUE}`, borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
+      <div style={{ fontSize:13.5 }}>Memuat detail kegiatan...</div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 
   if (error || !item) return (
-    <div style={{ 
-      minHeight:'100vh', 
-      display:'flex', 
-      flexDirection:'column', 
-      alignItems:'center', 
-      justifyContent:'center', 
-      fontFamily:'sans-serif', 
-      color:'#A32D2D',
-      padding:'2rem'
-    }}>
-      <div style={{ 
-        fontSize:56, 
-        marginBottom:16,
-        opacity:0.7
-      }}>
-        <FileText size={56} style={{ color:'#fca5a5' }} />
-      </div>
-      <div style={{ fontSize:16, fontWeight:600 }}>{error || 'Kegiatan tidak ditemukan.'}</div>
-      <a 
-        href="/beranda" 
-        style={{ 
-          marginTop:16, 
-          color:'#0F6E56', 
-          textDecoration:'none', 
-          fontSize:13,
-          display:'flex',
-          alignItems:'center',
-          gap:6,
-          padding:'8px 16px',
-          borderRadius:8,
-          background:'#F0FDF4',
-          transition: 'all .2s ease'
-        }}
-        onMouseEnter={(e) => {
-          (e.currentTarget as HTMLElement).style.background = '#D1FAE5';
-        }}
-        onMouseLeave={(e) => {
-          (e.currentTarget as HTMLElement).style.background = '#F0FDF4';
-        }}
-      >
-        <ArrowLeft size={16} />
-        Kembali ke Beranda
+    <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', fontFamily:FONT, color:'#A32D2D', padding:'2rem', textAlign:'center' }}>
+      <FileText size={52} style={{ color:'#f7b4b4', marginBottom:16 }} />
+      <div style={{ fontSize:16, fontWeight:700 }}>{error || 'Kegiatan tidak ditemukan.'}</div>
+      <a href="/beranda" style={{ marginTop:16, color: BLUE, textDecoration:'none', fontSize:13, display:'flex', alignItems:'center', gap:6, padding:'9px 18px', borderRadius:100, background:'#EFF6FF', fontWeight:600 }} className="btn-hover">
+        <ArrowLeft size={15} /> Kembali ke Beranda
       </a>
+      <style>{`.btn-hover{transition:all .25s ease}.btn-hover:hover{filter:brightness(1.05)}`}</style>
     </div>
   );
 
@@ -233,693 +111,185 @@ export default function BeritaDetailPage({ params }: { params: Promise<{ id: str
   const hasPhotos = item.foto.length > 0;
 
   return (
-    <div style={{ minHeight:'100vh', background:'#f8fafb', fontFamily:'sans-serif' }}>
+    <div style={{ minHeight:'100vh', background:'linear-gradient(180deg,#f7f9fc,#eef2f8)', fontFamily: FONT }}>
+      <GlobalStyle />
 
-      {/* Navbar */}
-      <nav style={{ 
-        background:'#fff', 
-        borderBottom:'1px solid #e5e7eb', 
-        padding:'12px 24px', 
-        display:'flex', 
-        alignItems:'center', 
-        gap:12, 
-        position:'sticky', 
-        top:0, 
-        zIndex:100,
-        boxShadow:'0 1px 3px rgba(0,0,0,.04)'
-      }}>
-        <a 
-          href="/beranda" 
-          style={{ 
-            fontSize:12, 
-            color:'#6b7280', 
-            textDecoration:'none',
-            display:'flex',
-            alignItems:'center',
-            gap:6,
-            padding:'4px 8px',
-            borderRadius:6,
-            transition: 'all .2s ease'
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.background = '#f3f4f6';
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLElement).style.background = 'transparent';
-          }}
-        >
-          <ArrowLeft size={14} />
-          Beranda
+      <nav style={{ background:'rgba(255,255,255,0.75)', backdropFilter:'blur(10px)', borderBottom:'1px solid rgba(29,78,216,0.06)', padding:'13px 22px', display:'flex', alignItems:'center', gap:12, position:'sticky', top:0, zIndex:100 }}>
+        <a href="/beranda" style={{ fontSize:12.5, color:'#64748b', textDecoration:'none', display:'flex', alignItems:'center', gap:6, fontWeight:600, padding:'5px 10px', borderRadius:8 }} className="btn-hover">
+          <ArrowLeft size={14} /> Beranda
         </a>
-        <span style={{ color:'#e5e7eb' }}>|</span>
-        <span style={{ fontSize:12, color:'#9ca3af', display:'flex', alignItems:'center', gap:6 }}>
-          <FileText size={14} />
-          Detail Kegiatan
+        <span style={{ color:'rgba(29,78,216,0.15)' }}>|</span>
+        <span style={{ fontSize:12, color:'#94a3b8', display:'flex', alignItems:'center', gap:6, fontWeight:500 }}>
+          <FileText size={13} /> Detail Kegiatan
         </span>
         <span style={{ flex:1 }} />
-        <span style={{ 
-          fontSize:10, 
-          color:'#9ca3af',
-          display:'flex',
-          alignItems:'center',
-          gap:4
-        }}>
-          <Eye size={12} />
-          Publik
+        <span style={{ fontSize:10.5, color:'#94a3b8', display:'flex', alignItems:'center', gap:4, fontWeight:600 }}>
+          <Eye size={12} /> Publik
         </span>
       </nav>
 
-      <div style={{ maxWidth:760, margin:'0 auto', padding:'1.5rem 1.25rem' }}>
+      <div style={{ maxWidth:760, margin:'0 auto', padding:'1.75rem 1.25rem 2rem' }}>
 
-        {/* Header dengan animasi */}
-        <div style={{ 
-          marginBottom:24,
-          animation: 'fadeInUp 0.5s ease-out'
-        }}>
-          <div style={{ display:'flex', gap:8, marginBottom:12, flexWrap:'wrap' }}>
-            <span style={{ 
-              fontSize:11, 
-              fontWeight:600, 
-              padding:'4px 14px', 
-              borderRadius:100, 
-              background:item.jenis==='MOU'?'#E6F1FB':'#FAEEDA', 
-              color:item.jenis==='MOU'?'#0C447C':'#854F0B',
-              display:'flex',
-              alignItems:'center',
-              gap:4
-            }}>
-              <FileCheck size={12} />
-              {item.jenis}
-            </span>
-            {item.divisi && (
-              <span style={{ 
-                fontSize:11, 
-                fontWeight:600, 
-                padding:'4px 14px', 
-                borderRadius:100, 
-                background:'#EDE9FE', 
-                color:'#5B21B6',
-                display:'flex',
-                alignItems:'center',
-                gap:4
-              }}>
-                <Tag size={12} />
-                {item.divisiLabel || item.divisi}
-              </span>
-            )}
-            <span style={{ 
-              fontSize:11, 
-              fontWeight:600, 
-              padding:'4px 14px', 
-              borderRadius:100, 
-              background:st.bg, 
-              color:st.color,
-              display:'flex',
-              alignItems:'center',
-              gap:4
-            }}>
-              <StatusIcon size={12} />
-              {st.label}
-            </span>
+        {/* Header */}
+        <div style={{ marginBottom:20 }} className="fld">
+          <div style={{ display:'flex', gap:7, marginBottom:13, flexWrap:'wrap' }}>
+            <span style={pillTag(item.jenis==='MOU'?'#DBEAFE':'#FEF3C7', item.jenis==='MOU'?BLUE_DARK:'#92400E')}><FileCheck size={12} />{item.jenis}</span>
+            {item.divisi && <span style={pillTag('#EDE9FE', '#5B21B6')}><Tag size={12} />{item.divisiLabel || item.divisi}</span>}
+            <span style={pillTag(st.bg, st.color)}><StatusIcon size={12} />{st.label}</span>
           </div>
 
-          <h1 style={{ 
-            fontSize:24, 
-            fontWeight:700, 
-            lineHeight:1.3, 
-            marginBottom:10, 
-            color:'#1a1a2e'
-          }}>
+          <h1 style={{ fontSize:25, fontWeight:800, lineHeight:1.3, marginBottom:12, color:'#0f1f3d', letterSpacing:'-0.02em' }}>
             Kerja Sama {item.jenis}: {item.namaMitra}
           </h1>
 
-          <div style={{ 
-            display:'flex', 
-            gap:16, 
-            fontSize:13, 
-            color:'#6b7280', 
-            flexWrap:'wrap',
-            background:'#fff',
-            padding:'10px 16px',
-            borderRadius:10,
-            border:'1px solid #e5e7eb'
-          }}>
-            {item.tanggalKegiatan && (
-              <span style={{ display:'flex', alignItems:'center', gap:6 }}>
-                <CalendarDays size={16} />
-                {formatTanggal(item.tanggalKegiatan)}
-              </span>
-            )}
-            {item.tempatKegiatan && (
-              <span style={{ display:'flex', alignItems:'center', gap:6 }}>
-                <MapPin size={16} />
-                {item.tempatKegiatan}
-              </span>
-            )}
-            <span style={{ display:'flex', alignItems:'center', gap:6 }}>
-              <Building size={16} />
-              {item.namaMitra}
-            </span>
+          <div style={{ ...shellStyle }}>
+            <div style={{ ...coreStyle, padding:'11px 17px', display:'flex', gap:16, fontSize:13, color:'#64748b', flexWrap:'wrap' }}>
+              {item.tanggalKegiatan && <span style={{ display:'flex', alignItems:'center', gap:7 }}><CalendarDays size={15} style={{ color: BLUE }} />{formatTanggal(item.tanggalKegiatan)}</span>}
+              {item.tempatKegiatan && <span style={{ display:'flex', alignItems:'center', gap:7 }}><MapPin size={15} style={{ color: BLUE }} />{item.tempatKegiatan}</span>}
+              <span style={{ display:'flex', alignItems:'center', gap:7 }}><Building size={15} style={{ color: BLUE }} />{item.namaMitra}</span>
+            </div>
           </div>
         </div>
 
         {/* Narasi */}
-        <div style={{ 
-          background:'#fff', 
-          borderRadius:14, 
-          padding:'1.5rem', 
-          border:'1px solid #e5e7eb', 
-          marginBottom:18,
-          boxShadow:'0 1px 4px rgba(0,0,0,.04)',
-          transition: 'all .3s ease',
-          animation: 'fadeInUp 0.5s ease-out 0.05s both'
-        }}>
-          <div style={{ 
-            fontSize:11, 
-            fontWeight:600, 
-            color:'#6b7280', 
-            textTransform:'uppercase', 
-            letterSpacing:0.8, 
-            marginBottom:12,
-            display:'flex',
-            alignItems:'center',
-            gap:8
-          }}>
-            <FileText size={16} />
-            Narasi Kegiatan
+        <div style={{ ...shellStyle, marginBottom:16, animationDelay:'0.05s' }} className="fld">
+          <div style={coreStyle}>
+            <div style={sectionLabel}><FileText size={14} /> Narasi Kegiatan</div>
+            <p style={{ fontSize:14, lineHeight:1.85, color:'#334155', margin:0 }}>{item.narasi}</p>
           </div>
-          <p style={{ 
-            fontSize:14, 
-            lineHeight:1.8, 
-            color:'#374151', 
-            margin:0
-          }}>
-            {item.narasi}
-          </p>
         </div>
 
         {/* Poin */}
-        <div style={{ 
-          background:'#fff', 
-          borderRadius:14, 
-          padding:'1.5rem', 
-          border:'1px solid #e5e7eb', 
-          marginBottom:18,
-          boxShadow:'0 1px 4px rgba(0,0,0,.04)',
-          animation: 'fadeInUp 0.5s ease-out 0.1s both'
-        }}>
-          <div style={{ 
-            fontSize:11, 
-            fontWeight:600, 
-            color:'#6b7280', 
-            textTransform:'uppercase', 
-            letterSpacing:0.8, 
-            marginBottom:12,
-            display:'flex',
-            alignItems:'center',
-            gap:8
-          }}>
-            <List size={16} />
-            {item.statusPublikasi === 'telah-berlangsung' ? 'Kegiatan yang Terlaksana' : 'Rangkaian Kegiatan'}
-          </div>
-          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-            {item.poinDipilih.map((p, i) => (
-              <div 
-                key={i} 
-                style={{ 
-                  display:'flex', 
-                  gap:12, 
-                  fontSize:14, 
-                  color:'#374151', 
-                  lineHeight:1.6, 
-                  padding:'10px 14px', 
-                  background:'#f9fafb', 
-                  borderRadius:8,
-                  transition: 'all .2s ease',
-                  animation: `fadeInUp 0.3s ease-out ${0.1 + i * 0.05}s both`
-                }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLElement).style.background = '#f3f4f6';
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLElement).style.background = '#f9fafb';
-                }}
-              >
-                <span style={{ 
-                  color:'#0F6E56', 
-                  fontWeight:700, 
-                  flexShrink:0,
-                  marginTop:2
-                }}>
-                  <Check size={16} />
-                </span>
-                <span>{p}</span>
-              </div>
-            ))}
+        <div style={{ ...shellStyle, marginBottom:16, animationDelay:'0.1s' }} className="fld">
+          <div style={coreStyle}>
+            <div style={sectionLabel}><List size={14} /> {item.statusPublikasi === 'telah-berlangsung' ? 'Kegiatan yang Terlaksana' : 'Rangkaian Kegiatan'}</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
+              {item.poinDipilih.map((p, i) => (
+                <div key={i} style={{ display:'flex', gap:11, fontSize:13.5, color:'#334155', lineHeight:1.6, padding:'11px 14px', background:'#f8fafc', borderRadius:11 }}>
+                  <Check size={16} style={{ color: BLUE, flexShrink:0, marginTop:1 }} />
+                  <span>{p}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
-        {/* Foto kegiatan dengan Slideshow */}
+        {/* Foto kegiatan — slideshow */}
         {hasPhotos && (
-          <div style={{ 
-            background:'#fff', 
-            borderRadius:14, 
-            padding:'1.5rem', 
-            border:'1px solid #e5e7eb', 
-            marginBottom:18,
-            boxShadow:'0 1px 4px rgba(0,0,0,.04)',
-            animation: 'fadeInUp 0.5s ease-out 0.15s both',
-            overflow:'hidden'
-          }}>
-            <div style={{ 
-              display:'flex',
-              justifyContent:'space-between',
-              alignItems:'center',
-              marginBottom:14
-            }}>
-              <div style={{ 
-                fontSize:11, 
-                fontWeight:600, 
-                color:'#6b7280', 
-                textTransform:'uppercase', 
-                letterSpacing:0.8,
-                display:'flex',
-                alignItems:'center',
-                gap:8
-              }}>
-                <Image size={16} />
-                Dokumentasi Kegiatan
-                <span style={{ 
-                  fontSize:10, 
-                  background:'#f3f4f6', 
-                  padding:'2px 8px', 
-                  borderRadius:100,
-                  color:'#6b7280'
-                }}>
-                  {item.foto.length} foto
-                </span>
+          <div style={{ ...shellStyle, marginBottom:16, animationDelay:'0.15s' }} className="fld">
+            <div style={{ ...coreStyle, overflow:'hidden' }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14, flexWrap:'wrap', gap:8 }}>
+                <div style={sectionLabel}>
+                  <ImageIcon size={14} /> Dokumentasi Kegiatan
+                  <span style={{ fontSize:10, background:'#eef2f6', padding:'2px 9px', borderRadius:100, color:'#64748b', textTransform:'none', letterSpacing:0, fontWeight:600 }}>{item.foto.length} foto</span>
+                </div>
+                <div style={{ display:'flex', gap:6 }}>
+                  <button onClick={togglePause} style={miniBtn} className="btn-hover">
+                    {isPaused ? <Play size={13} /> : <Pause size={13} />} {isPaused ? 'Lanjut' : 'Jeda'}
+                  </button>
+                  <span style={{ fontSize:10.5, color:'#94a3b8', display:'flex', alignItems:'center', background:'#f8fafc', padding:'5px 11px', borderRadius:8, fontWeight:600 }}>
+                    {currentSlideIndex + 1} / {item.foto.length}
+                  </span>
+                </div>
               </div>
-              <div style={{ display:'flex', gap:6 }}>
-                <button
-                  onClick={togglePause}
-                  style={{
-                    padding:'4px 10px',
-                    borderRadius:6,
-                    border:'1px solid #e5e7eb',
-                    background:'#fff',
-                    fontSize:11,
-                    color:'#6b7280',
-                    cursor:'pointer',
-                    display:'flex',
-                    alignItems:'center',
-                    gap:4,
-                    transition: 'all .2s ease'
-                  }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLElement).style.background = '#f3f4f6';
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLElement).style.background = '#fff';
-                  }}
-                >
-                  {isPaused ? <Play size={14} /> : <Pause size={14} />}
-                  {isPaused ? 'Lanjut' : 'Jeda'}
-                </button>
-                <span style={{ 
-                  fontSize:10, 
-                  color:'#9ca3af',
-                  display:'flex',
-                  alignItems:'center',
-                  background:'#f9fafb',
-                  padding:'4px 10px',
-                  borderRadius:6
-                }}>
-                  {currentSlideIndex + 1} / {item.foto.length}
-                </span>
-              </div>
-            </div>
 
-            {/* Slideshow Container */}
-            <div style={{ 
-              position:'relative',
-              borderRadius:10,
-              overflow:'hidden',
-              background:'#f3f4f6',
-              marginBottom:12
-            }}>
-              <div style={{
-                position:'relative',
-                width:'100%',
-                paddingBottom:'66.67%', // 3:2 aspect ratio
-                overflow:'hidden'
-              }}>
-                {item.foto.map((f, index) => (
-                  <div
-                    key={f.fileId}
-                    style={{
-                      position:'absolute',
-                      top:0,
-                      left:0,
-                      width:'100%',
-                      height:'100%',
-                      transition: 'all 0.6s cubic-bezier(0.4, 0, 0.2, 1)',
-                      transform: index === currentSlideIndex ? 'translateX(0)' : index < currentSlideIndex ? 'translateX(-100%)' : 'translateX(100%)',
-                      opacity: index === currentSlideIndex ? 1 : 0,
-                      cursor: 'pointer'
-                    }}
-                    onClick={() => setLightbox(`/api/foto/${f.fileId}`)}
-                  >
-                    <img
-                      src={f.thumbnailUrl}
-                      alt={f.nama}
-                      style={{
-                        width:'100%',
-                        height:'100%',
-                        objectFit:'cover',
-                        display:'block'
-                      }}
-                    />
-                    <div style={{
-                      position:'absolute',
-                      bottom:0,
-                      left:0,
-                      right:0,
-                      padding:'12px 16px',
-                      background:'linear-gradient(transparent, rgba(0,0,0,0.6))',
-                      color:'#fff',
-                      fontSize:12,
-                      display:'flex',
-                      justifyContent:'space-between',
-                      alignItems:'center'
-                    }}>
-                      <span style={{ 
-                        maxWidth:'70%',
-                        overflow:'hidden',
-                        textOverflow:'ellipsis',
-                        whiteSpace:'nowrap'
-                      }}>
-                        {f.nama}
-                      </span>
-                      <span style={{ 
-                        background:'rgba(255,255,255,0.2)',
-                        padding:'2px 10px',
-                        borderRadius:4,
-                        fontSize:10,
-                        backdropFilter:'blur(4px)'
-                      }}>
-                        {formatBytes(f.ukuran)}
-                      </span>
+              <div style={{ position:'relative', borderRadius:14, overflow:'hidden', background:'#eef2f6', marginBottom:12 }}>
+                <div style={{ position:'relative', width:'100%', paddingBottom:'66.67%', overflow:'hidden' }}>
+                  {item.foto.map((f, index) => (
+                    <div key={f.fileId}
+                      style={{ position:'absolute', top:0, left:0, width:'100%', height:'100%', transition:'all 0.6s cubic-bezier(0.32,0.72,0,1)',
+                        transform: index === currentSlideIndex ? 'translateX(0)' : index < currentSlideIndex ? 'translateX(-100%)' : 'translateX(100%)',
+                        opacity: index === currentSlideIndex ? 1 : 0, cursor:'pointer' }}
+                      onClick={() => setLightbox(`/api/foto/${f.fileId}`)}>
+                      <img src={f.thumbnailUrl} alt={f.nama} style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }} />
+                      <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'13px 17px', background:'linear-gradient(transparent, rgba(15,23,42,0.7))', color:'#fff', fontSize:12, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                        <span style={{ maxWidth:'70%', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{f.nama}</span>
+                        <span style={{ background:'rgba(255,255,255,0.22)', padding:'2px 10px', borderRadius:6, fontSize:10, backdropFilter:'blur(4px)' }}>{formatBytes(f.ukuran)}</span>
+                      </div>
                     </div>
+                  ))}
+                </div>
+
+                {item.foto.length > 1 && (
+                  <>
+                    <button onClick={goToPrevSlide} style={{ ...navArrow, left:12 }} className="btn-hover"><ChevronLeft size={18} style={{ color: BLUE_DARK }} /></button>
+                    <button onClick={goToNextSlide} style={{ ...navArrow, right:12 }} className="btn-hover"><ChevronRight size={18} style={{ color: BLUE_DARK }} /></button>
+                  </>
+                )}
+
+                {item.foto.length > 1 && (
+                  <div style={{ position:'absolute', bottom:50, left:'50%', transform:'translateX(-50%)', display:'flex', gap:6, zIndex:2 }}>
+                    {item.foto.map((_, index) => (
+                      <button key={index} onClick={() => goToSlide(index)}
+                        style={{ width: index === currentSlideIndex ? 24 : 8, height:8, borderRadius:4, border:'none', background: index === currentSlideIndex ? '#fff' : 'rgba(255,255,255,0.5)', cursor:'pointer', transition:'all 0.4s cubic-bezier(0.32,0.72,0,1)', padding:0 }} />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(68px, 1fr))', gap:7, maxHeight:120, overflowY:'auto', padding:'2px' }}>
+                {item.foto.map((f, index) => (
+                  <div key={f.fileId} onClick={() => goToSlide(index)}
+                    style={{ borderRadius:9, overflow:'hidden', border: index === currentSlideIndex ? `2px solid ${BLUE}` : '2px solid transparent', cursor:'pointer', transition:'all .25s ease', opacity: index === currentSlideIndex ? 1 : 0.55, position:'relative', aspectRatio:'1/1' }}
+                    className="thumb-hover">
+                    <img src={f.thumbnailUrl} alt={f.nama} style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }} />
+                    {index === currentSlideIndex && (
+                      <div style={{ position:'absolute', top:3, right:3, background: BLUE, color:'#fff', fontSize:8, padding:'1px 6px', borderRadius:5, fontWeight:700 }}>aktif</div>
+                    )}
                   </div>
                 ))}
               </div>
-
-              {/* Navigation Arrows */}
-              {item.foto.length > 1 && (
-                <>
-                  <button
-                    onClick={goToPrevSlide}
-                    style={{
-                      position:'absolute',
-                      left:12,
-                      top:'50%',
-                      transform:'translateY(-50%)',
-                      width:36,
-                      height:36,
-                      borderRadius:'50%',
-                      background:'rgba(255,255,255,0.9)',
-                      border:'none',
-                      cursor:'pointer',
-                      display:'flex',
-                      alignItems:'center',
-                      justifyContent:'center',
-                      boxShadow:'0 2px 8px rgba(0,0,0,0.15)',
-                      transition: 'all .2s ease',
-                      backdropFilter:'blur(4px)',
-                      zIndex:2
-                    }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLElement).style.background = '#fff';
-                      (e.currentTarget as HTMLElement).style.transform = 'translateY(-50%) scale(1.05)';
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.9)';
-                      (e.currentTarget as HTMLElement).style.transform = 'translateY(-50%) scale(1)';
-                    }}
-                  >
-                    <ChevronLeft size={18} style={{ color:'#374151' }} />
-                  </button>
-                  <button
-                    onClick={goToNextSlide}
-                    style={{
-                      position:'absolute',
-                      right:12,
-                      top:'50%',
-                      transform:'translateY(-50%)',
-                      width:36,
-                      height:36,
-                      borderRadius:'50%',
-                      background:'rgba(255,255,255,0.9)',
-                      border:'none',
-                      cursor:'pointer',
-                      display:'flex',
-                      alignItems:'center',
-                      justifyContent:'center',
-                      boxShadow:'0 2px 8px rgba(0,0,0,0.15)',
-                      transition: 'all .2s ease',
-                      backdropFilter:'blur(4px)',
-                      zIndex:2
-                    }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLElement).style.background = '#fff';
-                      (e.currentTarget as HTMLElement).style.transform = 'translateY(-50%) scale(1.05)';
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.9)';
-                      (e.currentTarget as HTMLElement).style.transform = 'translateY(-50%) scale(1)';
-                    }}
-                  >
-                    <ChevronRight size={18} style={{ color:'#374151' }} />
-                  </button>
-                </>
-              )}
-
-              {/* Progress Indicators */}
-              {item.foto.length > 1 && (
-                <div style={{
-                  position:'absolute',
-                  bottom:48,
-                  left:'50%',
-                  transform:'translateX(-50%)',
-                  display:'flex',
-                  gap:6,
-                  zIndex:2
-                }}>
-                  {item.foto.map((_, index) => (
-                    <button
-                      key={index}
-                      onClick={() => goToSlide(index)}
-                      style={{
-                        width: index === currentSlideIndex ? 24 : 8,
-                        height:8,
-                        borderRadius:4,
-                        border:'none',
-                        background: index === currentSlideIndex ? '#0F6E56' : 'rgba(255,255,255,0.5)',
-                        cursor:'pointer',
-                        transition: 'all 0.4s ease',
-                        padding:0
-                      }}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Thumbnail Grid */}
-            <div style={{
-              display:'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(70px, 1fr))',
-              gap:6,
-              maxHeight:120,
-              overflowY:'auto',
-              padding:'4px 0'
-            }}>
-              {item.foto.map((f, index) => (
-                <div
-                  key={f.fileId}
-                  onClick={() => goToSlide(index)}
-                  style={{
-                    borderRadius:6,
-                    overflow:'hidden',
-                    border: index === currentSlideIndex ? '2px solid #0F6E56' : '2px solid transparent',
-                    cursor:'pointer',
-                    transition: 'all .2s ease',
-                    opacity: index === currentSlideIndex ? 1 : 0.6,
-                    position:'relative',
-                    aspectRatio:'1/1'
-                  }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLElement).style.opacity = '1';
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLElement).style.opacity = index === currentSlideIndex ? '1' : '0.6';
-                  }}
-                >
-                  <img
-                    src={f.thumbnailUrl}
-                    alt={f.nama}
-                    style={{
-                      width:'100%',
-                      height:'100%',
-                      objectFit:'cover',
-                      display:'block'
-                    }}
-                  />
-                  {index === currentSlideIndex && (
-                    <div style={{
-                      position:'absolute',
-                      top:2,
-                      right:2,
-                      background:'#0F6E56',
-                      color:'#fff',
-                      fontSize:8,
-                      padding:'1px 6px',
-                      borderRadius:4
-                    }}>
-                      aktif
-                    </div>
-                  )}
-                </div>
-              ))}
             </div>
           </div>
         )}
 
         {/* Footer info */}
-        <div style={{ 
-          fontSize:12, 
-          color:'#9ca3af', 
-          textAlign:'center', 
-          padding:'1.5rem', 
-          borderTop:'1px solid #e5e7eb',
-          lineHeight:1.8,
-          animation: 'fadeInUp 0.5s ease-out 0.2s both'
-        }}>
-          <div style={{ display:'flex', justifyContent:'center', gap:6, marginBottom:4 }}>
-            <Info size={14} />
+        <div style={{ fontSize:11.5, color:'#94a3b8', textAlign:'center', padding:'1.5rem 1rem', borderTop:'1px solid rgba(29,78,216,0.08)', lineHeight:1.8 }} className="fld">
+          <div style={{ display:'flex', justifyContent:'center', gap:6, marginBottom:5 }}>
+            <Info size={13} />
             <span>Informasi ini dipublikasikan sebagai bentuk transparansi kegiatan kerja sama</span>
           </div>
-          <div style={{ fontWeight:500, color:'#6b7280' }}>
-            BNN Provinsi Sulawesi Selatan — SI-POKJA HUMKER
-          </div>
+          <div style={{ fontWeight:600, color:'#64748b' }}>BNN Provinsi Sulawesi Selatan — SI-POKJA HUMKER</div>
         </div>
       </div>
 
-      {/* Lightbox dengan animasi */}
+      {/* Lightbox */}
       {lightbox && (
-        <div
-          onClick={() => setLightbox(null)}
-          style={{ 
-            position:'fixed', 
-            inset:0, 
-            background:'rgba(0,0,0,.92)', 
-            display:'flex', 
-            alignItems:'center', 
-            justifyContent:'center', 
-            zIndex:999, 
-            padding:'1.5rem',
-            animation: 'fadeIn 0.25s ease-out',
-            backdropFilter:'blur(8px)'
-          }}
-        >
-          <img 
-            src={lightbox} 
-            alt="foto" 
-            style={{ 
-              maxWidth:'100%', 
-              maxHeight:'90vh', 
-              borderRadius:12, 
-              objectFit:'contain',
-              boxShadow:'0 20px 60px rgba(0,0,0,.5)',
-              animation: 'scaleIn 0.3s ease-out'
-            }} 
-          />
-          <button 
-            onClick={() => setLightbox(null)} 
-            style={{ 
-              position:'fixed', 
-              top:20, 
-              right:20, 
-              width:44, 
-              height:44, 
-              borderRadius:'50%', 
-              background:'rgba(255,255,255,.15)', 
-              color:'#fff', 
-              border:'1px solid rgba(255,255,255,.2)',
-              cursor:'pointer', 
-              display:'flex',
-              alignItems:'center',
-              justifyContent:'center',
-              transition: 'all .2s ease',
-              backdropFilter:'blur(4px)'
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,.25)';
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,.15)';
-            }}
-          >
+        <div onClick={() => setLightbox(null)} style={{ position:'fixed', inset:0, background:'rgba(10,15,25,.94)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:999, padding:'1.5rem', backdropFilter:'blur(8px)' }} className="fadein">
+          <img src={lightbox} alt="foto" style={{ maxWidth:'100%', maxHeight:'90vh', borderRadius:14, objectFit:'contain', boxShadow:'0 24px 70px rgba(0,0,0,.5)' }} className="scalein" />
+          <button onClick={() => setLightbox(null)} style={{ position:'fixed', top:20, right:20, width:44, height:44, borderRadius:'50%', background:'rgba(255,255,255,.14)', color:'#fff', border:'1px solid rgba(255,255,255,.2)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(4px)' }} className="btn-hover">
             <X size={20} />
           </button>
-          <div style={{
-            position:'fixed',
-            bottom:20,
-            left:'50%',
-            transform:'translateX(-50%)',
-            color:'rgba(255,255,255,.5)',
-            fontSize:11,
-            background:'rgba(0,0,0,.4)',
-            padding:'6px 16px',
-            borderRadius:100,
-            backdropFilter:'blur(4px)'
-          }}>
+          <div style={{ position:'fixed', bottom:20, left:'50%', transform:'translateX(-50%)', color:'rgba(255,255,255,.55)', fontSize:11, background:'rgba(0,0,0,.4)', padding:'6px 16px', borderRadius:100, backdropFilter:'blur(4px)' }}>
             Klik di luar gambar untuk menutup
           </div>
         </div>
       )}
-
-      {/* Animasi CSS */}
-      <style>{`
-        @keyframes fadeInUp {
-          from {
-            opacity: 0;
-            transform: translateY(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-          }
-          to {
-            opacity: 1;
-          }
-        }
-        @keyframes scaleIn {
-          from {
-            opacity: 0;
-            transform: scale(0.9);
-          }
-          to {
-            opacity: 1;
-            transform: scale(1);
-          }
-        }
-      `}</style>
     </div>
   );
 }
+
+function GlobalStyle() {
+  return (
+    <style>{`
+      @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+      @keyframes fadeUp { from { opacity:0; transform: translateY(16px); filter: blur(3px);} to { opacity:1; transform: translateY(0); filter: blur(0);} }
+      @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+      @keyframes scaleIn { from{opacity:0;transform:scale(0.92)} to{opacity:1;transform:scale(1)} }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .fld { animation: fadeUp 0.55s cubic-bezier(0.32,0.72,0,1) both; }
+      .fadein { animation: fadeIn 0.25s ease-out; }
+      .scalein { animation: scaleIn 0.3s cubic-bezier(0.32,0.72,0,1); }
+      .btn-hover { transition: all 0.3s cubic-bezier(0.32,0.72,0,1); }
+      .btn-hover:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
+      .thumb-hover:hover { opacity: 1 !important; }
+    `}</style>
+  );
+}
+
+const shellStyle: React.CSSProperties = { background:'rgba(255,255,255,0.65)', border:'1px solid rgba(29,78,216,0.08)', borderRadius:19, padding:5, boxShadow:'0 1px 2px rgba(15,23,42,0.03), 0 20px 40px -30px rgba(15,23,42,0.18)' };
+const coreStyle: React.CSSProperties = { background:'#fff', borderRadius:15, padding:'1.35rem 1.5rem', boxShadow:'inset 0 1px 1px rgba(255,255,255,0.9)' };
+const pillTag = (bg: string, color: string): React.CSSProperties => ({ fontSize:11, fontWeight:700, padding:'5px 14px', borderRadius:100, background:bg, color, display:'flex', alignItems:'center', gap:5 });
+const sectionLabel: React.CSSProperties = { fontSize:10.5, fontWeight:700, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:13, display:'flex', alignItems:'center', gap:8 };
+const miniBtn: React.CSSProperties = { padding:'5px 11px', borderRadius:8, border:'1px solid rgba(29,78,216,0.10)', background:'#fff', fontSize:11, color:'#64748b', cursor:'pointer', display:'flex', alignItems:'center', gap:5, fontFamily:FONT, fontWeight:600 };
+const navArrow: React.CSSProperties = { position:'absolute', top:'50%', transform:'translateY(-50%)', width:38, height:38, borderRadius:'50%', background:'rgba(255,255,255,0.92)', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 4px 14px rgba(15,23,42,0.15)', backdropFilter:'blur(4px)', zIndex:2 };

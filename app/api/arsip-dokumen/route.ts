@@ -6,18 +6,19 @@ import { google } from 'googleapis';
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_WEBAPP_URL!;
 const SHEET = 'Arsip Dokumen';
 
-// Kolom Arsip Dokumen (0-based, 16 kolom)
+// Kolom Arsip Dokumen (0-based, 17 kolom)
 const C = {
   ID: 0, NAMA: 1, JENIS: 2, JUDUL: 3, TGL_BERLAKU: 4, TGL_BERAKHIR: 5,
   FILE_ID: 6, FILE_URL: 7, NAMA_FILE: 8, PIC: 9, EMAIL: 10, WA: 11,
-  CATATAN: 12, OLEH: 13, TGL_ARSIP: 14, STATUS_KS: 15,
+  CATATAN: 12, OLEH: 13, TGL_ARSIP: 14, STATUS_KS: 15, DIVISI: 16,
 };
 
 // Kolom Dokumen Kerja sama (0-based) — yang dipakai di sini saja
 const DOK_COL = {
   ID: 0, JENIS: 1, JUDUL: 2, ID_MITRA: 3, NAMA_MITRA: 4,
   TGL_BERLAKU: 6, TGL_BERAKHIR: 7, STATUS: 9, DOCS_URL: 13, DIBUAT_OLEH: 15,
-  TTD_TIPE: 23, TTD_STATUS: 25, TTD_TGL_FINAL: 26,
+  DIVISI: 23,
+  TTD_TIPE: 24, TTD_STATUS: 26, TTD_TGL_FINAL: 27,
 };
 const PJ_COL = { ID_MITRA: 1, NAMA: 2, EMAIL: 7, WA: 8, PIC: 18 };
 
@@ -31,7 +32,7 @@ interface ArsipItem {
   namaPIC: string; emailPIC: string; waPIC: string; catatan: string;
   diarsipkanOleh: string; tglDiarsipkan: string; statusKerjaSama: string;
   sumber: 'manual' | 'sistem';
-  ttdTipe?: string; ttdTglFinal?: string;
+  ttdTipe?: string; ttdTglFinal?: string; divisi?: string[];
 }
 
 async function uploadFileArsip(params: { namaFile: string; base64Data: string; mimeType: string }) {
@@ -95,6 +96,7 @@ export async function GET(req: NextRequest) {
           tglDiarsipkan:  String(r[C.TGL_ARSIP] || ''),
           statusKerjaSama: String(r[C.STATUS_KS] || 'Sudah Berakhir'),
           sumber: 'manual' as const,
+          divisi: String(r[C.DIVISI] || '').split(',').map(s => s.trim()).filter(Boolean),
         }));
     } catch { dataManual = []; }
 
@@ -130,6 +132,7 @@ export async function GET(req: NextRequest) {
             sumber: 'sistem' as const,
             ttdTipe:        String(r[DOK_COL.TTD_TIPE] || ''),
             ttdTglFinal:    String(r[DOK_COL.TTD_STATUS] || '') === 'Disetujui' ? String(r[DOK_COL.TTD_TGL_FINAL] || '') : '',
+            divisi:         String(r[DOK_COL.DIVISI] || '').split(',').map(s => s.trim()).filter(Boolean),
           };
         })
       );
@@ -159,7 +162,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const {
       namaInstitusi, jenis, judul, tglBerlaku, tglBerakhir,
-      namaPIC, emailPIC, waPIC, catatan, diarsipkanOleh, statusKerjaSama,
+      namaPIC, emailPIC, waPIC, catatan, diarsipkanOleh, statusKerjaSama, divisi,
       fileBase64, fileName, fileMime,
     } = body;
 
@@ -182,12 +185,14 @@ export async function POST(req: NextRequest) {
 
     const id = generateId('ARS');
     const now = formatTanggalWaktu(new Date());
+    const divisiArr: string[] = Array.isArray(divisi) ? divisi.filter(Boolean) : [];
+    const divisiStr = divisiArr.join(',');
 
     await appendRow(SHEET, [
       id, namaInstitusi.trim(), jenis, judul.trim(), tglBerlaku, tglBerakhir,
       uploaded.fileId, uploaded.fileUrl, uploaded.namaFile,
       namaPIC.trim(), emailPIC?.trim() || '', waPIC?.trim() || '',
-      catatan?.trim() || '', diarsipkanOleh || '', now, statusKerjaSama,
+      catatan?.trim() || '', diarsipkanOleh || '', now, statusKerjaSama, divisiStr,
     ]);
 
     return NextResponse.json({
@@ -198,7 +203,7 @@ export async function POST(req: NextRequest) {
         namaFile: uploaded.namaFile, namaPIC: namaPIC.trim(),
         emailPIC: emailPIC?.trim() || '', waPIC: waPIC?.trim() || '',
         catatan: catatan?.trim() || '', diarsipkanOleh: diarsipkanOleh || '',
-        tglDiarsipkan: now, statusKerjaSama, sumber: 'manual',
+        tglDiarsipkan: now, statusKerjaSama, sumber: 'manual', divisi: divisiArr,
       },
     });
   } catch (err) {

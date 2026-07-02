@@ -22,6 +22,7 @@ export async function GET() {
         email: r[COL.EMAIL],
         pic: r[COL.PIC],
         status: r[COL.STATUS] || 'Aktif',
+        tglDaftar: r[COL.TGL_DAFTAR] || '',
       }));
     return NextResponse.json({ data });
   } catch (err) {

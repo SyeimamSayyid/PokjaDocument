@@ -19,7 +19,7 @@ interface DokumenItem {
   tglDibuat: string; tglBerlaku: string; tglBerakhir: string;
   durasi: string; status: string; kode: string; kodeExpire: string;
   docsId: string; docsUrl: string; folderId: string; dibuatOleh: string;
-  catatan?: string;
+  catatan?: string; divisi?: string[];
 }
 interface KontakInfo { namaPIC: string; jurusan: string; }
 interface NotifInfo { count: number; hasUnread: boolean; }
@@ -60,6 +60,13 @@ const STAGE_FILTER: { key: string; label: string; statuses: string[] }[] = [
   { key: 'berlangsung', label: 'Berlangsung', statuses: ['Selesai', 'Kegiatan Akan Berlangsung', 'Kegiatan Berlangsung'] },
   { key: 'selesai',     label: 'Selesai',     statuses: ['Kegiatan Selesai', 'MOU/PKS Berlaku', 'Kedaluwarsa'] },
 ];
+
+const DIVISI_LABEL: Record<string, { label: string; color: string; bg: string }> = {
+  pencegahan:    { label: 'Pencegahan',    color: BLUE_DARK, bg: '#DBEAFE' },
+  pemberantasan: { label: 'Pemberantasan', color: '#A32D2D', bg: '#FEE2E2' },
+  rehabilitasi:  { label: 'Rehabilitasi',  color: '#5B21B6', bg: '#EDE9FE' },
+  pemberdayaan:  { label: 'Pemberdayaan',  color: '#92400E', bg: '#FEF3C7' },
+};
 
 function normNama(s: string): string {
   return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -423,6 +430,18 @@ export default function DokumenPage() {
                             <div>{d.namaMitra}</div>
                             {kontak?.namaPIC && <div style={{ fontSize:10, color:'#94a3b8', marginTop:2 }}>PIC: {kontak.namaPIC}</div>}
                             {d.jenis === 'PKS' && kontak?.jurusan && <div style={{ fontSize:10, color:'#94a3b8' }}>{kontak.jurusan}</div>}
+                            {(d.divisi || []).length > 0 && (
+                              <div style={{ display:'flex', gap:4, flexWrap:'wrap', marginTop:3 }}>
+                                {(d.divisi || []).map(dv => {
+                                  const info = DIVISI_LABEL[dv] || { label: dv, color:'#64748b', bg:'#f1f5f9' };
+                                  return (
+                                    <span key={dv} style={{ fontSize:9, fontWeight:700, padding:'1px 7px', borderRadius:100, background:info.bg, color:info.color }}>
+                                      {info.label}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </td>
                           <td style={{ ...td, color:'#64748b', whiteSpace:'nowrap' }}>{d.tglBerakhir}</td>
                           <td style={td}>
@@ -534,6 +553,18 @@ function DokFileRow({ d, kontak, notif, expanded, onToggle, onEdit, onHapus }: {
             <div style={{ fontSize:11, color:'#64748b', display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
               {kontak?.namaPIC && <span style={{ display:'flex', alignItems:'center', gap:4 }}><FiUser size={11} /> {kontak.namaPIC}</span>}
               {d.jenis === 'PKS' && kontak?.jurusan && <span style={{ display:'flex', alignItems:'center', gap:4 }}><FiBookOpen size={11} /> {kontak.jurusan}</span>}
+            </div>
+          )}
+          {(d.divisi || []).length > 0 && (
+            <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
+              {(d.divisi || []).map(dv => {
+                const info = DIVISI_LABEL[dv] || { label: dv, color:'#64748b', bg:'#f1f5f9' };
+                return (
+                  <span key={dv} style={{ fontSize:9.5, fontWeight:700, padding:'2px 9px', borderRadius:100, background:info.bg, color:info.color }}>
+                    {info.label}
+                  </span>
+                );
+              })}
             </div>
           )}
 

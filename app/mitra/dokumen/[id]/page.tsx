@@ -18,6 +18,7 @@ interface Dokumen {
   docsUrl: string; fotoFolderId: string; catatan: string;
   tglKegiatanMulai: string; tglKegiatanSelesai: string;
   sisaHari: number | null;
+  divisi: string[];
   ttdTipe: string; ttdTglDiajukan: string; ttdStatus: string; ttdTglFinal: string; ttdCatatan: string;
 }
 
@@ -51,6 +52,12 @@ const FONT = "'Plus Jakarta Sans', -apple-system, sans-serif";
 const BLUE = '#1D4ED8';
 const BLUE_DARK = '#1E3A8A';
 const GOLD = '#D97706';
+const DIVISI_LABEL: Record<string, { label: string; color: string; bg: string }> = {
+  pencegahan:    { label: 'Pencegahan',    color: '#1E3A8A', bg: '#DBEAFE' },
+  pemberantasan: { label: 'Pemberantasan', color: '#A32D2D', bg: '#FEE2E2' },
+  rehabilitasi:  { label: 'Rehabilitasi',  color: '#5B21B6', bg: '#EDE9FE' },
+  pemberdayaan:  { label: 'Pemberdayaan',  color: '#92400E', bg: '#FEF3C7' },
+};
 
 function namaBulan(iso: string): string {
   try {
@@ -414,6 +421,10 @@ export default function MitraDokumenDetailPage({ params }: { params: Promise<{ i
               <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:10, flexWrap:'wrap' }}>
                 <span style={{ ...pill, background:dok.jenis==='MOU'?'#DBEAFE':'#FEF3C7', color:dok.jenis==='MOU'?'#1D4ED8':'#92400E' }}>{dok.jenis}</span>
                 <span style={{ ...pill, ...sc }}>{dok.status}</span>
+                {(dok.divisi || []).map(dv => {
+                  const info = DIVISI_LABEL[dv] || { label: dv, color:'#64748b', bg:'#f1f5f9' };
+                  return <span key={dv} style={{ ...pill, background: info.bg, color: info.color }}>{info.label}</span>;
+                })}
                 {dok.status === 'MOU/PKS Berlaku' && dok.sisaHari !== null && (
                   <span style={{ ...pill, background: dok.sisaHari <= 30 ? '#FCEBEB' : '#FEF3C7', color: dok.sisaHari <= 30 ? '#A32D2D' : GOLD }}>
                     <FiClock size={10} style={{ marginRight:4, verticalAlign:'middle' }} />

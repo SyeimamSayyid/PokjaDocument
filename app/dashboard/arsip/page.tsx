@@ -8,8 +8,15 @@ interface Arsip {
   namaPIC: string; emailPIC: string; waPIC: string; catatan: string;
   diarsipkanOleh: string; tglDiarsipkan: string; statusKerjaSama: string;
   sumber: 'manual' | 'sistem';
-  ttdTipe?: string; ttdTglFinal?: string;
+  ttdTipe?: string; ttdTglFinal?: string; divisi?: string[];
 }
+const DIVISI_LABEL: Record<string, { label: string; color: string; bg: string }> = {
+  pencegahan:    { label: 'Pencegahan',    color: '#1E3A8A', bg: '#DBEAFE' },
+  pemberantasan: { label: 'Pemberantasan', color: '#A32D2D', bg: '#FEE2E2' },
+  rehabilitasi:  { label: 'Rehabilitasi',  color: '#5B21B6', bg: '#EDE9FE' },
+  pemberdayaan:  { label: 'Pemberdayaan',  color: '#92400E', bg: '#FEF3C7' },
+};
+const MAKS_DIVISI = 4;
 
 const FONT = "'Plus Jakarta Sans', -apple-system, sans-serif";
 
@@ -35,6 +42,7 @@ export default function ArsipDokumenPage() {
   const [fBerlaku, setFBerlaku] = useState('');
   const [fBerakhir, setFBerakhir] = useState('');
   const [fStatusKS, setFStatusKS] = useState<'Masih Berlaku' | 'Sudah Berakhir'>('Sudah Berakhir');
+  const [fDivisi, setFDivisi] = useState<string[]>([]);
   const [fPIC, setFPIC] = useState('');
   const [fEmail, setFEmail] = useState('');
   const [fWa, setFWa] = useState('');
@@ -81,7 +89,7 @@ export default function ArsipDokumenPage() {
 
   const resetForm = () => {
     setFNama(''); setFJenis('MOU'); setFJudul(''); setFBerlaku(''); setFBerakhir('');
-    setFStatusKS('Sudah Berakhir');
+    setFStatusKS('Sudah Berakhir'); setFDivisi([]);
     setFPIC(''); setFEmail(''); setFWa(''); setFCatatan(''); setFFile(null); setFFileError('');
   };
 
@@ -101,7 +109,7 @@ export default function ArsipDokumenPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           namaInstitusi: fNama, jenis: fJenis, judul: fJudul,
-          tglBerlaku: fBerlaku, tglBerakhir: fBerakhir, statusKerjaSama: fStatusKS,
+          tglBerlaku: fBerlaku, tglBerakhir: fBerakhir, statusKerjaSama: fStatusKS, divisi: fDivisi,
           namaPIC: fPIC, emailPIC: fEmail, waPIC: fWa, catatan: fCatatan,
           diarsipkanOleh: namaAdmin,
           fileBase64: base64, fileName: fFile.name, fileMime: fFile.type,
@@ -220,6 +228,31 @@ export default function ArsipDokumenPage() {
                   <div style={hintText}>Pilih &quot;Masih Berlaku&quot; kalau kerja sama ini masih aktif sampai sekarang, bukan cuma yang sudah kedaluwarsa.</div>
                 </div>
 
+                <div style={{ marginBottom:12 }}>
+                  <label style={labelSt}>Divisi Penanganan <span style={{ fontWeight:400, color:'#94a3b8', fontSize:10 }}>(opsional, pilih 0–{MAKS_DIVISI})</span></label>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                    {Object.entries(DIVISI_LABEL).map(([key, info]) => {
+                      const checked = fDivisi.includes(key);
+                      const disabled = !checked && fDivisi.length >= MAKS_DIVISI;
+                      return (
+                        <button key={key} type="button" disabled={disabled}
+                          onClick={() => setFDivisi(prev => checked ? prev.filter(d => d !== key) : [...prev, key])}
+                          style={{
+                            padding:'9px 10px', borderRadius:9, cursor: disabled ? 'not-allowed' : 'pointer',
+                            fontFamily:FONT, fontSize:12, textAlign:'left',
+                            border:`1.5px solid ${checked ? info.color : 'rgba(29,78,216,0.10)'}`,
+                            background: checked ? info.bg : '#fff',
+                            color: checked ? info.color : '#334155',
+                            fontWeight: checked ? 700 : 500,
+                            opacity: disabled ? 0.45 : 1,
+                          }} className="btn-hover">
+                          {info.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <div style={{ ...nestGroup, marginBottom:12 }}>
                   <label style={{ ...labelSt, marginBottom:8 }}>Kontak PIC *</label>
                   <div style={{ marginBottom:8 }}>
@@ -308,6 +341,10 @@ export default function ArsipDokumenPage() {
                           <span style={{ ...pill, background: a.sumber === 'sistem' ? '#FEF3C7' : '#f1f3f2', color: a.sumber === 'sistem' ? '#D97706' : '#7d8985' }}>
                             {a.sumber === 'sistem' ? 'Sistem' : 'Arsip Lama'}
                           </span>
+                          {(a.divisi || []).map(dv => {
+                            const info = DIVISI_LABEL[dv] || { label: dv, color:'#64748b', bg:'#f1f5f9' };
+                            return <span key={dv} style={{ ...pill, background: info.bg, color: info.color }}>{info.label}</span>;
+                          })}
                         </div>
                         <div style={{ fontSize:14.5, fontWeight:700, color:'#0f1f3d' }}>{a.judul}</div>
                         <div style={{ fontSize:12.5, color:'#1D4ED8', fontWeight:600, marginTop:2 }}>🏢 {a.namaInstitusi}</div>
