@@ -15,6 +15,9 @@ import { generateId, formatTanggalWaktu } from '@/lib/utils';
 // 8  Poin Dipilih (JSON array of string)
 // 9  Tgl Dibuat
 // 10 Dibuat Oleh
+// 11 Divisi — ditambahkan sebelumnya, JANGAN dipakai ulang untuk field lain
+// 12 Narasi Kustom — BARU, ditaruh setelah Divisi. Kalau kosong,
+//    Beranda fallback generate otomatis dari poin yang dipilih.
 
 const COL_DOK = {
   ID:0, JENIS:1, JUDUL:2, ID_MITRA:3, NAMA_MITRA:4, TGL_DIBUAT:5,
@@ -49,16 +52,13 @@ interface PasalData {
 function extractSemuaPasal(paragraphs: string[]): PasalData[] {
   const hasil: PasalData[] = [];
   let currentPasal: PasalData | null = null;
-
   for (let i = 0; i < paragraphs.length; i++) {
     const p = paragraphs[i].trim();
     if (!p) continue;
-
     const matchPasal = p.match(/^(?:PASAL|Pasal)\s+(\d+)$/i);
     if (matchPasal) {
       if (currentPasal) hasil.push(currentPasal);
       const nomor = parseInt(matchPasal[1]);
-
       let judul = '';
       for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
         const prev = paragraphs[j].trim();
@@ -74,7 +74,6 @@ function extractSemuaPasal(paragraphs: string[]): PasalData[] {
       currentPasal = { nomor, judul: toTitleCase(judul || `Pasal ${nomor}`), poin: [] };
       continue;
     }
-
     if (currentPasal) {
       if (p.match(/^(?:BAB|Bab|PASAL|Pasal)\s+/i)) continue;
       if (p.length < 5) continue;
@@ -151,7 +150,6 @@ export async function GET(req: NextRequest) {
       } catch (e) {
         console.error('[DOCS]', e);
       }
-
       const pasalData = extractSemuaPasal(paragraphs);
 
       // Cek apakah sudah ada data publik tersimpan
@@ -165,6 +163,7 @@ export async function GET(req: NextRequest) {
             tanggalKegiatan: String(found[6] || ''),
             tempatKegiatan:  String(found[7] || ''),
             poinDipilih:     JSON.parse(String(found[8] || '[]')),
+            narasiKustom:    String(found[12] || ''),
           };
         }
       } catch {}
@@ -181,6 +180,7 @@ export async function GET(req: NextRequest) {
           statusPublikasi: String(r[5] || ''),
           tanggalKegiatan: String(r[6] || ''),
           tempatKegiatan:  String(r[7] || ''),
+          narasiKustom:    String(r[12] || ''),
         };
       });
     } catch {}
@@ -199,7 +199,7 @@ export async function POST(req: NextRequest) {
     const {
       idDokumen, jenis, judul, namaMitra,
       statusPublikasi, tanggalKegiatan, tempatKegiatan,
-      poinDipilih, dibuatOleh,
+      poinDipilih, dibuatOleh, narasiKustom,
     } = await req.json();
 
     if (!idDokumen || !poinDipilih || !statusPublikasi) {
@@ -216,6 +216,7 @@ export async function POST(req: NextRequest) {
         await updateCell('Poin Publik Kegiatan', rowNum, 7,  tanggalKegiatan || '');
         await updateCell('Poin Publik Kegiatan', rowNum, 8,  tempatKegiatan  || '');
         await updateCell('Poin Publik Kegiatan', rowNum, 9,  JSON.stringify(poinDipilih));
+        await updateCell('Poin Publik Kegiatan', rowNum, 13, narasiKustom || ''); // kolom 13 (1-based) = index 12, TIDAK menyentuh kolom 11 (Divisi)
         return NextResponse.json({ message: 'Poin publik berhasil diperbarui.' });
       }
     } catch {}
@@ -230,6 +231,8 @@ export async function POST(req: NextRequest) {
       JSON.stringify(poinDipilih),
       formatTanggalWaktu(new Date()),
       dibuatOleh || 'Admin',
+      '',                 // index 11 — Divisi (reserved, diisi proses lain, bukan di sini)
+      narasiKustom || '', // index 12 — Narasi Kustom
     ]);
 
     return NextResponse.json({ message: 'Poin publik berhasil disimpan.' });
@@ -245,6 +248,7 @@ export async function DELETE(req: NextRequest) {
     const pubRows = await getSheetData('Poin Publik Kegiatan');
     const idx     = pubRows.findIndex(r => String(r[1]).trim() === idDokumen);
     if (idx === -1) return NextResponse.json({ message: 'Data tidak ditemukan.' }, { status: 404 });
+
     // Kosongkan poin dipilih (soft delete)
     await updateCell('Poin Publik Kegiatan', idx + 2, 6, '');
     await updateCell('Poin Publik Kegiatan', idx + 2, 9, '[]');

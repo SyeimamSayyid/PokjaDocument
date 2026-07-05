@@ -124,13 +124,14 @@ export async function GET(req: NextRequest) {
         const tglMulai   = dok.tglKegMulai   || String(r[6]||'');
         const tglSelesai = dok.tglKegSelesai || '';
         const divisi = String(r[11]||'') || dok.divisi || '';
+        const narasiKustom = String(r[12]||'').trim();
         const statusPublikasi = hitungBucket(tglMulai, tglSelesai, String(r[5]));
 
         return {
           id:String(r[0]), idDokumen, jenis, judul, namaMitra, statusPublikasi,
           tanggalKegiatan:tglMulai, tglKegiatanSelesai:tglSelesai, tempatKegiatan, poinDipilih,
           divisi, divisiLabel:DIVISI_LABEL[divisi]||divisi,
-          narasi:generateNarasi({ jenis, namaMitra, statusPublikasi, tanggalKegiatan:tglMulai, tempatKegiatan }),
+          narasi: narasiKustom || generateNarasi({ jenis, namaMitra, statusPublikasi, tanggalKegiatan:tglMulai, tempatKegiatan }),
           tglDibuat:String(r[9]||''), dibuatOleh:String(r[10]||''),
           fotoFolderId:dok.fotoFolderId,
         };

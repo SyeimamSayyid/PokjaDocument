@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useRef } from 'react';
 import {
-  CheckCircle, Copy, Clock, AlertCircle, Mail, Phone, Calendar,
-  CircleDollarSign, FileText, Send, Check, Info, Eye, Plus, ArrowRight,
+  CheckCircle, Copy, Clock, AlertCircle, Mail, Phone,
+  FileText, Send, Check, Info, Eye, Plus, ArrowRight,
   Upload, Trash2, User, Tag, Paperclip, MessageSquare,
   KeyRound, Building2, FileSignature, File as FileIcon,
   Handshake, GraduationCap, Loader2, UserCheck, Home,
@@ -29,7 +29,8 @@ const BLUE = '#1D4ED8';
 const BLUE_LIGHT = '#2563EB';
 const BLUE_DARK = '#1E3A8A';
 const GOLD = '#D97706';
-const WA_LEN = 12;
+const WA_MIN = 10;
+const WA_MAX = 12;
 
 export default function FormPengajuanPage() {
   const [step, setStep]   = useState<'form' | 'konfirmasi'>('form');
@@ -44,8 +45,7 @@ export default function FormPengajuanPage() {
   const [namaInstitusi, setNamaInstitusi] = useState('');
   const [jenis, setJenis]                 = useState<'MOU'|'PKS'>('MOU');
   const [deskripsi, setDeskripsi]         = useState('');
-  const [tanggalKegiatan, setTanggalKegiatan] = useState('');
-  const [biaya, setBiaya]                 = useState('');
+  // Tanggal Kegiatan tidak lagi diisi manual — otomatis pakai tanggal submit
   const [email, setEmail]                 = useState('');
   const [noWa, setNoWa]                   = useState('');
   const [jurusan, setJurusan]             = useState('');
@@ -66,12 +66,12 @@ export default function FormPengajuanPage() {
     if (email) p += 14;
     if (noWa) p += 14;
     if (jenis) p += 12;
-    if (file || tanggalKegiatan || biaya) p += 10;
+    if (file) p += 10;
     setFormProgress(Math.min(100, p));
-  }, [namaInstitusi, deskripsi, namaPIC, email, noWa, jenis, file, tanggalKegiatan, biaya]);
+  }, [namaInstitusi, deskripsi, namaPIC, email, noWa, jenis, file]);
 
   const handleWaChange = (v: string) => {
-    setNoWa(v.replace(/\D/g, '').slice(0, WA_LEN));
+    setNoWa(v.replace(/\D/g, '').slice(0, WA_MAX));
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -108,7 +108,7 @@ export default function FormPengajuanPage() {
     if (!namaPIC.trim()) { setError('Nama PIC wajib diisi.'); setLoading(false); return; }
     if (!email.trim())   { setError('Email wajib diisi.'); setLoading(false); return; }
     if (!noWa.trim())    { setError('No. WhatsApp wajib diisi.'); setLoading(false); return; }
-    if (noWa.length !== WA_LEN) { setError(`No. WhatsApp harus tepat ${WA_LEN} angka (saat ini ${noWa.length}).`); setLoading(false); return; }
+    if (noWa.length < WA_MIN || noWa.length > WA_MAX) { setError(`No. WhatsApp harus ${WA_MIN}-${WA_MAX} angka (saat ini ${noWa.length}).`); setLoading(false); return; }
     try {
       let fileBase64 = ''; let fileName = ''; let fileMime = '';
       if (file) {
@@ -123,8 +123,9 @@ export default function FormPengajuanPage() {
       const res = await fetch('/api/pengajuan/publik', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          namaInstitusi, jenis, deskripsi, tanggalKegiatan,
-          biaya, email, noWa, jurusan, namaPIC,
+          namaInstitusi, jenis, deskripsi,
+          tanggalKegiatan: new Date().toISOString().split('T')[0], // otomatis = tanggal submit
+          email, noWa, jurusan, namaPIC,
           ...(fileBase64 ? { fileBase64, fileName, fileMime } : {}),
         }),
       });
@@ -219,7 +220,7 @@ export default function FormPengajuanPage() {
               <button onClick={() => {
                 setStep('form'); setHasil(null);
                 setNamaInstitusi(''); setDeskripsi(''); setEmail(''); setNoWa('');
-                setBiaya(''); setTanggalKegiatan(''); setJurusan(''); setNamaPIC(''); setFile(null);
+                setJurusan(''); setNamaPIC(''); setFile(null);
               }} style={ghostPill}>
                 <Plus size={16} strokeWidth={1.8} /> Ajukan Lagi
               </button>
@@ -234,7 +235,7 @@ export default function FormPengajuanPage() {
   }
 
   const fieldDelay = (n: number) => ({ animationDelay: `${0.05 * n + 0.1}s` });
-  const waInvalid = noWa.length > 0 && noWa.length !== WA_LEN;
+  const waInvalid = noWa.length > 0 && (noWa.length < WA_MIN || noWa.length > WA_MAX);
 
   return (
     <div style={{ ...pageStyle, fontFamily: FONT }}>
@@ -351,19 +352,6 @@ export default function FormPengajuanPage() {
               <div style={{ ...hint, marginTop:10 }}><Info size={11} strokeWidth={1.7} /> Punya draft sendiri? Unggah sebagai referensi tim Pokja.</div>
             </div>
 
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, marginBottom:18, ...fieldDelay(5) }} className="fld">
-              <div>
-                <label style={label}><Calendar size={13} strokeWidth={1.7} /> Tanggal Kegiatan</label>
-                <input style={inp(focusedField==='tgl')} type="date" value={tanggalKegiatan} onChange={e=>setTanggalKegiatan(e.target.value)}
-                  onFocus={()=>setFocusedField('tgl')} onBlur={()=>setFocusedField(null)} />
-              </div>
-              <div>
-                <label style={label}><CircleDollarSign size={13} strokeWidth={1.7} /> Estimasi Biaya</label>
-                <input style={inp(focusedField==='by')} value={biaya} onChange={e=>setBiaya(e.target.value)} placeholder="Opsional"
-                  onFocus={()=>setFocusedField('by')} onBlur={()=>setFocusedField(null)} />
-              </div>
-            </div>
-
             <div style={{ ...nestGroup, ...fieldDelay(6) }} className="fld">
               <label style={{ ...label, marginBottom:12 }}><User size={13} strokeWidth={1.7} /> Informasi Kontak <em style={req}>wajib</em></label>
               <div style={{ marginBottom:12 }}>
@@ -379,17 +367,17 @@ export default function FormPengajuanPage() {
                   onFocus={()=>setFocusedField('em')} onBlur={()=>setFocusedField(null)} />
               </div>
               <div>
-                <label style={subLabel}><Phone size={12} strokeWidth={1.7} /> No. WhatsApp <span style={{ fontWeight:400, opacity:0.7 }}>({noWa.length}/{WA_LEN} angka)</span></label>
+                <label style={subLabel}><Phone size={12} strokeWidth={1.7} /> No. WhatsApp <span style={{ fontWeight:400, opacity:0.7 }}>({noWa.length} angka, {WA_MIN}-{WA_MAX})</span></label>
                 <input style={{ ...inp(focusedField==='wa'), borderColor: waInvalid ? '#DC2626' : (focusedField==='wa' ? BLUE : 'rgba(29,78,216,0.10)') }}
                   type="tel" inputMode="numeric" value={noWa} onChange={e=>handleWaChange(e.target.value)}
-                  placeholder="081234567890" required maxLength={WA_LEN}
+                  placeholder="081234567890" required maxLength={WA_MAX}
                   onFocus={()=>setFocusedField('wa')} onBlur={()=>setFocusedField(null)} />
                 {waInvalid ? (
                   <div style={{ fontSize:10.5, color:'#DC2626', marginTop:6, display:'flex', alignItems:'center', gap:5 }}>
-                    <AlertCircle size={11} strokeWidth={1.8} /> Harus tepat {WA_LEN} angka
+                    <AlertCircle size={11} strokeWidth={1.8} /> Harus {WA_MIN}-{WA_MAX} angka
                   </div>
                 ) : (
-                  <div style={hint}><Info size={11} strokeWidth={1.7} /> Nomor WhatsApp harus tepat {WA_LEN} angka, tanpa spasi atau tanda baca</div>
+                  <div style={hint}><Info size={11} strokeWidth={1.7} /> Nomor WhatsApp harus {WA_MIN}-{WA_MAX} angka, tanpa spasi atau tanda baca</div>
                 )}
               </div>
             </div>

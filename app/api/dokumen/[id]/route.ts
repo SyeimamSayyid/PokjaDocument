@@ -173,7 +173,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       }
     }
 
-    return NextResponse.json({ dokumen, poinOtomatis });
+    // Cek apakah admin sudah mempublikasikan kegiatan ini lewat Extract Poin —
+    // dipakai mitra buat gate fitur upload foto (baru boleh setelah dipublikasi).
+    let sudahDipublikasi = false;
+    try {
+      const pubRows = await getSheetData('Poin Publik Kegiatan');
+      const found = pubRows.find(r => String(r[1]).trim() === id && String(r[5] || '').trim());
+      sudahDipublikasi = !!found;
+    } catch { /* sheet belum ada isinya, anggap belum dipublikasi */ }
+
+    return NextResponse.json({ dokumen: { ...dokumen, sudahDipublikasi }, poinOtomatis });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }

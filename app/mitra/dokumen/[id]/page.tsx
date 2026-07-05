@@ -598,6 +598,26 @@ export default function MitraDokumenDetailPage({ params }: { params: Promise<{ i
 
           <div style={shellStyle} className="fld">
             <div style={coreStyle}>
+              <div style={cardTitle}><FiFileText size={13} style={{ marginRight:6, verticalAlign:'middle', color: GOLD }} />Masa Berlaku Kesepakatan {dok.jenis}</div>
+              <div style={hintText}>Tanggal resmi dokumen {dok.jenis} ini berlaku — ditetapkan sekali saat dokumen dibuat.</div>
+              <div style={mouKesepakatanBox}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                  <div>
+                    <div style={{ fontSize:9.5, color:'#94a3b8', textTransform:'uppercase', letterSpacing:0.4, fontWeight:600 }}>Mulai</div>
+                    <div style={{ fontSize:13, fontWeight:700, color:'#0f1f3d' }}>{dok.tglBerlaku}</div>
+                  </div>
+                  <div style={{ color: GOLD, fontSize:16 }}>→</div>
+                  <div style={{ textAlign:'right' }}>
+                    <div style={{ fontSize:9.5, color:'#94a3b8', textTransform:'uppercase', letterSpacing:0.4, fontWeight:600 }}>Berakhir</div>
+                    <div style={{ fontSize:13, fontWeight:700, color:'#0f1f3d' }}>{dok.tglBerakhir}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style={shellStyle} className="fld">
+            <div style={coreStyle}>
               <div style={cardTitle}><FiCalendar size={13} style={{ marginRight:6, verticalAlign:'middle' }} />Tanggal Kegiatan</div>
               <div style={hintText}>Sesuaikan dengan kesepakatan bersama tim Pokja. Admin bisa menyesuaikannya kembali jika diperlukan.</div>
               <label style={labelSt}>Mulai</label>
@@ -751,4 +771,5 @@ const fotoCard: React.CSSProperties = { borderRadius:12, overflow:'hidden', bord
 const pendingBox: React.CSSProperties = { background:'#EFF6FF', border:'1px solid rgba(29,78,216,0.14)', borderRadius:12, padding:'10px 11px' };
 const ttdDoneBox: React.CSSProperties = { display:'flex', gap:10, padding:'10px 12px', background:'#EFF6FF', borderRadius:12, border:'1px solid rgba(29,78,216,0.12)' };
 const ttdPendingBox: React.CSSProperties = { display:'flex', gap:10, padding:'10px 12px', background:'#FFFBEB', borderRadius:12, border:'1px solid #FDE68A' };
+const mouKesepakatanBox: React.CSSProperties = { background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:11, padding:'11px 13px' };
 const miniIconBtn: React.CSSProperties = { width:24, height:24, borderRadius:8, border:'1px solid rgba(29,78,216,0.12)', background:'#fff', color:'#475569', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' };

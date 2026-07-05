@@ -9,6 +9,7 @@ const COL_D = {
   ID:0, ID_KEGIATAN:1, JUDUL_KEG:2, JENIS:3, NAMA_INST:4, JURUSAN:5,
   EMAIL:6, WA:7, DESKRIPSI:8, KODE:9, STATUS:10, ALASAN_TOLAK:11,
   ID_DOKUMEN:12, TGL_DAFTAR:13, CATATAN:14,
+  NAMA_PIC:15, FILE_ID:16, FILE_NAMA:17, // BARU — non-breaking, ditaruh di akhir
 };
 
 const COL_K = {
@@ -17,68 +18,22 @@ const COL_K = {
   STATUS:12, TAMPIL_PUBLIK:13,
 };
 
-// ── GET: List pendaftaran (admin) atau cek by kode (publik) ──
-export async function GET(req: NextRequest) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const kode        = searchParams.get('kode');
-    const idKegiatan  = searchParams.get('idKegiatan');
-
-    const rows = await getSheetData(SHEET_DAFTAR);
-
-    // Cek status publik by kode tracking
-    if (kode) {
-      const row = rows.find(r => String(r[COL_D.KODE]).trim().toUpperCase() === kode.trim().toUpperCase());
-      if (!row) return NextResponse.json({ ditemukan: false, message: 'Kode tidak ditemukan.' }, { status: 404 });
-      return NextResponse.json({
-        ditemukan:     true,
-        idPendaftaran: String(row[COL_D.ID]),
-        judulKegiatan: String(row[COL_D.JUDUL_KEG]),
-        jenis:         String(row[COL_D.JENIS]),
-        namaInstitusi: String(row[COL_D.NAMA_INST]),
-        jurusan:       String(row[COL_D.JURUSAN] || ''),
-        status:        String(row[COL_D.STATUS]),
-        catatan:       String(row[COL_D.ALASAN_TOLAK] || ''),
-        tglDaftar:     String(row[COL_D.TGL_DAFTAR]),
-      });
-    }
-
-    // List semua (admin)
-    let data = rows.filter(r => r[COL_D.ID]).map(r => ({
-      id:            String(r[COL_D.ID]),
-      idKegiatan:    String(r[COL_D.ID_KEGIATAN]),
-      judulKegiatan: String(r[COL_D.JUDUL_KEG]),
-      jenis:         String(r[COL_D.JENIS]),
-      namaInstitusi: String(r[COL_D.NAMA_INST]),
-      jurusan:       String(r[COL_D.JURUSAN] || ''),
-      email:         String(r[COL_D.EMAIL] || ''),
-      noWa:          String(r[COL_D.WA] || ''),
-      deskripsi:     String(r[COL_D.DESKRIPSI] || ''),
-      kodeTracking:  String(r[COL_D.KODE]),
-      status:        String(r[COL_D.STATUS]),
-      catatan:       String(r[COL_D.ALASAN_TOLAK] || ''),
-      idDokumen:     String(r[COL_D.ID_DOKUMEN] || ''),
-      tglDaftar:     String(r[COL_D.TGL_DAFTAR]),
-    })).reverse();
-
-    if (idKegiatan) data = data.filter(d => d.idKegiatan === idKegiatan);
-
-    return NextResponse.json({ data });
-  } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
-  }
-}
-
 // ── POST: Mitra daftar slot kegiatan (kuota -1) ───────────
 export async function POST(req: NextRequest) {
   try {
-    const { idKegiatan, namaInstitusi, jurusan, email, noWa, deskripsi } = await req.json();
+    const { idKegiatan, namaInstitusi, namaPIC, jurusan, email, noWa, deskripsi, fileDokumenId, fileDokumenNama } = await req.json();
 
     if (!idKegiatan || !namaInstitusi?.trim()) {
       return NextResponse.json({ message: 'Data tidak lengkap.' }, { status: 400 });
     }
-    if (!email?.trim() && !noWa?.trim()) {
-      return NextResponse.json({ message: 'Email atau WhatsApp wajib diisi.' }, { status: 400 });
+    if (!namaPIC?.trim()) {
+      return NextResponse.json({ message: 'Nama PIC wajib diisi.' }, { status: 400 });
+    }
+    if (!email?.trim()) {
+      return NextResponse.json({ message: 'Email wajib diisi.' }, { status: 400 });
+    }
+    if (!noWa?.trim()) {
+      return NextResponse.json({ message: 'No. WhatsApp wajib diisi.' }, { status: 400 });
     }
 
     // Cek kegiatan & kuota
@@ -110,9 +65,10 @@ export async function POST(req: NextRequest) {
     await appendRow(SHEET_DAFTAR, [
       id, idKegiatan, judulKeg, jenis,
       namaInstitusi.trim(), jurusan || '',
-      email || '', noWa || '', deskripsi || '',
+      email.trim(), noWa.trim(), deskripsi || '',
       kode, 'Diajukan', '', '',
       formatTanggalWaktu(new Date()), '',
+      namaPIC.trim(), fileDokumenId || '', fileDokumenNama || '',
     ]);
 
     // Kuota +1 terisi
@@ -178,6 +134,62 @@ export async function PATCH(req: NextRequest) {
     }
 
     return NextResponse.json({ message: 'Status pendaftaran diperbarui.' });
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
+}
+
+// ── GET: List pendaftaran (admin) atau cek by kode (publik) ──
+export async function GET(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const kode        = searchParams.get('kode');
+    const idKegiatan  = searchParams.get('idKegiatan');
+
+    const rows = await getSheetData(SHEET_DAFTAR);
+
+    // Cek status publik by kode tracking
+    if (kode) {
+      const row = rows.find(r => String(r[COL_D.KODE]).trim().toUpperCase() === kode.trim().toUpperCase());
+      if (!row) return NextResponse.json({ ditemukan: false, message: 'Kode tidak ditemukan.' }, { status: 404 });
+      return NextResponse.json({
+        ditemukan:     true,
+        idPendaftaran: String(row[COL_D.ID]),
+        judulKegiatan: String(row[COL_D.JUDUL_KEG]),
+        jenis:         String(row[COL_D.JENIS]),
+        namaInstitusi: String(row[COL_D.NAMA_INST]),
+        namaPIC:       String(row[COL_D.NAMA_PIC] || ''),
+        jurusan:       String(row[COL_D.JURUSAN] || ''),
+        status:        String(row[COL_D.STATUS]),
+        catatan:       String(row[COL_D.ALASAN_TOLAK] || ''),
+        tglDaftar:     String(row[COL_D.TGL_DAFTAR]),
+      });
+    }
+
+    // List semua (admin)
+    let data = rows.filter(r => r[COL_D.ID]).map(r => ({
+      id:            String(r[COL_D.ID]),
+      idKegiatan:    String(r[COL_D.ID_KEGIATAN]),
+      judulKegiatan: String(r[COL_D.JUDUL_KEG]),
+      jenis:         String(r[COL_D.JENIS]),
+      namaInstitusi: String(r[COL_D.NAMA_INST]),
+      namaPIC:       String(r[COL_D.NAMA_PIC] || ''),
+      jurusan:       String(r[COL_D.JURUSAN] || ''),
+      email:         String(r[COL_D.EMAIL] || ''),
+      noWa:          String(r[COL_D.WA] || ''),
+      deskripsi:     String(r[COL_D.DESKRIPSI] || ''),
+      kodeTracking:  String(r[COL_D.KODE]),
+      status:        String(r[COL_D.STATUS]),
+      catatan:       String(r[COL_D.ALASAN_TOLAK] || ''),
+      idDokumen:     String(r[COL_D.ID_DOKUMEN] || ''),
+      fileDokumenId:   String(r[COL_D.FILE_ID] || ''),
+      fileDokumenNama: String(r[COL_D.FILE_NAMA] || ''),
+      tglDaftar:     String(r[COL_D.TGL_DAFTAR]),
+    })).reverse();
+
+    if (idKegiatan) data = data.filter(d => d.idKegiatan === idKegiatan);
+
+    return NextResponse.json({ data });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }

@@ -1,17 +1,18 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   ArrowLeft, FileText, Search, Building, Tag, CheckCircle, AlertCircle,
-  ChevronDown, Check, X, Eye, EyeOff, Save, Calendar, MapPin, List, Info,
-  Maximize2, Minimize2, RefreshCw, ExternalLink, Loader2, Zap,
+  Check, X, Save, Calendar, MapPin, List, Info,
+  RefreshCw, ExternalLink, Loader2, Zap, Shuffle,
+  Sparkles, Edit3,
 } from 'lucide-react';
 
 interface DokSelesai {
   id: string; jenis: string; judul: string; namaMitra: string;
   status: string; docsId: string; tglBerlaku: string; tglBerakhir: string;
   fotoFolderId: string;
-  publikasi?: { statusPublikasi: string; tanggalKegiatan: string; tempatKegiatan: string } | null;
+  publikasi?: { statusPublikasi: string; tanggalKegiatan: string; tempatKegiatan: string; narasiKustom?: string } | null;
 }
 
 interface PasalData { nomor: number; judul: string; poin: string[]; }
@@ -28,8 +29,21 @@ const TOPIK_MAP: { kata: string[]; frase: string }[] = [
   { kata: ['rehabilitasi','pemulihan','konseling'], frase: 'program rehabilitasi' },
 ];
 
-function generateNarasi(params: { jenis:string; namaMitra:string; tanggalKegiatan:string; tempatKegiatan:string; poinDipilih:string[] }): string {
-  const { jenis, namaMitra, tanggalKegiatan, tempatKegiatan, poinDipilih } = params;
+// 3 gaya kalimat pembuka berbeda — biar tidak template itu-itu terus tiap generate
+const GAYA_NARASI = [
+  // 0 — resmi/institusional
+  (p: { jenis:string; namaMitra:string; waktuTempat:string; topikStr:string; rangkum:string }) =>
+    `BNN Provinsi Sulawesi Selatan menjalin kerja sama ${p.jenis} dengan ${p.namaMitra}${p.waktuTempat ? ` ${p.waktuTempat}` : ''}, berfokus pada ${p.topikStr}.${p.rangkum ? `\n\nRangkaian kegiatan mencakup: ${p.rangkum}.` : ''}`,
+  // 1 — lebih hidup/naratif
+  (p: { jenis:string; namaMitra:string; waktuTempat:string; topikStr:string; rangkum:string }) =>
+    `Sebagai wujud komitmen bersama memberantas penyalahgunaan narkotika, BNN Provinsi Sulawesi Selatan dan ${p.namaMitra} merajut kerja sama ${p.jenis}${p.waktuTempat ? ` ${p.waktuTempat}` : ''}. Kolaborasi ini menghadirkan ${p.topikStr} yang menyasar langsung lingkungan ${p.namaMitra}.${p.rangkum ? `\n\nBeberapa hal yang disepakati: ${p.rangkum}.` : ''}`,
+  // 2 — ringkas/lugas
+  (p: { jenis:string; namaMitra:string; waktuTempat:string; topikStr:string; rangkum:string }) =>
+    `${p.namaMitra} resmi bergandengan tangan dengan BNN Provinsi Sulawesi Selatan lewat ${p.jenis}${p.waktuTempat ? ` ${p.waktuTempat}` : ''}. Fokus utamanya: ${p.topikStr}.${p.rangkum ? ` Poin kesepakatan meliputi ${p.rangkum}.` : ''}`,
+];
+
+function generateNarasi(params: { jenis:string; namaMitra:string; tanggalKegiatan:string; tempatKegiatan:string; poinDipilih:string[]; gaya:number }): string {
+  const { jenis, namaMitra, tanggalKegiatan, tempatKegiatan, poinDipilih, gaya } = params;
   const teks = poinDipilih.join(' ').toLowerCase();
   const topikFrasa = TOPIK_MAP.filter(t => t.kata.some(k => teks.includes(k))).map(t => t.frase);
   const topikStr = topikFrasa.length > 0 ? topikFrasa.slice(0,2).join(' dan ') : 'kegiatan pencegahan penyalahgunaan narkotika';
@@ -42,7 +56,8 @@ function generateNarasi(params: { jenis:string; namaMitra:string; tanggalKegiata
   }
   if (tempatKegiatan) waktuTempat += `${waktuTempat ? ' di ' : 'di '}${tempatKegiatan}`;
 
-  return `BNN Provinsi Sulawesi Selatan menjalin kerja sama ${jenis} yang aktif bersama ${namaMitra}${waktuTempat ? ' ' + waktuTempat : ''}.\n\nKerja sama ini berfokus pada ${topikStr} di lingkungan ${namaMitra}.${poinDipilih.length > 0 ? `\n\nRangkaian kegiatan mencakup: ${rangkum}.` : ''}`;
+  const fn = GAYA_NARASI[gaya % GAYA_NARASI.length];
+  return fn({ jenis, namaMitra, waktuTempat, topikStr, rangkum });
 }
 
 // Palet — biru navy + emas
@@ -63,17 +78,26 @@ export default function ExtractPoinPage() {
   const [pasalData, setPasalData]       = useState<PasalData[]>([]);
   const [loadingPasal, setLoadingPasal] = useState(false);
   const [poinDipilih, setPoinDipilih]   = useState<string[]>([]);
-  const [expandedPasal, setExpandedPasal] = useState<Set<number>>(new Set());
+  const [pasalAktif, setPasalAktif] = useState<number | null>(null);
   const [tanggalKegiatan, setTanggalKegiatan] = useState('');
   const [tempatKegiatan, setTempatKegiatan]   = useState('');
   const [saving, setSaving]   = useState(false);
-  const [showNarasi, setShowNarasi] = useState(false);
   const [selectedCount, setSelectedCount] = useState(0);
+  const [cariPoin, setCariPoin] = useState('');
 
-  const narasiPreview = activeDok ? generateNarasi({
+  const [gayaNarasi, setGayaNarasi] = useState(0);
+  const [narasiEdit, setNarasiEdit] = useState('');
+  const [narasiDisunting, setNarasiDisunting] = useState(false);
+
+  const narasiOtomatis = activeDok ? generateNarasi({
     jenis: activeDok.jenis, namaMitra: activeDok.namaMitra,
-    tanggalKegiatan, tempatKegiatan, poinDipilih,
+    tanggalKegiatan, tempatKegiatan, poinDipilih, gaya: gayaNarasi,
   }) : '';
+
+  // Kalau admin belum menyunting manual, textarea ikut update otomatis saat poin/gaya berubah
+  useEffect(() => {
+    if (!narasiDisunting) setNarasiEdit(narasiOtomatis);
+  }, [narasiOtomatis, narasiDisunting]);
 
   const loadDokList = useCallback(() => {
     setLoading(true);
@@ -90,17 +114,26 @@ export default function ExtractPoinPage() {
     if (!['admin','superadmin'].includes(u.role)) { window.location.href = '/login'; return; }
     setRole(u.role);
     loadDokList();
+
+    // Datang dari link "Publikasikan?" di halaman detail dokumen — langsung
+    // pilih dokumen itu + auto-isi Tanggal Kegiatan dari yang sudah disepakati.
+    const params = new URLSearchParams(window.location.search);
+    const idDariUrl  = params.get('idDokumen');
+    const tglDariUrl = params.get('tglMulai');
+    if (idDariUrl) pilihDokumenById(idDariUrl, tglDariUrl || undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadDokList]);
 
   useEffect(() => {
     setSelectedCount(poinDipilih.length);
   }, [poinDipilih]);
 
-  const pilihDokumen = async (dok: DokSelesai) => {
+  const pilihDokumen = async (dok: DokSelesai, tglDefault?: string) => {
     setActiveDok(dok); setPasalData([]); setPoinDipilih([]);
-    setMsg(''); setError(''); setLoadingPasal(true); setShowNarasi(false);
-    setTanggalKegiatan(''); setTempatKegiatan('');
-    setExpandedPasal(new Set());
+    setMsg(''); setError(''); setLoadingPasal(true);
+    setTanggalKegiatan(tglDefault || ''); setTempatKegiatan(''); setCariPoin('');
+    setGayaNarasi(0); setNarasiDisunting(false); setNarasiEdit('');
+    setPasalAktif(null);
 
     try {
       const res = await fetch(`/api/extract-poin?idDokumen=${dok.id}&getPoin=true`);
@@ -108,22 +141,34 @@ export default function ExtractPoinPage() {
       if (!res.ok) { setError(d.message || 'Gagal.'); return; }
 
       setPasalData(d.pasalData || []);
-      const nomorSet = new Set<number>((d.pasalData || []).map((p: PasalData) => p.nomor));
-      setExpandedPasal(nomorSet);
+      // Pasal pertama otomatis jadi tab aktif
+      if ((d.pasalData || []).length > 0) setPasalAktif(d.pasalData[0].nomor);
 
       if (d.savedData) {
-        setTanggalKegiatan(d.savedData.tanggalKegiatan || '');
+        // Data yang sudah pernah disimpan admin selalu diutamakan dari tanggal default URL
+        setTanggalKegiatan(d.savedData.tanggalKegiatan || tglDefault || '');
         setTempatKegiatan(d.savedData.tempatKegiatan || '');
         setPoinDipilih(d.savedData.poinDipilih || []);
+        if (d.savedData.narasiKustom) {
+          setNarasiEdit(d.savedData.narasiKustom);
+          setNarasiDisunting(true);
+        }
       }
     } catch { setError('Gagal memuat pasal.'); }
     finally { setLoadingPasal(false); }
   };
 
-  const togglePasal = (nomor: number) => {
-    const next = new Set(expandedPasal);
-    next.has(nomor) ? next.delete(nomor) : next.add(nomor);
-    setExpandedPasal(next);
+  // Dipanggil saat datang dari link "Publikasikan?" di halaman detail dokumen —
+  // dokumen mungkin belum berstatus "Selesai" jadi belum tentu ada di daftar kiri,
+  // makanya diambil langsung dari API (yang memang tidak membatasi status).
+  const pilihDokumenById = async (idDokumen: string, tglDefault?: string) => {
+    setMsg(''); setError(''); setLoadingPasal(true);
+    try {
+      const res = await fetch(`/api/extract-poin?idDokumen=${idDokumen}&getPoin=true`);
+      const d   = await res.json();
+      if (!res.ok) { setError(d.message || 'Dokumen tidak ditemukan.'); setLoadingPasal(false); return; }
+      await pilihDokumen(d.dok, tglDefault);
+    } catch { setError('Gagal memuat dokumen dari link.'); setLoadingPasal(false); }
   };
 
   const togglePoinPasal = (poinList: string[], e: React.MouseEvent) => {
@@ -140,6 +185,22 @@ export default function ExtractPoinPage() {
     setPoinDipilih(prev => prev.includes(poin) ? prev.filter(p => p !== poin) : [...prev, poin]);
   };
 
+  // Filter poin berdasarkan kata kunci pencarian — pasal yang tidak ada hasilnya disembunyikan
+  const pasalTersaring = useMemo(() => {
+    if (!cariPoin.trim()) return pasalData;
+    const kw = cariPoin.toLowerCase();
+    return pasalData
+      .map(p => ({ ...p, poin: p.poin.filter(x => x.toLowerCase().includes(kw) || p.judul.toLowerCase().includes(kw)) }))
+      .filter(p => p.poin.length > 0 || p.judul.toLowerCase().includes(kw));
+  }, [pasalData, cariPoin]);
+
+  const acakGaya = () => {
+    let next = gayaNarasi;
+    while (next === gayaNarasi) next = Math.floor(Math.random() * GAYA_NARASI.length);
+    setGayaNarasi(next);
+    setNarasiDisunting(false); // biar textarea ikut ke-update otomatis pakai gaya baru
+  };
+
   const simpan = async () => {
     if (!activeDok || poinDipilih.length === 0) { setError('Pilih minimal 1 poin.'); return; }
     setSaving(true); setError(''); setMsg('');
@@ -152,6 +213,7 @@ export default function ExtractPoinPage() {
           judul: activeDok.judul, namaMitra: activeDok.namaMitra,
           statusPublikasi: STATUS_TETAP, tanggalKegiatan, tempatKegiatan,
           poinDipilih, dibuatOleh: role,
+          narasiKustom: narasiEdit, // teks yang beneran tampil di beranda — hasil edit admin
         }),
       });
       const d = await res.json();
@@ -168,6 +230,7 @@ export default function ExtractPoinPage() {
   );
 
   const totalPoin = pasalData.reduce((acc, p) => acc + p.poin.length, 0);
+  const pasalAktifData = pasalData.find(p => p.nomor === pasalAktif) || null;
 
   return (
     <div style={{ minHeight:'100vh', background:'linear-gradient(135deg, #f8fafc 0%, #eaf1fc 100%)', fontFamily:'sans-serif' }}>
@@ -277,7 +340,7 @@ export default function ExtractPoinPage() {
         </div>
 
         {/* Kolom kanan - Detail */}
-        <div>
+        <div style={{ minWidth: 0 }}>
           {msg && (
             <div style={{ ...msgBox(BLUE_DARK,'#DBEAFE'), display:'flex', alignItems:'center', gap:8, animation: 'fadeInDown 0.4s ease-out' }}>
               <CheckCircle size={16} />
@@ -356,7 +419,7 @@ export default function ExtractPoinPage() {
                 </div>
               </div>
 
-              {/* Pilih poin — accordion */}
+              {/* Pilih poin — tab horizontal, 1 pasal aktif ditampilkan penuh, lainnya blur */}
               <div style={{ ...card, animation: 'fadeInUp 0.4s ease-out 0.1s both' }}>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10, flexWrap:'wrap', gap:6 }}>
                   <div style={{ fontSize:13, fontWeight:600, display:'flex', alignItems:'center', gap:8, color:'#0f1f3d' }}>
@@ -367,14 +430,6 @@ export default function ExtractPoinPage() {
                     </span>
                   </div>
                   <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
-                    <button onClick={() => setExpandedPasal(new Set(pasalData.map(p => p.nomor)))} style={{ ...btnSm, fontSize:10, display:'flex', alignItems:'center', gap:4 }}>
-                      <Maximize2 size={12} />
-                      Buka Semua
-                    </button>
-                    <button onClick={() => setExpandedPasal(new Set())} style={{ ...btnSm, fontSize:10, display:'flex', alignItems:'center', gap:4 }}>
-                      <Minimize2 size={12} />
-                      Tutup Semua
-                    </button>
                     <button onClick={() => setPoinDipilih(pasalData.flatMap(p => p.poin))} style={{ ...btnSm, fontSize:10, color:BLUE_DARK, borderColor:'#93C5FD', background:'#DBEAFE', display:'flex', alignItems:'center', gap:4 }}>
                       <Check size={12} />
                       Pilih Semua
@@ -386,106 +441,171 @@ export default function ExtractPoinPage() {
                   </div>
                 </div>
 
-                <div style={{ fontSize:11, color:'#64748b', background:'#f8fafc', padding:'8px 12px', borderRadius:8, marginBottom:12, display:'flex', alignItems:'center', gap:6 }}>
-                  <Info size={14} />
-                  Di halaman publik hanya isi poin yang tampil — tanpa nama/nomor pasal. Klik header pasal untuk buka/tutup.
+                <div style={{ position:'relative', marginBottom:12 }}>
+                  <Search size={14} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'#94a3b8' }} />
+                  <input
+                    placeholder="Cari kata kunci dalam poin (mis. sosialisasi, jangka waktu, biaya)..."
+                    value={cariPoin}
+                    onChange={e => setCariPoin(e.target.value)}
+                    style={{ ...inputFull, paddingLeft:32, fontSize:11.5 }}
+                  />
+                  {cariPoin && (
+                    <button onClick={() => setCariPoin('')} style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', color:'#94a3b8', cursor:'pointer', padding:4, borderRadius:'50%' }}>
+                      <X size={13} />
+                    </button>
+                  )}
                 </div>
+
+                {!cariPoin && (
+                  <div style={{ fontSize:11, color:'#64748b', background:'#f8fafc', padding:'8px 12px', borderRadius:8, marginBottom:12, display:'flex', alignItems:'center', gap:6 }}>
+                    <Info size={14} />
+                    Klik salah satu nomor pasal untuk melihat isi poinnya. Pasal lain akan memudar sampai kamu pilih lagi.
+                  </div>
+                )}
 
                 {pasalData.length === 0 ? (
                   <div style={{ textAlign:'center', padding:'2rem', color:'#94a3b8', fontSize:13 }}>
                     Tidak ada pasal yang berhasil diekstrak.
                   </div>
-                ) : (
-                  <div style={{ display:'flex', flexDirection:'column', gap:6, maxHeight:500, overflowY:'auto', paddingRight:4 }}>
-                    {pasalData.map((pasal, index) => {
-                      const isOpen        = expandedPasal.has(pasal.nomor);
-                      const selCount = pasal.poin.filter(p => poinDipilih.includes(p)).length;
-                      const allSelected   = pasal.poin.length > 0 && pasal.poin.every(p => poinDipilih.includes(p));
-
-                      return (
-                        <div key={pasal.nomor} style={{ border:`1px solid ${isOpen ? '#93C5FD' : '#e2e8f0'}`, borderRadius:12, overflow:'hidden', background:'#fff', transition:'all 0.3s ease', boxShadow: isOpen ? `0 2px 8px ${BLUE}10` : 'none', animation: `fadeInUp 0.3s ease-out ${0.15 + index * 0.04}s both` }}>
-
-                          <div onClick={() => togglePasal(pasal.nomor)} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 14px', cursor:'pointer', userSelect:'none', background: isOpen ? 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)' : '#f8fafc', borderBottom: isOpen ? '1px solid #e2e8f0' : 'none', transition:'all 0.3s ease' }}>
-                            <div style={{ display:'flex', alignItems:'center', gap:10, flex:1, minWidth:0 }}>
-                              <span style={{ width:28, height:28, borderRadius:'50%', flexShrink:0, background: selCount > 0 ? `linear-gradient(135deg, #2563EB, ${BLUE_DARK})` : '#e2e8f0', color: selCount > 0 ? '#fff' : '#94a3b8', fontSize:11, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.3s ease' }}>
-                                {pasal.nomor}
-                              </span>
-                              <span style={{ fontSize:13, fontWeight: isOpen ? 600 : 500, color: isOpen ? BLUE_DARK : '#334155', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                                {pasal.judul}
-                              </span>
-                              <span style={{ fontSize:11, color:'#94a3b8', flexShrink:0 }}>{pasal.poin.length} poin</span>
-                              {selCount > 0 && (
-                                <span style={{ fontSize:10, fontWeight:600, padding:'2px 10px', borderRadius:100, background:'#DBEAFE', color:BLUE_DARK, flexShrink:0, display:'flex', alignItems:'center', gap:4 }}>
-                                  <Check size={10} />
-                                  {selCount}
-                                </span>
-                              )}
-                            </div>
-                            <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0, marginLeft:8 }}>
-                              {isOpen && pasal.poin.length > 0 && (
-                                <button onClick={e => togglePoinPasal(pasal.poin, e)} style={{ fontSize:10, padding:'3px 10px', borderRadius:6, cursor:'pointer', fontFamily:'sans-serif', transition:'all 0.2s ease', border: allSelected ? '1px solid #FCA5A5' : '1px solid #93C5FD', background: allSelected ? '#FEE2E2' : '#DBEAFE', color: allSelected ? '#991B1B' : BLUE_DARK, display:'flex', alignItems:'center', gap:4 }}>
-                                  {allSelected ? <X size={10} /> : <Check size={10} />}
-                                  {allSelected ? 'Batal' : 'Semua'}
-                                </button>
-                              )}
-                              <span style={{ fontSize:12, color:'#94a3b8', transition:'transform 0.3s ease', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)', display:'inline-block' }}>
-                                <ChevronDown size={16} />
-                              </span>
-                            </div>
+                ) : cariPoin ? (
+                  /* Mode pencarian — tampil flat lintas semua pasal, tab disembunyikan sementara */
+                  pasalTersaring.length === 0 ? (
+                    <div style={{ textAlign:'center', padding:'2rem', color:'#94a3b8', fontSize:13 }}>
+                      Tidak ada poin yang cocok dengan &quot;{cariPoin}&quot;.
+                    </div>
+                  ) : (
+                    <div style={{ display:'flex', flexDirection:'column', gap:10, maxHeight:520, overflowY:'auto', paddingRight:4, minWidth:0 }}>
+                      {pasalTersaring.map(pasal => (
+                        <div key={pasal.nomor} style={{ minWidth:0 }}>
+                          <div style={{ fontSize:11, fontWeight:700, color: BLUE_DARK, marginBottom:6, display:'flex', alignItems:'center', gap:6 }}>
+                            <span style={{ width:20, height:20, borderRadius:'50%', background:'#DBEAFE', display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, flexShrink:0 }}>{pasal.nomor}</span>
+                            {pasal.judul}
                           </div>
+                          <div style={{ display:'flex', flexDirection:'column', gap:5, minWidth:0 }}>
+                            {pasal.poin.map((p, pi) => {
+                              const isChecked = poinDipilih.includes(p);
+                              return (
+                                <label key={pi} style={{ display:'flex', gap:10, alignItems:'flex-start', cursor:'pointer', padding:'9px 12px', borderRadius:9, background: isChecked ? 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)' : '#f8fafc', border: `1px solid ${isChecked ? '#93C5FD' : '#f1f5f9'}`, minWidth:0 }}>
+                                  <input type="checkbox" checked={isChecked} onChange={() => togglePoin(p)} style={{ marginTop:2, accentColor: BLUE, flexShrink:0, width:16, height:16, cursor:'pointer' }} />
+                                  <span style={{ fontSize:12.5, lineHeight:1.75, color: isChecked ? BLUE_DARK : '#334155', flex:1, minWidth:0, overflowWrap:'break-word', wordBreak:'break-word', maxWidth:'70ch' }}>{p}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                ) : (
+                  <>
+                    {/* Tab horizontal per-pasal */}
+                    <div style={{ display:'flex', gap:8, overflowX:'auto', paddingBottom:8, marginBottom:14 }}>
+                      {pasalData.map(pasal => {
+                        const isActive = pasalAktif === pasal.nomor;
+                        const selCount = pasal.poin.filter(p => poinDipilih.includes(p)).length;
+                        return (
+                          <button
+                            key={pasal.nomor}
+                            onClick={() => setPasalAktif(pasal.nomor)}
+                            className="tab-pasal"
+                            style={{
+                              flexShrink:0, display:'flex', alignItems:'center', gap:8, padding:'10px 16px', borderRadius:12,
+                              cursor:'pointer', fontFamily:'sans-serif', border:`1.5px solid ${isActive ? BLUE : '#e2e8f0'}`,
+                              background: isActive ? `linear-gradient(135deg, ${BLUE}, ${BLUE_DARK})` : '#fff',
+                              color: isActive ? '#fff' : '#64748b',
+                              transition:'all 0.35s ease',
+                              filter: isActive ? 'none' : 'blur(0.4px)',
+                              opacity: isActive ? 1 : 0.55,
+                              transform: isActive ? 'scale(1.03)' : 'scale(1)',
+                              boxShadow: isActive ? `0 6px 16px -6px ${BLUE}70` : 'none',
+                            }}
+                          >
+                            <span style={{ width:24, height:24, borderRadius:'50%', flexShrink:0, background: isActive ? 'rgba(255,255,255,0.22)' : '#eef2f6', color: isActive ? '#fff' : '#94a3b8', fontSize:11, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                              {pasal.nomor}
+                            </span>
+                            <span style={{ fontSize:12.5, fontWeight:600, whiteSpace:'nowrap' }}>{pasal.judul}</span>
+                            <span style={{ fontSize:10, opacity:0.8 }}>{pasal.poin.length} poin</span>
+                            {selCount > 0 && (
+                              <span style={{ fontSize:9.5, fontWeight:700, padding:'2px 8px', borderRadius:100, background: isActive ? 'rgba(255,255,255,0.25)' : '#DBEAFE', color: isActive ? '#fff' : BLUE_DARK }}>
+                                {selCount}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
 
-                          {isOpen && (
-                            <div style={{ padding:'10px 14px 14px', display:'flex', flexDirection:'column', gap:5 }}>
-                              {pasal.poin.length > 0 ? (
-                                pasal.poin.map((p, pi) => {
-                                  const isChecked = poinDipilih.includes(p);
-                                  return (
-                                    <label key={pi} style={{ display:'flex', gap:10, alignItems:'flex-start', cursor:'pointer', padding:'8px 12px', borderRadius:9, background: isChecked ? 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)' : '#f8fafc', border: `1px solid ${isChecked ? '#93C5FD' : '#f1f5f9'}`, transition:'all 0.2s ease' }}>
-                                      <input type="checkbox" checked={isChecked} onChange={() => togglePoin(p)} style={{ marginTop:2, accentColor: BLUE, flexShrink:0, width:16, height:16, cursor:'pointer' }} />
-                                      <span style={{ fontSize:12, lineHeight:1.7, color: isChecked ? BLUE_DARK : '#334155', fontWeight: isChecked ? 500 : 400, flex:1 }}>
-                                        {p}
-                                      </span>
-                                    </label>
-                                  );
-                                })
-                              ) : (
-                                <div style={{ fontSize:11, color:'#94a3b8', fontStyle:'italic', padding:'6px' }}>
-                                  Tidak ada sub-poin di pasal ini
-                                </div>
-                              )}
+                    {/* Konten pasal aktif */}
+                    {pasalAktifData && (
+                      <div key={pasalAktifData.nomor} className="fld-in">
+                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+                          <div style={{ fontSize:13, fontWeight:700, color: BLUE_DARK, display:'flex', alignItems:'center', gap:8 }}>
+                            <span style={{ width:26, height:26, borderRadius:'50%', background:`linear-gradient(135deg, ${BLUE}, ${BLUE_DARK})`, color:'#fff', fontSize:11, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center' }}>{pasalAktifData.nomor}</span>
+                            {pasalAktifData.judul}
+                          </div>
+                          {pasalAktifData.poin.length > 0 && (
+                            <button onClick={e => togglePoinPasal(pasalAktifData.poin, e)} style={{ fontSize:10.5, padding:'4px 12px', borderRadius:7, cursor:'pointer', fontFamily:'sans-serif', border: pasalAktifData.poin.every(p => poinDipilih.includes(p)) ? '1px solid #FCA5A5' : '1px solid #93C5FD', background: pasalAktifData.poin.every(p => poinDipilih.includes(p)) ? '#FEE2E2' : '#DBEAFE', color: pasalAktifData.poin.every(p => poinDipilih.includes(p)) ? '#991B1B' : BLUE_DARK, display:'flex', alignItems:'center', gap:4 }}>
+                              {pasalAktifData.poin.every(p => poinDipilih.includes(p)) ? <X size={11} /> : <Check size={11} />}
+                              {pasalAktifData.poin.every(p => poinDipilih.includes(p)) ? 'Batal Semua' : 'Pilih Semua di Pasal Ini'}
+                            </button>
+                          )}
+                        </div>
+
+                        <div style={{ display:'flex', flexDirection:'column', gap:6, maxHeight:440, overflowY:'auto', paddingRight:4, minWidth:0 }}>
+                          {pasalAktifData.poin.length > 0 ? (
+                            pasalAktifData.poin.map((p, pi) => {
+                              const isChecked = poinDipilih.includes(p);
+                              return (
+                                <label key={pi} style={{ display:'flex', gap:10, alignItems:'flex-start', cursor:'pointer', padding:'10px 13px', borderRadius:10, background: isChecked ? 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)' : '#f8fafc', border: `1px solid ${isChecked ? '#93C5FD' : '#f1f5f9'}`, transition:'all 0.2s ease', minWidth:0 }}>
+                                  <input type="checkbox" checked={isChecked} onChange={() => togglePoin(p)} style={{ marginTop:2, accentColor: BLUE, flexShrink:0, width:16, height:16, cursor:'pointer' }} />
+                                  <span style={{ fontSize:12.5, lineHeight:1.75, color: isChecked ? BLUE_DARK : '#334155', fontWeight: isChecked ? 500 : 400, flex:1, minWidth:0, overflowWrap:'break-word', wordBreak:'break-word', maxWidth:'70ch' }}>
+                                    {p}
+                                  </span>
+                                </label>
+                              );
+                            })
+                          ) : (
+                            <div style={{ fontSize:11, color:'#94a3b8', fontStyle:'italic', padding:'6px' }}>
+                              Tidak ada sub-poin di pasal ini
                             </div>
                           )}
                         </div>
-                      );
-                    })}
-                  </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
 
-              {/* Preview narasi */}
+              {/* Narasi — bisa diedit langsung, bukan cuma preview */}
               {poinDipilih.length > 0 && (
-                <div style={{ ...card, border:'2px solid #93C5FD', animation: 'fadeInUp 0.4s ease-out 0.15s both' }}>
-                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
-                    <div style={{ fontSize:13, fontWeight:600, color:BLUE_DARK, display:'flex', alignItems:'center', gap:8 }}>
-                      <FileText size={16} />
-                      Preview Narasi Otomatis
+                <div style={{ ...card, border:'2px solid #FDE68A', animation: 'fadeInUp 0.4s ease-out 0.15s both' }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10, flexWrap:'wrap', gap:6 }}>
+                    <div style={{ fontSize:13, fontWeight:600, color:'#92400E', display:'flex', alignItems:'center', gap:8 }}>
+                      <Sparkles size={16} style={{ color: GOLD }} />
+                      Narasi untuk Beranda Publik
                     </div>
-                    <button onClick={() => setShowNarasi(s => !s)} style={{ ...btnSm, fontSize:11, display:'flex', alignItems:'center', gap:4 }}>
-                      {showNarasi ? <EyeOff size={14} /> : <Eye size={14} />}
-                      {showNarasi ? 'Sembunyikan' : 'Tampilkan'}
+                    <button onClick={acakGaya} style={{ ...btnSm, fontSize:10, display:'flex', alignItems:'center', gap:4, color:'#92400E', borderColor:'#FDE68A', background:'#FFFBEB' }}>
+                      <Shuffle size={12} />
+                      Coba Gaya Lain
                     </button>
                   </div>
 
-                  {showNarasi && (
-                    <div style={{ fontSize:13, color:'#334155', lineHeight:1.8, background:'#f8fafc', padding:'14px 18px', borderRadius:10, whiteSpace:'pre-line', border:'1px solid #e2e8f0', animation: 'fadeInUp 0.3s ease-out' }}>
-                      {narasiPreview}
-                    </div>
-                  )}
-                  {!showNarasi && (
-                    <div style={{ fontSize:12, color:'#64748b', display:'flex', alignItems:'center', gap:6 }}>
-                      <Info size={14} />
-                      Narasi dibuat otomatis dari poin yang dipilih. Klik &quot;Tampilkan&quot; untuk preview.
-                    </div>
+                  <div style={{ fontSize:11, color:'#94a3b8', marginBottom:8, display:'flex', alignItems:'center', gap:6 }}>
+                    <Edit3 size={12} />
+                    Bisa diedit bebas — teks inilah yang beneran tampil di beranda, bukan cuma pratinjau.
+                  </div>
+
+                  <textarea
+                    value={narasiEdit}
+                    onChange={e => { setNarasiEdit(e.target.value); setNarasiDisunting(true); }}
+                    style={{ width:'100%', minHeight:130, fontSize:13, color:'#334155', lineHeight:1.8, background:'#fff', padding:'14px 16px', borderRadius:10, border:'1.5px solid #FDE68A', fontFamily:'sans-serif', resize:'vertical', boxSizing:'border-box' }}
+                  />
+
+                  {narasiDisunting && (
+                    <button onClick={() => { setNarasiEdit(narasiOtomatis); setNarasiDisunting(false); }} style={{ ...btnSm, fontSize:10, marginTop:8, display:'flex', alignItems:'center', gap:4 }}>
+                      <RefreshCw size={11} />
+                      Kembalikan ke draf otomatis
+                    </button>
                   )}
                 </div>
               )}
@@ -517,6 +637,8 @@ export default function ExtractPoinPage() {
         @keyframes fadeInDown { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+        .fld-in { animation: fadeInUp 0.35s ease-out; }
+        .tab-pasal:hover { opacity: 1 !important; filter: none !important; transform: scale(1.02); }
       `}</style>
     </div>
   );

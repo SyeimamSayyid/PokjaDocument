@@ -169,9 +169,8 @@ export default function BerandaPage() {
       {/* Konten Utama */}
       <div style={{ maxWidth:880, margin:'0 auto', padding:'1.5rem 1.25rem 2rem' }}>
         {loading ? (
-          <div style={{ textAlign:'center', padding:'3.5rem', color:'#94a3b8' }}>
-            <div style={{ width:34, height:34, border:'3px solid #eef2f6', borderTop:`3px solid ${BLUE}`, borderRadius:'50%', animation:'spin 0.8s linear infinite', margin:'0 auto 14px' }} />
-            <div style={{ fontSize:13.5, fontWeight:500 }}>Memuat data...</div>
+          <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+            {[0,1,2].map(i => <SkeletonCard key={i} delay={i * 0.08} />)}
           </div>
         ) : activeTab === 'akan-datang' ? (
           akanDatangFiltered.length === 0 ? (
@@ -180,7 +179,11 @@ export default function BerandaPage() {
             <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
               {akanDatangFiltered.map((k, index) => (
                 <div key={k.id} style={{ ...shellStyle, animationDelay:`${index * 0.05}s` }} className="fld lift">
-                  <div style={coreStyle}>
+                  <div style={{ ...coreStyle, display:'flex', gap:14, alignItems:'flex-start' }}>
+                    <div style={{ width:50, height:50, borderRadius:'50%', flexShrink:0, background:'linear-gradient(135deg,#DBEAFE,#EFF6FF)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      {k.jenis === 'MOU' ? <FileText size={20} style={{ color: BLUE_DARK }} /> : <FileCheck size={20} style={{ color: BLUE_DARK }} />}
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ display:'flex', gap:8, marginBottom:12, flexWrap:'wrap' }}>
                       {(k.divisiLabel.length > 0 ? k.divisiLabel : ['—']).map((lbl, di) => (
                         <span key={di} style={pillTag('#EDE9FE', '#5B21B6')}><Tag size={11} />{lbl}</span>
@@ -233,6 +236,7 @@ export default function BerandaPage() {
                         <Check size={17} /> Daftar Sekarang <ChevronRight size={15} />
                       </a>
                     )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -313,6 +317,27 @@ export default function BerandaPage() {
   );
 }
 
+// Skeleton shimmer — bentuknya sengaja meniru layout kartu asli (lingkaran ikon + baris judul/meta)
+// biar transisi loading -> konten tidak berasa "loncat" bentuknya.
+function SkeletonCard({ delay = 0 }: { delay?: number }) {
+  return (
+    <div style={{ ...shellStyle, animationDelay: `${delay}s` }} className="fld">
+      <div style={{ ...coreStyle, position:'relative', overflow:'hidden' }}>
+        <div className="skeleton-shimmer" />
+        <div style={{ display:'flex', gap:14, alignItems:'flex-start' }}>
+          <div className="sk-block" style={{ width:50, height:50, borderRadius:'50%', flexShrink:0 }} />
+          <div style={{ flex:1, paddingTop:2 }}>
+            <div className="sk-block" style={{ height:12, width:'42%', borderRadius:6, marginBottom:10 }} />
+            <div className="sk-block" style={{ height:10, width:'62%', borderRadius:6, marginBottom:16 }} />
+            <div className="sk-block" style={{ height:9, width:'100%', borderRadius:6, marginBottom:8 }} />
+            <div className="sk-block" style={{ height:9, width:'92%', borderRadius:6 }} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EmptyState({ icon: Icon, title, desc }: { icon: any; title: string; desc: string }) {
   return (
     <div style={shellStyle} className="fld">
@@ -342,6 +367,9 @@ function GlobalStyle() {
       .arr { transition: transform 0.3s cubic-bezier(0.32,0.72,0,1); }
       .img-zoom img { transition: transform 0.5s cubic-bezier(0.32,0.72,0,1); }
       .lift:hover .img-zoom img { transform: scale(1.06); }
+      .sk-block { background: #e7ecf3; }
+      .skeleton-shimmer { position:absolute; inset:0; background: linear-gradient(110deg, rgba(231,236,243,0) 0%, rgba(231,236,243,0) 40%, rgba(219,234,254,0.7) 50%, rgba(231,236,243,0) 60%, rgba(231,236,243,0) 100%); animation: shimmerMove 1.3s linear infinite; }
+      @keyframes shimmerMove { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
     `}</style>
   );
 }

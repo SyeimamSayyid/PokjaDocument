@@ -64,6 +64,11 @@ export default function DashboardMitraPage() {
   const [showNotif, setShowNotif] = useState(false);
   const [labelMitra, setLabelMitra] = useState('');
 
+  const [sudahDipublikasi, setSudahDipublikasi] = useState(false);
+  const [tglKegiatanSelesai, setTglKegiatanSelesai] = useState('');
+  const [tglBerlakuFresh, setTglBerlakuFresh] = useState('');
+  const [tglBerakhirFresh, setTglBerakhirFresh] = useState('');
+
   const loadFoto = useCallback((idDokumen: string) => {
     fetch(`/api/dokumen/foto?idDokumen=${idDokumen}`)
       .then(r => r.json())
@@ -95,6 +100,19 @@ export default function DashboardMitraPage() {
         .then(r => r.json())
         .then(d => setLabelMitra(d.label || u.namaMitra))
         .catch(() => setLabelMitra(u.namaMitra));
+      // Data user di localStorage cuma snapshot saat login — status publikasi
+      // & tanggal kegiatan bisa berubah belakangan, jadi ambil yang terbaru.
+      fetch(`/api/dokumen/${u.idDokumen}`)
+        .then(r => r.json())
+        .then(d => {
+          if (d.dokumen) {
+            setSudahDipublikasi(!!d.dokumen.sudahDipublikasi);
+            setTglKegiatanSelesai(d.dokumen.tglKegiatanSelesai || '');
+            setTglBerlakuFresh(d.dokumen.tglBerlaku || '');
+            setTglBerakhirFresh(d.dokumen.tglBerakhir || '');
+          }
+        })
+        .catch(() => {});
       fetch('/api/dokumen/aktivitas', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idDokumen: u.idDokumen, aktor: u.namaMitra, peran: 'mitra' }),
@@ -204,6 +222,14 @@ export default function DashboardMitraPage() {
   const sc = statusColor[user.status.toLowerCase()] || statusColor['draft'];
   const inisial = user.namaMitra.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 
+  const kegiatanSudahLewat = (() => {
+    if (!tglKegiatanSelesai) return false;
+    const selesai = new Date(tglKegiatanSelesai);
+    if (isNaN(selesai.getTime())) return false;
+    const now = new Date(); now.setHours(0,0,0,0); selesai.setHours(23,59,59,999);
+    return now.getTime() > selesai.getTime();
+  })();
+
   return (
     <div style={{ minHeight: '100dvh', fontFamily: FONT, background: 'radial-gradient(1000px 480px at 85% -10%, #dbeafe 0%, rgba(219,234,254,0) 55%), linear-gradient(180deg,#f7f9fc,#eef2f8)' }}>
       <GlobalStyle />
@@ -286,7 +312,29 @@ export default function DashboardMitraPage() {
               <span style={{ opacity: 0.3 }}>→</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><FiClock size={13} /> {user.tglBerakhir}</span>
             </div>
-            <div style={infoNoteBlue}><FiInfo size={12} style={{ marginRight: 6, flexShrink: 0, marginTop: 1 }} />Kode akses berlaku hingga: {user.kodeExpire}</div>
+          </div>
+        </div>
+
+        {/* Masa Berlaku MOU/PKS */}
+        <div style={{ ...shellStyle, marginBottom: 16 }} className="fld">
+          <div style={coreStyle}>
+            <div style={cardTitle}><FiCalendar size={13} style={{ marginRight: 6, verticalAlign: 'middle', color: GOLD }} />Masa Berlaku {user.jenis}</div>
+            <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 12, padding: '13px 16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: 9.5, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 600 }}>Mulai</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#0f1f3d' }}>{tglBerlakuFresh || user.tglBerlaku || 'Belum ditetapkan'}</div>
+                </div>
+                <div style={{ color: GOLD, fontSize: 17 }}>→</div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 9.5, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: 600 }}>Berakhir</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#0f1f3d' }}>{tglBerakhirFresh || user.tglBerakhir || 'Belum ditetapkan'}</div>
+                </div>
+              </div>
+            </div>
+            <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 8, lineHeight: 1.5 }}>
+              Ini periode resmi kesepakatan {user.jenis} antara BNN Provinsi Sulawesi Selatan dan {user.namaMitra}.
+            </div>
           </div>
         </div>
 
@@ -304,6 +352,41 @@ export default function DashboardMitraPage() {
           </div>
         </a>
 
+        {!sudahDipublikasi ? (
+          <div style={{ ...shellStyle, marginBottom: 16 }} className="fld">
+            <div style={coreStyle}>
+              <div style={cardTitle}><FiImage size={13} style={{ marginRight: 6, verticalAlign: 'middle', color: BLUE }} />Foto Kegiatan</div>
+              <div style={{ background: '#f8fafc', border: '1px solid rgba(29,78,216,0.08)', borderRadius: 12, padding: '13px 15px', fontSize: 12, color: '#64748b', lineHeight: 1.6, display: 'flex', gap: 10 }}>
+                <FiInfo size={16} style={{ color: BLUE, flexShrink: 0, marginTop: 1 }} />
+                <span>Fitur unggah foto akan terbuka otomatis setelah Admin Pokja mempublikasikan kerja sama ini ke halaman kegiatan publik. Sementara ini, silakan lengkapi dokumen lewat menu &quot;Lihat Dokumen&quot; di atas.</span>
+              </div>
+            </div>
+          </div>
+        ) : kegiatanSudahLewat ? (
+          <div style={shellStyle} className="fld">
+            <div style={coreStyle}>
+              <div style={cardTitle}><FiGrid size={13} style={{ marginRight: 6, verticalAlign: 'middle', color: BLUE }} />Foto Kegiatan ({files.length})</div>
+              <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 12, padding: '11px 14px', fontSize: 12, color: '#92400E', marginBottom: files.length > 0 ? 14 : 0, display: 'flex', gap: 9 }}>
+                <FiInfo size={15} style={{ flexShrink: 0, marginTop: 1, color: GOLD }} />
+                <span>Kegiatan sudah selesai (berakhir {tglKegiatanSelesai}) — unggah dan edit foto baru sudah ditutup. Foto yang sudah ada tetap tersimpan di bawah ini.</span>
+              </div>
+              {files.length > 0 && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))', gap: 12 }}>
+                  {files.map(f => (
+                    <div key={f.fileId} style={fotoCard} className="fld">
+                      <img src={`/api/foto/${f.fileId}`} alt={f.nama} style={{ width: '100%', height: 130, objectFit: 'cover', display: 'block', background: '#eef2f6' }} />
+                      <div style={{ padding: '9px 10px' }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#0f1f3d' }}>{f.nama}</div>
+                        <div style={{ fontSize: 10.5, color: f.caption ? '#334155' : '#cbd5e1', lineHeight: 1.4, marginTop: 7 }}>{f.caption || 'Tanpa deskripsi'}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <>
         {/* Kuota + upload */}
         <div style={{ ...shellStyle, marginBottom: 16 }} className="fld">
           <div style={coreStyle}>
@@ -398,6 +481,8 @@ export default function DashboardMitraPage() {
             )}
           </div>
         </div>
+          </>
+        )}
 
       </div>
     </div>

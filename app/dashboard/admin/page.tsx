@@ -8,7 +8,7 @@ import {
   FiUsers, FiCalendar, FiLogOut, FiUser, FiActivity,
   FiFile, FiPieChart, FiTrendingUp, FiList, FiArrowUpRight, FiArchive,
 } from 'react-icons/fi';
-import { FaFileSignature, FaFileAlt, FaBuilding } from 'react-icons/fa';
+import { FaFileSignature, FaFileAlt, FaBuilding, FaBalanceScale } from 'react-icons/fa';
 import NotifikasiAdminBell from '@/components/NotifikasiAdminBell';
 
 interface Stats {
@@ -27,6 +27,8 @@ const GOLD = '#D97706';
 
 export default function AdminDashboard() {
   const [nama, setNama] = useState('');
+  const [hukumOn, setHukumOn] = useState(false);
+  const [showPelaporanInfo, setShowPelaporanInfo] = useState(false);
   const [role, setRole] = useState('');
   const [stats, setStats] = useState<Stats | null>(null);
   const [dokumenTerbaru, setDokumenTerbaru] = useState<DokItem[]>([]);
@@ -154,7 +156,40 @@ export default function AdminDashboard() {
         .arr { transition: all 0.45s cubic-bezier(0.32,0.72,0,1); opacity:0; }
         .trow { transition: background 0.25s ease; }
         .trow:hover { background:#f8fafc; }
+
+        .hukum-switch { position:relative; display:inline-flex; align-items:center; width:44px; height:22px; flex-shrink:0; }
+        .hukum-toggle { opacity:0; width:0; height:0; }
+        .hukum-slider {
+          position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; border-radius:100px;
+          background:#e2e8f0; transition:0.3s;
+        }
+        .hukum-slider:before {
+          content:""; position:absolute; height:16px; width:16px; left:3px; bottom:3px; border-radius:50%;
+          background:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.25); transition:0.3s;
+        }
+        .hukum-toggle:checked + .hukum-slider { background:#122C4F; }
+        .hukum-toggle:checked + .hukum-slider:before { transform:translateX(22px); background:#FBF9E4; }
       `}</style>
+
+      {showPelaporanInfo && (
+        <div onClick={() => { setShowPelaporanInfo(false); setHukumOn(false); }} style={{ position:'fixed', inset:0, background:'rgba(18,44,79,0.55)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:300, padding:'1rem' }} className="rise">
+          <div onClick={e => e.stopPropagation()} style={{ background:'#FBF9E4', borderRadius:22, padding:'2.2rem 1.8rem', width:'100%', maxWidth:360, textAlign:'center', border:'1px solid rgba(18,44,79,0.15)', boxShadow:'0 30px 70px -30px rgba(18,44,79,0.5)' }}>
+            <div style={{ width:64, height:64, borderRadius:'50%', background:'#122C4F', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px', boxShadow:'0 12px 26px -10px rgba(18,44,79,0.6)' }}>
+              <FaBalanceScale size={28} color="#FBF9E4" />
+            </div>
+            <div style={{ fontSize:16, fontWeight:800, color:'#122C4F', marginBottom:10, letterSpacing:'-0.01em' }}>Halaman Pelaporan</div>
+            <p style={{ fontSize:13, color:'#3a4a5c', lineHeight:1.7, margin:'0 0 6px' }}>
+              Halaman Pelaporan dalam tahap pengembangan, silakan tunggu informasi lebih lanjut terkait halaman ini.
+            </p>
+            <p style={{ fontSize:13, color:'#3a4a5c', lineHeight:1.7, margin:'0 0 20px', fontWeight:600 }}>
+              Terima kasih atas pengertiannya.
+            </p>
+            <button onClick={() => { setShowPelaporanInfo(false); setHukumOn(false); }} style={{ padding:'10px 28px', borderRadius:100, border:'none', background:'#122C4F', color:'#FBF9E4', fontSize:12.5, fontWeight:700, cursor:'pointer', fontFamily:FONT }}>
+              Tutup
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Floating nav pill */}
       <div style={{ maxWidth:1180, margin:'0 auto', padding:'1.4rem 1.5rem 0' }}>
@@ -166,6 +201,23 @@ export default function AdminDashboard() {
             SI-POKJA HUMKER
           </div>
           <div style={{ display:'flex', alignItems:'center', gap:9 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, padding:'5px 9px', background:'rgba(255,255,255,0.5)', borderRadius:100, border:'1px solid rgba(29,78,216,0.08)' }} title="Dokumen (aktif) / Pelaporan Hukum (segera hadir)">
+              <div style={{ width:24, height:24, borderRadius:'50%', background:'#EFF6FF', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <FiFileText size={12} style={{ color: BLUE }} />
+              </div>
+              <label className="hukum-switch">
+                <input
+                  className="hukum-toggle"
+                  type="checkbox"
+                  checked={hukumOn}
+                  onChange={e => { setHukumOn(e.target.checked); if (e.target.checked) setShowPelaporanInfo(true); }}
+                />
+                <span className="hukum-slider" />
+              </label>
+              <div style={{ width:24, height:24, borderRadius:'50%', background:'#FBF9E4', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <FaBalanceScale size={12} style={{ color:'#122C4F' }} />
+              </div>
+            </div>
             <NotifikasiAdminBell />
             <div style={{ width:34, height:34, borderRadius:'50%', background:`linear-gradient(150deg,${BLUE_LIGHT},${GOLD})`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12.5, fontWeight:800, color:'#fff', boxShadow:`0 4px 10px -3px ${GOLD}70` }}>
               {nama.split(' ').map(n => n[0]).join('').toUpperCase().slice(0,2)}

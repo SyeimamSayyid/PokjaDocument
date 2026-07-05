@@ -18,7 +18,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const {
       tipeKode, idMitra, namaMitra, namaPIC, jabatanPIC,
-      jenis, judul, durasiTahun, dibuatOleh,
+      jenis, judul, dibuatOleh, jurusan,
+      tglBerlaku: tglBerlakuInput, tglBerakhir: tglBerakhirInput,
       templateMitraId, divisi, // ← divisi: array dari Pengajuan, dibawa ke dokumen
     } = body;
 
@@ -54,18 +55,38 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ message: 'Judul dokumen wajib diisi.' }, { status: 400 });
       }
 
-      const durasi      = Math.max(5, parseInt(String(durasiTahun || 5)));
+      if (!tglBerlakuInput) {
+        return NextResponse.json({ message: 'Tanggal mulai (Acc) wajib diisi.' }, { status: 400 });
+      }
+      const tglMulaiDate = new Date(tglBerlakuInput);
+      if (isNaN(tglMulaiDate.getTime())) {
+        return NextResponse.json({ message: 'Format tanggal mulai tidak valid.' }, { status: 400 });
+      }
+
+      // Tanggal berakhir OPSIONAL saat generate — bisa dikosongkan dulu dan
+      // diisi admin belakangan lewat halaman detail dokumen.
+      let tglAkhirDate: Date | null = null;
+      if (tglBerakhirInput) {
+        tglAkhirDate = new Date(tglBerakhirInput);
+        if (isNaN(tglAkhirDate.getTime())) {
+          return NextResponse.json({ message: 'Format tanggal berakhir tidak valid.' }, { status: 400 });
+        }
+        if (tglAkhirDate <= tglMulaiDate) {
+          return NextResponse.json({ message: 'Tanggal berakhir harus setelah tanggal mulai.' }, { status: 400 });
+        }
+      }
+      // Durasi (tahun) dihitung otomatis dari rentang tanggal kalau ada — cuma untuk catatan/tampilan
+      const durasi = tglAkhirDate
+        ? Math.max(1, Math.round((tglAkhirDate.getTime() - tglMulaiDate.getTime()) / (1000 * 60 * 60 * 24 * 365)))
+        : 0;
+
       const idDokumen   = generateId(jenis);
       const kodeAkses   = generateKodeAkses(jenis);
       const kodeExpire  = new Date(now);
       kodeExpire.setDate(kodeExpire.getDate() + 30); // 30 hari fase draft
 
-      const tglBerlaku  = formatTanggal(now);
-      const tglBerakhir = (() => {
-        const d = new Date(now);
-        d.setFullYear(d.getFullYear() + durasi);
-        return formatTanggal(d);
-      })();
+      const tglBerlaku  = formatTanggal(tglMulaiDate);
+      const tglBerakhir = tglAkhirDate ? formatTanggal(tglAkhirDate) : '';
 
       // Panggil Apps Script — buat folder + Docs sekaligus
       // FIX 2: Hanya kirim templateMitraId jika ada nilainya
@@ -81,6 +102,7 @@ export async function POST(req: NextRequest) {
         tanggalBerakhir: tglBerakhir,
         durasiTahun:     durasi,
         kodeAkses,
+        ...(jenis === 'PKS' && jurusan ? { jurusan } : {}),
         ...(templateMitraId ? { templateMitraId } : {}), // ← FIX 2: Conditional spread
       });
 

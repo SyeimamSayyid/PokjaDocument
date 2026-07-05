@@ -3,15 +3,15 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   ArrowLeft, FileText, Search, Filter, Eye, Check, X, Edit, Save, Send,
-  Mail, Phone, Calendar, DollarSign, Building, GraduationCap, Clipboard,
+  Mail, Phone, Calendar, Building, GraduationCap, Clipboard,
   Copy, CheckCircle, AlertCircle, Clock, Tag, ExternalLink,
   ChevronDown, ChevronUp, Info, Key, Briefcase, MessageSquare, Paperclip,
-  Target, List, Landmark,
+  List, Landmark,
 } from 'lucide-react';
 
 interface PengajuanItem {
   id: string; namaInstitusi: string; jenis: string; deskripsi: string;
-  tanggalKegiatan: string; biaya: string; email: string; noWa: string;
+  email: string; noWa: string;
   status: string; kodeTracking: string; tglSubmit: string; catatan: string;
   jurusan?: string;
   fileDokumenId?: string;
@@ -69,8 +69,6 @@ function toDivisiArray(raw: unknown): string[] {
   return [];
 }
 
-const DURASI_OPTS = [5,6,7,8,9,10];
-
 export default function PengajuanPage() {
   const [role, setRole]           = useState('');
   const [data, setData]           = useState<PengajuanItem[]>([]);
@@ -97,7 +95,6 @@ export default function PengajuanPage() {
   const [accItem, setAccItem]         = useState<PengajuanItem | null>(null);
   const [pilihanTemplate, setPilihanTemplate] = useState<'bnn'|'mitra'>('bnn');
   const [judulDok, setJudulDok]       = useState('');
-  const [durasiDok, setDurasiDok]     = useState(5);
   const [generating, setGenerating]   = useState(false);
   const [hasilGenerate, setHasilGenerate] = useState<HasilGenerate | null>(null);
   const [mitraList, setMitraList]     = useState<{id:string;nama:string}[]>([]);
@@ -199,7 +196,6 @@ export default function PengajuanPage() {
     setHasilGenerate(null);
     setError('');
     setJudulDok(item.deskripsi?.slice(0, 60) || '');
-    setDurasiDok(5);
     // Auto-match ke mitra yang namanya cocok. Kalau tidak ketemu, KOSONGKAN
     // (jangan jatuh ke mitra pertama di daftar — itu bug lama).
     const cocok = mitraList.find(m => m.nama.toLowerCase() === item.namaInstitusi.toLowerCase());
@@ -213,12 +209,29 @@ export default function PengajuanPage() {
     if (!accItem) return;
     if (!judulDok.trim()) { setError('Judul dokumen wajib diisi.'); return; }
     if ((accItem.divisi || []).length === 0) { setError('Tetapkan minimal 1 divisi sebelum generate dokumen.'); return; }
+    const tglMulaiOtomatis = new Date().toISOString().split('T')[0]; // = tanggal Acc
     setGenerating(true); setError('');
     setEmailTerkirim(false);
     setShowPlaneAnimation(false);
     const mitraCocok = mitraList.find(m => m.id === idMitraAcc);
     const namaMitra  = mitraCocok?.nama || accItem.namaInstitusi;
     try {
+      // Generate dokumen DULU — status pengajuan baru diubah kalau ini sukses,
+      // supaya tidak ada pengajuan yang "Disetujui" tapi dokumennya gagal dibuat.
+      const res = await fetch('/api/superadmin/generate-kode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tipeKode: 'dokumen', idMitra: idMitraAcc || '', namaMitra,
+          namaPIC: '', jenis: accItem.jenis, judul: judulDok.trim(),
+          tglBerlaku: tglMulaiOtomatis, tglBerakhir: '', dibuatOleh: role,
+          templateMitraId: pilihanTemplate === 'mitra' ? (accItem.fileDokumenId || '') : '',
+          divisi: accItem.divisi || [],
+        }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setError(d.message || d.error || 'Gagal generate kode.'); return; }
+
       await fetch('/api/pengajuan/status', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -227,19 +240,6 @@ export default function PengajuanPage() {
           catatan: `Disetujui. Template: ${pilihanTemplate === 'mitra' ? 'Dokumen mitra' : 'Template resmi BNN'}.`,
         }),
       });
-      const res = await fetch('/api/superadmin/generate-kode', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tipeKode: 'dokumen', idMitra: idMitraAcc || '', namaMitra,
-          namaPIC: '', jabatanPIC: '', jenis: accItem.jenis, judul: judulDok.trim(),
-          durasiTahun: durasiDok, dibuatOleh: role,
-          templateMitraId: pilihanTemplate === 'mitra' ? (accItem.fileDokumenId || '') : '',
-          divisi: accItem.divisi || [],
-        }),
-      });
-      const d = await res.json();
-      if (!res.ok) { setError(d.message || d.error || 'Gagal generate kode.'); return; }
       setHasilGenerate(d);
       load();
     } catch (e) {
@@ -494,7 +494,6 @@ export default function PengajuanPage() {
                             <div style={{ fontSize:11, color:'#64748b', marginTop:4, display:'flex', gap:14, flexWrap:'wrap', background:'#f8fafc', padding:'4px 10px', borderRadius:8 }}>
                               {item.email && <span style={{ display:'flex', alignItems:'center', gap:4 }}><Mail size={12} />{item.email}</span>}
                               {item.noWa && <span style={{ display:'flex', alignItems:'center', gap:4 }}><Phone size={12} />{item.noWa}</span>}
-                              {item.biaya && <span style={{ display:'flex', alignItems:'center', gap:4 }}><DollarSign size={12} />Rp {item.biaya}</span>}
                             </div>
                           )}
                           {item.catatan && (
@@ -509,7 +508,6 @@ export default function PengajuanPage() {
                       <div style={{ fontSize:11, color:'#94a3b8', marginTop:6, display:'flex', gap:14, flexWrap:'wrap' }}>
                         <span style={{ display:'flex', alignItems:'center', gap:4 }}><Clipboard size={12} />Kode: <strong style={{ color:BLUE }}>{item.kodeTracking}</strong></span>
                         <span style={{ display:'flex', alignItems:'center', gap:4 }}><Calendar size={12} />Submit: {item.tglSubmit}</span>
-                        {item.tanggalKegiatan && <span style={{ display:'flex', alignItems:'center', gap:4 }}><Target size={12} />Tgl: {item.tanggalKegiatan}</span>}
                       </div>
                     </div>
 
@@ -678,8 +676,6 @@ export default function PengajuanPage() {
                     <div style={dField}><span style={dLabel}>Jenis</span><span>{accItem.jenis}</span></div>
                     {(accItem.divisi || []).length > 0 && <div style={dField}><span style={dLabel}>Divisi</span><span>{(accItem.divisi || []).map(divisiLabel).join(', ')}</span></div>}
                     {accItem.jurusan && <div style={dField}><span style={dLabel}>Jurusan/Prodi</span><span>{accItem.jurusan}</span></div>}
-                    {accItem.tanggalKegiatan && <div style={dField}><span style={dLabel}>Tgl Rencana</span><span>{accItem.tanggalKegiatan}</span></div>}
-                    {accItem.biaya && <div style={dField}><span style={dLabel}>Estimasi Biaya</span><span>Rp {accItem.biaya}</span></div>}
                     {accItem.email && <div style={dField}><span style={dLabel}>Email</span><span>{accItem.email}</span></div>}
                     {accItem.noWa && <div style={dField}><span style={dLabel}>WhatsApp</span><span>{accItem.noWa}</span></div>}
                     <div style={{ ...dField, gridColumn:'1/-1' }}><span style={dLabel}>Deskripsi</span><span style={{ lineHeight:1.5 }}>{accItem.deskripsi}</span></div>
@@ -794,19 +790,12 @@ export default function PengajuanPage() {
                 <div style={{ marginBottom:16 }}>
                   <label style={labelSt}>
                     <Clock size={14} style={{ marginRight:4 }} />
-                    Durasi Berlaku
+                    Tanggal Acc (Mulai Berlaku)
                   </label>
-                  <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-                    {DURASI_OPTS.map(d => (
-                      <button key={d} type="button" onClick={() => setDurasiDok(d)} style={{
-                        padding:'6px 14px', borderRadius:7, border:`2px solid ${durasiDok===d?BLUE:'#e2e8f0'}`,
-                        background: durasiDok===d ? BLUE : '#fff',
-                        color: durasiDok===d ? '#fff' : '#334155',
-                        fontSize:12, cursor:'pointer', fontFamily:'sans-serif', fontWeight:durasiDok===d?600:400,
-                      }}>{d} th</button>
-                    ))}
+                  <div style={{ ...inputFull, background:'#f1f3f2', color:'#5b6b66', display:'flex', alignItems:'center', cursor:'not-allowed' }}>
+                    {new Date().toLocaleDateString('id-ID', { day:'numeric', month:'long', year:'numeric' })}
                   </div>
-                  <div style={{ fontSize:10, color:'#94a3b8', marginTop:4 }}>Minimal 5 tahun</div>
+                  <div style={{ fontSize:10, color:'#94a3b8', marginTop:4 }}>Otomatis = hari ini, tanggal Acc diklik. Tanggal berakhir bisa diisi admin belakangan lewat halaman detail dokumen.</div>
                 </div>
 
                 <button onClick={handleGenerateFromAcc} disabled={generating || !judulDok.trim() || (accItem.divisi || []).length === 0} style={{ ...btnPrimary, width:'100%', height:48, fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', gap:8, opacity: (generating || !judulDok.trim() || (accItem.divisi || []).length === 0) ? 0.6 : 1 }} className="btn-hover">
@@ -919,8 +908,6 @@ export default function PengajuanPage() {
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:14, fontSize:12 }}>
               <div style={dField}><span style={dLabel}>Deskripsi</span><span style={{ lineHeight:1.5 }}>{detail.deskripsi}</span></div>
               {detail.jurusan && <div style={dField}><span style={dLabel}>Jurusan</span><span>{detail.jurusan}</span></div>}
-              {detail.tanggalKegiatan && <div style={dField}><span style={dLabel}>Tgl Kegiatan</span><span>{detail.tanggalKegiatan}</span></div>}
-              {detail.biaya && <div style={dField}><span style={dLabel}>Biaya</span><span>Rp {detail.biaya}</span></div>}
               {detail.email && <div style={dField}><span style={dLabel}>Email</span><span>{detail.email}</span></div>}
               {detail.noWa && <div style={dField}><span style={dLabel}>WhatsApp</span><span>{detail.noWa}</span></div>}
               <div style={dField}><span style={dLabel}>Submit</span><span>{detail.tglSubmit}</span></div>

@@ -6,9 +6,9 @@ import KomentarDocs from '@/components/KomentarDocs';
 import NotifikasiAdminBell from '@/components/NotifikasiAdminBell';
 import {
   FiArrowLeft, FiExternalLink, FiEyeOff, FiEye, FiCheckCircle, FiCornerUpLeft,
-  FiClock, FiInfo, FiHome, FiCalendar, FiDownload, FiImage, FiCheck,
+  FiClock, FiInfo, FiHome, FiCalendar, FiDownload, FiCheck,
   FiX as FiClose, FiBriefcase, FiFileText, FiLoader, FiMail, FiPhone, FiUser, FiCopy,
-  FiEdit3, FiSend, FiPenTool,
+  FiEdit3, FiSend, FiPenTool, FiEdit2, FiZap,
 } from 'react-icons/fi';
 
 interface Dokumen {
@@ -93,6 +93,12 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
   const [divisiSaving, setDivisiSaving] = useState(false);
   const MAKS_DIVISI = 4;
 
+  const [tglBerakhirDraft, setTglBerakhirDraft] = useState('');
+  const [editTglBerakhir, setEditTglBerakhir]   = useState(false);
+  const [savingTglBerakhir, setSavingTglBerakhir] = useState(false);
+
+  const [publikasiDitolak, setPublikasiDitolak] = useState(false);
+
   const [ttdSaving, setTtdSaving] = useState(false);
   const [showTolakTtd, setShowTolakTtd] = useState(false);
   const [alasanTolakTtd, setAlasanTolakTtd] = useState('');
@@ -109,6 +115,8 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
         setTglMulai(d.dokumen.tglKegiatanMulai || '');
         setTglSelesai(d.dokumen.tglKegiatanSelesai || '');
         setDivisiDraft(d.dokumen.divisi || []);
+        setTglBerakhirDraft(d.dokumen.tglBerakhir || '');
+        setPublikasiDitolak(localStorage.getItem(`extractPoinDitolak_${id}`) === '1');
         setLoading(false);
       })
       .catch(() => { setError('Gagal memuat dokumen.'); setLoading(false); });
@@ -197,6 +205,23 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
   };
 
   const batalDivisi = () => { if (dok) setDivisiDraft(dok.divisi || []); };
+
+  const simpanTglBerakhir = async () => {
+    if (!dok || !tglBerakhirDraft) return;
+    setSavingTglBerakhir(true); setError(''); setMsg('');
+    try {
+      const res = await fetch('/api/superadmin/generate-kode', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: dok.id, fields: { tglBerakhir: tglBerakhirDraft } }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setError(d.message || 'Gagal menyimpan tanggal berakhir.'); return; }
+      setDok(prev => prev ? { ...prev, tglBerakhir: tglBerakhirDraft } : prev);
+      setMsg('Tanggal berakhir kesepakatan berhasil disimpan.');
+      setEditTglBerakhir(false);
+    } catch { setError('Gagal menyimpan tanggal berakhir.'); }
+    finally { setSavingTglBerakhir(false); }
+  };
 
   const ttdRequest = async (body: Record<string, unknown>) => {
     setTtdSaving(true); setError(''); setMsg('');
@@ -618,6 +643,46 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
 
           <div style={shellStyle} className="fld">
             <div style={coreStyle}>
+              <div style={cardTitle}><FiFileText size={13} style={{ marginRight:6, verticalAlign:'middle', color: GOLD }} />Masa Berlaku Kesepakatan {dok.jenis}</div>
+              <div style={hintText}>Tanggal mulai otomatis dari Acc. Tanggal berakhir diisi sesuai kesepakatan dengan mitra.</div>
+              <div style={mouKesepakatanBox}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: (!dok.tglBerakhir || editTglBerakhir) ? 10 : 0 }}>
+                  <div>
+                    <div style={{ fontSize:9.5, color:'#94a3b8', textTransform:'uppercase', letterSpacing:0.4, fontWeight:600 }}>Mulai</div>
+                    <div style={{ fontSize:13, fontWeight:700, color:'#0f1f3d' }}>{dok.tglBerlaku}</div>
+                  </div>
+                  <div style={{ color: GOLD, fontSize:16 }}>→</div>
+                  <div style={{ textAlign:'right' }}>
+                    <div style={{ fontSize:9.5, color:'#94a3b8', textTransform:'uppercase', letterSpacing:0.4, fontWeight:600 }}>Berakhir</div>
+                    {dok.tglBerakhir && !editTglBerakhir ? (
+                      <div style={{ fontSize:13, fontWeight:700, color:'#0f1f3d', display:'flex', alignItems:'center', gap:6, justifyContent:'flex-end' }}>
+                        {dok.tglBerakhir}
+                        <button onClick={() => { setEditTglBerakhir(true); setTglBerakhirDraft(dok.tglBerakhir); }} style={miniIconBtnGold} className="btn-hover" title="Ubah tanggal">
+                          <FiEdit2 size={11} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize:11, color:'#A32D2D', fontWeight:600 }}>Belum ditetapkan</div>
+                    )}
+                  </div>
+                </div>
+                {(!dok.tglBerakhir || editTglBerakhir) && (
+                  <div style={{ display:'flex', gap:6 }}>
+                    <input type="date" style={{ ...inputFull, flex:1 }} value={tglBerakhirDraft} onChange={e => setTglBerakhirDraft(e.target.value)} />
+                    {editTglBerakhir && (
+                      <button onClick={() => { setEditTglBerakhir(false); setTglBerakhirDraft(dok.tglBerakhir); }} style={btnSm} className="btn-hover">Batal</button>
+                    )}
+                    <button onClick={simpanTglBerakhir} disabled={savingTglBerakhir || !tglBerakhirDraft} style={{ ...btnPrimary, whiteSpace:'nowrap' }} className="btn-hover">
+                      {savingTglBerakhir ? 'Menyimpan…' : 'Simpan'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div style={shellStyle} className="fld">
+            <div style={coreStyle}>
               <div style={cardTitle}><FiCalendar size={13} style={{ marginRight:6, verticalAlign:'middle', color: BLUE }} />Tanggal Kegiatan</div>
               <div style={hintText}>Memicu perpindahan otomatis status. Terpisah dari masa berlaku dokumen.</div>
               <label style={labelSt}>Mulai</label>
@@ -661,10 +726,32 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
 
           <div style={shellStyle} className="fld">
             <div style={coreStyle}>
-              <div style={cardTitle}>Aksi Cepat</div>
-              <a href={`/dashboard/dokumen/foto?id=${dok.id}&judul=${encodeURIComponent(dok.judul)}`} style={{ ...btnSm, textDecoration:'none', textAlign:'center', display:'block' }} className="btn-hover">
-                <FiImage size={12} style={{ marginRight:6, verticalAlign:'middle' }} />Kelola Foto Kegiatan
-              </a>
+              {dok.tglKegiatanMulai && !publikasiDitolak ? (
+                <>
+                  <div style={cardTitle}><FiZap size={13} style={{ marginRight:6, verticalAlign:'middle', color: GOLD }} />Publikasikan ke Beranda?</div>
+                  <div style={{ ...hintText, marginBottom:12 }}>
+                    Tanggal kegiatan sudah disepakati ({dok.tglKegiatanMulai}). Apakah Anda ingin mempublikasikan kegiatan {dok.jenis} ini ke halaman publik?
+                  </div>
+                  <div style={{ display:'flex', gap:8 }}>
+                    <button onClick={() => { localStorage.setItem(`extractPoinDitolak_${id}`, '1'); setPublikasiDitolak(true); }} style={{ ...btnSm, flex:1 }} className="btn-hover">
+                      Nanti Saja
+                    </button>
+                    <a href={`/dashboard/dokumen/extract-poin?idDokumen=${dok.id}&tglMulai=${dok.tglKegiatanMulai}`} style={{ ...btnPrimary, flex:1, textAlign:'center', textDecoration:'none' }} className="btn-hover">
+                      Ya, Publikasikan
+                    </a>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={cardTitle}>Aksi Cepat</div>
+                  {!dok.tglKegiatanMulai && (
+                    <div style={{ ...hintText, marginBottom:10 }}>Toggle publikasi akan muncul otomatis setelah Tanggal Kegiatan diisi.</div>
+                  )}
+                  <a href={`/dashboard/dokumen/extract-poin?idDokumen=${dok.id}${dok.tglKegiatanMulai ? `&tglMulai=${dok.tglKegiatanMulai}` : ''}`} style={{ ...btnSm, textDecoration:'none', textAlign:'center', display:'block' }} className="btn-hover">
+                    <FiZap size={12} style={{ marginRight:6, verticalAlign:'middle' }} />Kelola Publikasi di Extract Poin
+                  </a>
+                </>
+              )}
             </div>
           </div>
 
@@ -711,6 +798,8 @@ const miniCandidateRow: React.CSSProperties = { display:'flex', alignItems:'cent
 const kontakRow: React.CSSProperties = { display:'flex', alignItems:'center', gap:8, padding:'7px 2px', borderBottom:'1px solid rgba(29,78,216,0.05)' };
 const miniBtn: React.CSSProperties = { width:24, height:24, borderRadius:8, border:'1px solid rgba(29,78,216,0.10)', background:'#fff', color:'#475569', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 };
 const kembaliBox: React.CSSProperties = { background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:12, padding:'10px 12px' };
+const mouKesepakatanBox: React.CSSProperties = { background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:11, padding:'11px 13px' };
+const miniIconBtnGold: React.CSSProperties = { width:20, height:20, borderRadius:6, border:'1px solid rgba(217,119,6,0.25)', background:'#fff', color:'#D97706', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 };
 const ttdDoneBox: React.CSSProperties = { display:'flex', gap:10, padding:'10px 12px', background:'#EFF6FF', borderRadius:12, border:'1px solid rgba(29,78,216,0.12)' };
 
 const templateCard = (active: boolean, enabled: boolean): React.CSSProperties => ({
