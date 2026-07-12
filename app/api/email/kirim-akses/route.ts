@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSession } from '@/lib/auth';
 
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_WEBAPP_URL!;
 
-// Link login mitra — sesuaikan dengan domain produksi bila sudah deploy
 const LINK_LOGIN = process.env.NEXT_PUBLIC_BASE_URL
   ? `${process.env.NEXT_PUBLIC_BASE_URL}/login`
   : 'https://pokja-document.vercel.app/login-mitra';
 
 export async function POST(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { email, namaMitra, jenis, judul, kodeAkses, kodeExpire, idDokumen } = await req.json();
 

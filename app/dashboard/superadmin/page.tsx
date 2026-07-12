@@ -2,25 +2,40 @@
 
 import { useEffect, useState, useRef } from 'react';
 import LoaderPage from '@/components/LoaderPage';
+import {
+  FiFolder, FiRefreshCw, FiLogOut, FiPieChart, FiTrendingUp, FiBarChart2,
+} from 'react-icons/fi';
+import { FaBuilding, FaFileAlt } from 'react-icons/fa';
 
 interface Metrics {
-  adminAktif: number; totalMitra: number; dokAktif: number;
+  totalMitra: number; dokAktif: number;
   dokHampir: number; dokDraft: number; totalDok: number;
 }
 interface Status { aktif: number; draft: number; review: number; kedaluwarsa: number }
 interface GrafikItem { label: string; mou: number; pks: number; exp: number }
-interface AdminItem { id: string; nama: string; status: string; jumlahDok: number }
 interface MitraItem { id: string; nama: string; singkatan: string; jumlahDok: number; index: number }
-interface Implementasi { totalAudiens: number; totalKegiatan: number; totalFoto: number }
 
 interface DashData {
   metrics: Metrics; status: Status; grafik: GrafikItem[];
-  adminData: AdminItem[]; mitraData: MitraItem[]; implementasi: Implementasi;
+  mitraData: MitraItem[];
 }
 
-const AVATAR_COLORS = [
-  ['#E1F5EE','#085041'], ['#EEEDFE','#3C3489'], ['#FAEEDA','#633806'],
-  ['#E6F1FB','#0C447C'], ['#EAF3DE','#27500A'], ['#FAECE7','#712B13'],
+const FONT = "'Plus Jakarta Sans', -apple-system, sans-serif";
+const INDIGO = '#212842';
+const CREAM = '#F0E7D5';
+const GOLD_ACCENT = '#B5813F';
+const SAGE = '#5C7A5E';
+const ESPRESSO = '#6B4A32';
+const RED = '#A32D2D';
+const PURPLE = '#5B4B8A';
+
+const AVATAR_PALETTE: { bg: string; fg: string }[] = [
+  { bg: 'rgba(33,40,66,0.08)',  fg: INDIGO },
+  { bg: '#FBF3E7',              fg: GOLD_ACCENT },
+  { bg: '#EDE9FE',              fg: PURPLE },
+  { bg: '#E6EDE6',              fg: SAGE },
+  { bg: '#EFE5DB',              fg: ESPRESSO },
+  { bg: '#FCEBEB',              fg: RED },
 ];
 
 export default function SuperadminDashboard() {
@@ -28,11 +43,10 @@ export default function SuperadminDashboard() {
   const [data, setData]     = useState<DashData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]   = useState('');
-  const [period, setPeriod] = useState<'bulan'|'tahun'>('bulan');
+  const [refreshing, setRefreshing] = useState(false);
   const chartRef            = useRef<HTMLCanvasElement>(null);
   const chartInstance       = useRef<unknown>(null);
 
-  // Auth check
   useEffect(() => {
     const getCookie = (n: string) => {
       const m = document.cookie.match(new RegExp('(^| )' + n + '=([^;]+)'));
@@ -52,7 +66,6 @@ export default function SuperadminDashboard() {
       .catch(() => { setError('Gagal memuat data dari Spreadsheet.'); setLoading(false); });
   }, []);
 
-  // Render chart
   useEffect(() => {
     if (!data || !chartRef.current) return;
     const win = window as unknown as { Chart?: unknown };
@@ -62,35 +75,28 @@ export default function SuperadminDashboard() {
       const C = win.Chart as new (...args: unknown[]) => unknown;
       if (chartInstance.current) (chartInstance.current as { destroy: () => void }).destroy();
 
-      const labels = period === 'tahun'
-        ? ['2021','2022','2023','2024','2025']
-        : data.grafik.map(g => g.label);
-      const mouData = period === 'tahun'
-        ? [8,12,15,18, data.grafik.reduce((s,g) => s+g.mou, 0)]
-        : data.grafik.map(g => g.mou);
-      const pksData = period === 'tahun'
-        ? [5,9,11,14, data.grafik.reduce((s,g) => s+g.pks, 0)]
-        : data.grafik.map(g => g.pks);
-      const expData = period === 'tahun'
-        ? [1,2,3,4, data.grafik.reduce((s,g) => s+g.exp, 0)]
-        : data.grafik.map(g => g.exp);
+      const labels = data.grafik.map(g => g.label);
+      const mouData = data.grafik.map(g => g.mou);
+      const pksData = data.grafik.map(g => g.pks);
+      const expData = data.grafik.map(g => g.exp);
 
       chartInstance.current = new C(chartRef.current, {
-        type: 'bar',
+        type: 'line',
         data: {
           labels,
           datasets: [
-            { label:'MOU baru', data:mouData, backgroundColor:'#0F6E56', borderRadius:3, barPercentage:.55 },
-            { label:'PKS baru', data:pksData, backgroundColor:'#185FA5', borderRadius:3, barPercentage:.55 },
-            { label:'Berakhir', data:expData, backgroundColor:'#EF9F27', borderRadius:3, barPercentage:.55 },
+            { label:'MOU baru', data:mouData, borderColor:INDIGO, backgroundColor:'rgba(33,40,66,0.08)', tension:0.35, fill:true, pointRadius:3, pointBackgroundColor:INDIGO, borderWidth:2.5 },
+            { label:'PKS baru', data:pksData, borderColor:GOLD_ACCENT, backgroundColor:'rgba(181,129,63,0.08)', tension:0.35, fill:true, pointRadius:3, pointBackgroundColor:GOLD_ACCENT, borderWidth:2.5 },
+            { label:'Berakhir', data:expData, borderColor:RED, backgroundColor:'rgba(163,45,45,0.06)', tension:0.35, fill:true, pointRadius:3, pointBackgroundColor:RED, borderWidth:2.5 },
           ]
         },
         options: {
           responsive: true, maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
           plugins: { legend: { display: false } },
           scales: {
-            x: { grid:{display:false}, ticks:{font:{size:10}, color:'#888780', autoSkip:false, maxRotation:0} },
-            y: { grid:{color:'rgba(0,0,0,.06)'}, ticks:{font:{size:10}, color:'#888780', stepSize:1} }
+            x: { grid:{display:false}, ticks:{font:{size:10, family:FONT}, color:'rgba(33,40,66,0.5)', autoSkip:false, maxRotation:0} },
+            y: { grid:{color:'rgba(33,40,66,0.06)'}, ticks:{font:{size:10, family:FONT}, color:'rgba(33,40,66,0.5)', stepSize:1}, beginAtZero:true }
           }
         }
       });
@@ -106,7 +112,7 @@ export default function SuperadminDashboard() {
     } else {
       renderChart();
     }
-  }, [data, period]);
+  }, [data]);
 
   const logout = () => {
     localStorage.removeItem('paktasign_user');
@@ -115,175 +121,168 @@ export default function SuperadminDashboard() {
     window.location.href = '/login';
   };
 
+  const doRefresh = () => {
+    setRefreshing(true);
+    window.location.reload();
+  };
+
   if (loading) return <LoaderPage text="Memuat dashboard..." />;
   if (error || !data) return (
-    <div style={{...centerStyle, color:'#f87171'}}>{error || 'Terjadi kesalahan.'}</div>
+    <div style={centerStyle}>{error || 'Terjadi kesalahan.'}</div>
   );
 
-  const { metrics, status, adminData, mitraData, implementasi } = data;
+  const { metrics, status, mitraData } = data;
   const totalStatus = (status.aktif + status.draft + status.review + status.kedaluwarsa) || 1;
 
   const metricCards = [
-    { label:'Admin Pokja aktif', val:metrics.adminAktif, icon:'👥', warn:false },
-    { label:'Total mitra',       val:metrics.totalMitra, icon:'🏢', warn:false },
-    { label:'MOU/PKS aktif',     val:metrics.dokAktif,   icon:'📄', warn:false },
-    { label:'Hampir berakhir',   val:metrics.dokHampir,  icon:'⚠️', warn:metrics.dokHampir > 0 },
-    { label:'Draft/menunggu',    val:metrics.dokDraft,   icon:'🕐', warn:false },
-    { label:'Total dokumen',     val:metrics.totalDok,   icon:'📁', warn:false },
+    { label:'Total Mitra',   val:metrics.totalMitra, icon:<FaBuilding size={15} />, c: GOLD_ACCENT, bg:'#FBF3E7' },
+    { label:'Total Dokumen', val:metrics.totalDok,   icon:<FiFolder size={16} />, c: ESPRESSO, bg:'#EFE5DB' },
   ];
 
   const statusItems = [
-    { label:'Aktif',       val:status.aktif,       color:'#0F6E56' },
-    { label:'Draft',       val:status.draft,       color:'#185FA5' },
-    { label:'Review',      val:status.review,      color:'#EF9F27' },
-    { label:'Kedaluwarsa', val:status.kedaluwarsa, color:'#A32D2D' },
+    { label:'Aktif',       val:status.aktif,       color: INDIGO },
+    { label:'Draft',       val:status.draft,       color: PURPLE },
+    { label:'Review',      val:status.review,      color: GOLD_ACCENT },
+    { label:'Kedaluwarsa', val:status.kedaluwarsa, color: RED },
   ];
 
   return (
-    <div style={{ minHeight:'100vh', background:'#f5f5f5', fontFamily:'sans-serif' }}>
+    <div style={{ minHeight:'100dvh', fontFamily: FONT, background:'radial-gradient(1100px 520px at 85% -8%, rgba(33,40,66,0.05) 0%, rgba(33,40,66,0) 55%), linear-gradient(180deg,#F3ECDD,#EDE4D0)' }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
+        @keyframes fadeUp { from { opacity:0; transform:translateY(16px); filter:blur(4px); } to { opacity:1; transform:none; filter:blur(0); } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .rise { animation: fadeUp 0.6s cubic-bezier(0.32,0.72,0,1) both; }
+        .lift { transition: all 0.45s cubic-bezier(0.32,0.72,0,1); }
+        .lift:hover { transform: translateY(-4px); box-shadow: 0 28px 50px -28px rgba(33,40,66,0.28) !important; }
+        .lift:active { transform: translateY(-1px) scale(0.995); }
+        .lift:hover .ic-wrap { transform: scale(1.08) rotate(-4deg); }
+        .ic-wrap { transition: transform 0.45s cubic-bezier(0.32,0.72,0,1); }
+        .btn-hover { transition: all 0.3s cubic-bezier(0.32,0.72,0,1); }
+        .btn-hover:hover { transform: translateY(-1px); filter: brightness(1.05); }
+        .btn-hover:active { transform: scale(0.96); }
+        .refresh-spin { animation: spin 0.8s linear infinite; }
+      `}</style>
 
       {/* Navbar */}
-      <nav style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0.85rem 1.5rem', background:'#fff', borderBottom:'1px solid #e5e7eb', position:'sticky', top:0, zIndex:100 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:10, fontWeight:600, fontSize:15 }}>
-          <div style={{ width:30, height:30, borderRadius:8, background:'#0F6E56', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, color:'#fff' }}>📋</div>
-          SI-POKJA HUMKER
-        </div>
-        <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-          <a href="/dashboard/superadmin/kelola-admin" style={{ fontSize:11, padding:'5px 12px', borderRadius:8, border:'1px solid #e5e7eb', textDecoration:'none', color:'#374151', background:'transparent' }}>
-            👥 Kelola Admin
-          </a>
-          <a href="/dashboard/superadmin/generate-kode" style={{ fontSize:11, padding:'5px 12px', borderRadius:8, border:'1px solid #e5e7eb', textDecoration:'none', color:'#374151', background:'transparent' }}>
-            🔑 Generate Kode
-          </a>
-          <a href="/dashboard/superadmin/laporan" style={{ fontSize:11, padding:'5px 12px', borderRadius:8, border:'1px solid #e5e7eb', textDecoration:'none', color:'#374151', background:'transparent' }}>
-            📊 Laporan
-          </a>
-          <a href="/dashboard/rencana" style={{ fontSize:11, padding:'5px 12px', borderRadius:8, border:'1px solid #e5e7eb', textDecoration:'none', color:'#374151', background:'#fff' }}>
-  🗓 E-Planning
-</a>
-          <span style={{ fontSize:12, color:'#6b7280' }}>👑 {nama}</span>
-          <button onClick={logout} style={{ fontSize:12, padding:'6px 14px', borderRadius:8, border:'1px solid #e5e7eb', cursor:'pointer', background:'transparent', color:'#374151' }}>Keluar</button>
-        </div>
-      </nav>
-
-      <div style={{ maxWidth:1100, margin:'0 auto', padding:'1.25rem' }}>
-
-        {/* Header */}
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'1.25rem', flexWrap:'wrap', gap:8 }}>
-          <div>
-            <div style={{ fontSize:18, fontWeight:600 }}>Dashboard Superadmin</div>
-            <div style={{ fontSize:12, color:'#6b7280', marginTop:2 }}>Data real-time dari Google Sheets</div>
-          </div>
-          <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-            <div style={{ display:'flex', gap:4 }}>
-              {(['bulan','tahun'] as const).map(p => (
-                <button key={p} onClick={() => setPeriod(p)} style={{ fontSize:11, padding:'4px 12px', borderRadius:100, border:'1px solid #e5e7eb', cursor:'pointer', background: period===p ? '#0F6E56' : 'transparent', color: period===p ? '#fff' : '#6b7280', fontFamily:'sans-serif' }}>
-                  {p.charAt(0).toUpperCase()+p.slice(1)}
-                </button>
-              ))}
+      <div style={{ maxWidth: 1180, margin: '0 auto', padding: '1.4rem 1.5rem 0' }}>
+        <nav style={{
+          display:'flex', alignItems:'center', justifyContent:'space-between',
+          background:'rgba(240,231,213,0.75)', backdropFilter:'blur(12px)', WebkitBackdropFilter:'blur(12px)',
+          border:'1px solid rgba(33,40,66,0.1)', borderRadius:100, padding:'10px 14px 10px 18px',
+          boxShadow:'0 10px 30px -18px rgba(33,40,66,0.3)',
+        }}>
+          <div style={{ display:'flex', alignItems:'center', gap:11, fontWeight:800, fontSize:15, color: INDIGO, letterSpacing:'-0.02em' }}>
+            <div style={{ width:34, height:34, borderRadius:11, background: INDIGO, display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 8px 18px -8px rgba(33,40,66,0.5)' }}>
+              <FaFileAlt size={15} color={CREAM} />
             </div>
-            <button onClick={() => window.location.reload()} style={{ fontSize:11, padding:'5px 12px', borderRadius:8, border:'1px solid #e5e7eb', cursor:'pointer', background:'transparent', color:'#374151', fontFamily:'sans-serif' }}>
-              🔄 Refresh
+            SI-POKJA HUMKER
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <a href="/dashboard/superadmin/laporan" className="btn-hover" style={navBtn}>
+              <FiBarChart2 size={13} /> Laporan
+            </a>
+            <div style={{ width:34, height:34, borderRadius:'50%', background:`linear-gradient(150deg,${INDIGO},#0b1420)`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12.5, fontWeight:800, color:'#fff', boxShadow:'0 4px 10px -3px rgba(33,40,66,0.5)' }}>
+              {nama.split(' ').map(n => n[0]).join('').toUpperCase().slice(0,2)}
+            </div>
+            <button onClick={logout} className="btn-hover" style={{ ...navBtn, background:'#fff' }}>
+              <FiLogOut size={13} /> Keluar
             </button>
           </div>
+        </nav>
+      </div>
+
+      <div style={{ maxWidth: 1180, margin: '0 auto', padding: '1.5rem' }}>
+
+        {/* Header */}
+        <div style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between', marginBottom:24, flexWrap:'wrap', gap:14 }} className="rise">
+          <div>
+            <div style={{ display:'inline-block', fontSize:9.5, color: INDIGO, textTransform:'uppercase', letterSpacing:'0.22em', fontWeight:700, background:'rgba(33,40,66,0.06)', padding:'6px 14px', borderRadius:100, marginBottom:12 }}>
+              Superadmin
+            </div>
+            <h1 style={{ fontSize:30, fontWeight:800, color: INDIGO, letterSpacing:'-0.03em', margin:'0 0 4px' }}>
+              Selamat datang, {nama.split(' ')[0]}
+            </h1>
+            <p style={{ fontSize:13, color:'rgba(33,40,66,0.55)', margin:0 }}>Ringkasan performa sistem · data langsung dari Google Sheets</p>
+          </div>
+          <button onClick={doRefresh} className="btn-hover" style={{ ...navBtn, background:'#fff' }}>
+            <FiRefreshCw size={13} className={refreshing ? 'refresh-spin' : ''} /> Refresh
+          </button>
         </div>
 
         {/* Metric cards */}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))', gap:10, marginBottom:'1rem' }}>
-          {metricCards.map((m,i) => (
-            <div key={i} style={{ background:'#fff', borderRadius:12, padding:'1rem', border:'1px solid #e5e7eb' }}>
-              <div style={{ fontSize:12, color:'#6b7280', marginBottom:6 }}>{m.icon} {m.label}</div>
-              <div style={{ fontSize:28, fontWeight:600, color: m.warn ? '#A32D2D' : '#111827' }}>{m.val}</div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))', gap:13, marginBottom:18 }}>
+          {metricCards.map((m, i) => (
+            <div key={m.label} style={{ ...shellSm, animationDelay:`${0.03*i+0.05}s` }} className="lift rise">
+              <div style={{ ...coreSm, padding:'1.1rem 1.2rem' }}>
+                <div className="ic-wrap" style={{ width:36, height:36, borderRadius:11, background:m.bg, color:m.c, display:'flex', alignItems:'center', justifyContent:'center', marginBottom:12 }}>
+                  {m.icon}
+                </div>
+                <div style={{ fontSize:11.5, color:'rgba(33,40,66,0.55)', marginBottom:4, fontWeight:600 }}>{m.label}</div>
+                <div style={{ fontSize:26, fontWeight:800, letterSpacing:'-0.03em', color: INDIGO }}>{m.val}</div>
+              </div>
             </div>
           ))}
         </div>
 
         {/* Grafik */}
-        <div style={{ background:'#fff', borderRadius:12, padding:'1rem 1.25rem', border:'1px solid #e5e7eb', marginBottom:'1rem' }}>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
-            <div style={{ fontSize:13, fontWeight:600 }}>Perkembangan MOU/PKS</div>
-            <div style={{ display:'flex', gap:12, fontSize:11, color:'#6b7280' }}>
-              <span><span style={{ display:'inline-block', width:10, height:10, borderRadius:2, background:'#0F6E56', marginRight:4 }}></span>MOU</span>
-              <span><span style={{ display:'inline-block', width:10, height:10, borderRadius:2, background:'#185FA5', marginRight:4 }}></span>PKS</span>
-              <span><span style={{ display:'inline-block', width:10, height:10, borderRadius:2, background:'#EF9F27', marginRight:4 }}></span>Berakhir</span>
+        <div style={{ ...shell, marginBottom:18 }} className="rise">
+          <div style={{ ...core, padding:'1.4rem 1.5rem' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, flexWrap:'wrap', gap:10 }}>
+              <span style={{ fontSize:14, fontWeight:800, color: INDIGO, display:'flex', alignItems:'center', gap:8 }}>
+                <FiTrendingUp size={16} /> Perkembangan MOU/PKS
+              </span>
+              <div style={{ display:'flex', gap:14, fontSize:11, color:'rgba(33,40,66,0.55)', fontWeight:600 }}>
+                <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ width:9, height:9, borderRadius:3, background:INDIGO }} />MOU</span>
+                <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ width:9, height:9, borderRadius:3, background:GOLD_ACCENT }} />PKS</span>
+                <span style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ width:9, height:9, borderRadius:3, background:RED }} />Berakhir</span>
+              </div>
+            </div>
+            <div style={{ position:'relative', height:220 }}>
+              <canvas ref={chartRef} role="img" aria-label="Grafik perkembangan MOU dan PKS">Grafik perkembangan MOU/PKS</canvas>
             </div>
           </div>
-          <div style={{ position:'relative', height:200 }}>
-            <canvas ref={chartRef} role="img" aria-label="Grafik perkembangan MOU dan PKS">Grafik perkembangan MOU/PKS</canvas>
+        </div>
+
+        {/* Status MOU/PKS */}
+        <div style={{ marginBottom:18 }}>
+          <div style={shell} className="rise">
+            <div style={{ ...core, padding:'1.3rem 1.4rem' }}>
+              <div style={{ fontSize:13, fontWeight:800, color: INDIGO, marginBottom:16, display:'flex', alignItems:'center', gap:8 }}>
+                <FiPieChart size={15} /> Status MOU/PKS
+              </div>
+              {statusItems.map((s, i) => (
+                <div key={i} style={{ marginBottom: i === statusItems.length - 1 ? 0 : 12 }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, marginBottom:6 }}>
+                    <span style={{ color:'#3a3f4d', fontWeight:600 }}>{s.label}</span>
+                    <span style={{ color:'rgba(33,40,66,0.55)', fontWeight:700 }}>{s.val}</span>
+                  </div>
+                  <div style={{ height:8, background:'rgba(33,40,66,0.06)', borderRadius:100, overflow:'hidden' }}>
+                    <div style={{ height:'100%', borderRadius:100, background:s.color, width:`${Math.round((s.val/totalStatus)*100)}%`, transition:'width 0.9s cubic-bezier(0.32,0.72,0,1)' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:'1rem' }}>
-
-          {/* Status */}
-          <div style={{ background:'#fff', borderRadius:12, padding:'1rem 1.25rem', border:'1px solid #e5e7eb' }}>
-            <div style={{ fontSize:13, fontWeight:600, marginBottom:12 }}>Status MOU/PKS</div>
-            {statusItems.map((s,i) => (
-              <div key={i} style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
-                <div style={{ fontSize:12, color:'#6b7280', minWidth:90 }}>{s.label}</div>
-                <div style={{ flex:1, height:6, background:'#f3f4f6', borderRadius:3, overflow:'hidden' }}>
-                  <div style={{ height:'100%', borderRadius:3, background:s.color, width:`${Math.round((s.val/totalStatus)*100)}%`, transition:'width .4s' }}></div>
-                </div>
-                <div style={{ fontSize:12, fontWeight:600, minWidth:20, textAlign:'right' }}>{s.val}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Implementasi */}
-          <div style={{ background:'#fff', borderRadius:12, padding:'1rem 1.25rem', border:'1px solid #e5e7eb' }}>
-            <div style={{ fontSize:13, fontWeight:600, marginBottom:12 }}>Implementasi & Capaian</div>
-            {[
-              { icon:'👥', label:'Total audiens terjangkau', val: implementasi.totalAudiens.toLocaleString('id-ID')+' orang' },
-              { icon:'📅', label:'Kegiatan P4GN terlaksana', val: implementasi.totalKegiatan+' kegiatan' },
-              { icon:'📷', label:'Laporan foto diupload',    val: implementasi.totalFoto+' foto' },
-            ].map((item,i) => (
-              <div key={i} style={{ display:'flex', alignItems:'center', gap:10, padding:'0.6rem 0.75rem', background:'#f9fafb', borderRadius:8, marginBottom:6 }}>
-                <div style={{ fontSize:20 }}>{item.icon}</div>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontSize:11, color:'#6b7280' }}>{item.label}</div>
-                  <div style={{ fontSize:13, fontWeight:600, marginTop:1 }}>{item.val}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:'1rem' }}>
-
-          {/* Admin list */}
-          <div style={{ background:'#fff', borderRadius:12, padding:'1rem 1.25rem', border:'1px solid #e5e7eb' }}>
-            <div style={{ fontSize:13, fontWeight:600, marginBottom:10 }}>Admin Pokja</div>
-            {adminData.length === 0 && <p style={{ fontSize:12, color:'#9ca3af' }}>Belum ada admin terdaftar.</p>}
-            {adminData.map((a,i) => (
-              <div key={i} style={{ display:'flex', alignItems:'center', gap:10, padding:'0.55rem 0.75rem', background:'#f9fafb', borderRadius:8, marginBottom:6 }}>
-                <div style={{ width:30, height:30, borderRadius:'50%', background:'#E1F5EE', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:600, color:'#085041', flexShrink:0 }}>
-                  {a.nama.substring(0,2).toUpperCase()}
-                </div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:12, fontWeight:500 }}>{a.nama}</div>
-                  <div style={{ fontSize:11, color:'#9ca3af' }}>{a.jumlahDok} dokumen</div>
-                </div>
-                <span style={{ fontSize:10, fontWeight:500, padding:'2px 8px', borderRadius:100, background: a.status.toLowerCase()==='aktif' ? '#E1F5EE' : '#f3f4f6', color: a.status.toLowerCase()==='aktif' ? '#085041' : '#6b7280' }}>
-                  {a.status}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          {/* Mitra grid */}
-          <div style={{ background:'#fff', borderRadius:12, padding:'1rem 1.25rem', border:'1px solid #e5e7eb' }}>
-            <div style={{ fontSize:13, fontWeight:600, marginBottom:10 }}>Mitra terdaftar</div>
-            {mitraData.length === 0 && <p style={{ fontSize:12, color:'#9ca3af' }}>Belum ada mitra terdaftar.</p>}
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(100px,1fr))', gap:8 }}>
-              {mitraData.map((m) => {
-                const [bg, fg] = AVATAR_COLORS[m.index % AVATAR_COLORS.length];
+        {/* Mitra grid */}
+        <div style={shell} className="rise">
+          <div style={{ ...core, padding:'1.3rem 1.4rem' }}>
+            <div style={{ fontSize:13, fontWeight:800, color: INDIGO, marginBottom:14, display:'flex', alignItems:'center', gap:8 }}>
+              <FaBuilding size={13} /> Mitra Terdaftar
+            </div>
+            {mitraData.length === 0 && <p style={{ fontSize:12, color:'rgba(33,40,66,0.4)' }}>Belum ada mitra terdaftar.</p>}
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(104px,1fr))', gap:9 }}>
+              {mitraData.map(m => {
+                const pal = AVATAR_PALETTE[m.index % AVATAR_PALETTE.length];
                 return (
-                  <div key={m.id} style={{ background:'#f9fafb', borderRadius:8, padding:'0.65rem', textAlign:'center' }}>
-                    <div style={{ width:34, height:34, borderRadius:8, background:bg, margin:'0 auto 5px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:600, color:fg }}>
+                  <div key={m.id} style={{ background:'rgba(33,40,66,0.02)', borderRadius:13, padding:'0.75rem', textAlign:'center' }}>
+                    <div style={{ width:36, height:36, borderRadius:11, background:pal.bg, margin:'0 auto 6px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:800, color:pal.fg }}>
                       {m.singkatan}
                     </div>
-                    <div style={{ fontSize:10, fontWeight:500, lineHeight:1.3 }}>{m.nama}</div>
-                    <div style={{ fontSize:10, color:'#9ca3af', marginTop:2 }}>{m.jumlahDok} dok</div>
+                    <div style={{ fontSize:10.5, fontWeight:700, lineHeight:1.3, color: INDIGO }}>{m.nama}</div>
+                    <div style={{ fontSize:10, color:'rgba(33,40,66,0.4)', marginTop:2 }}>{m.jumlahDok} dok</div>
                   </div>
                 );
               })}
@@ -291,37 +290,18 @@ export default function SuperadminDashboard() {
           </div>
         </div>
 
-        {/* Laporan */}
-        <div style={{ background:'#fff', borderRadius:12, padding:'1rem 1.25rem', border:'1px solid #e5e7eb' }}>
-          <div style={{ fontSize:13, fontWeight:600, marginBottom:10 }}>Generate Laporan Performa</div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-            {[
-              { icon:'📅', title:'Laporan Bulanan', desc:'Statistik MOU/PKS, mitra baru, kegiatan implementasi per bulan', btn:'Generate bulan ini' },
-              { icon:'📊', title:'Laporan Tahunan',  desc:'Ringkasan tahunan dokumen aktif, capaian, dan tren kerja sama', btn:'Generate tahun ini' },
-            ].map((l,i) => (
-              <div key={i} style={{ background:'#f9fafb', borderRadius:8, padding:'1rem', textAlign:'center', border:'1px solid #e5e7eb' }}>
-                <div style={{ fontSize:28, marginBottom:6 }}>{l.icon}</div>
-                <div style={{ fontSize:13, fontWeight:600, marginBottom:4 }}>{l.title}</div>
-                <div style={{ fontSize:11, color:'#6b7280', lineHeight:1.4, marginBottom:10 }}>{l.desc}</div>
-                <button
-                  onClick={() => alert(`Fitur generate ${l.title} akan segera tersedia`)}
-                  style={{ width:'100%', padding:'7px', borderRadius:8, border:'1px solid #e5e7eb', cursor:'pointer', background:'transparent', color:'#374151', fontFamily:'sans-serif', fontSize:11 }}
-                >
-                  {l.btn}
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-
       </div>
     </div>
   );
-
 }
 
+const shell: React.CSSProperties = { background:'rgba(255,255,255,0.55)', border:'1px solid rgba(33,40,66,0.07)', borderRadius:24, padding:7, boxShadow:'0 1px 2px rgba(33,40,66,0.04), 0 30px 60px -38px rgba(33,40,66,0.18)' };
+const core: React.CSSProperties = { background:'#fff', borderRadius:18, boxShadow:'inset 0 1px 1px rgba(255,255,255,0.9)' };
+const shellSm: React.CSSProperties = { ...shell, borderRadius:20, padding:6 };
+const coreSm: React.CSSProperties = { ...core, borderRadius:15 };
+const navBtn: React.CSSProperties = { display:'flex', alignItems:'center', gap:6, fontSize:11.5, fontWeight:700, padding:'8px 15px', borderRadius:100, border:'1px solid rgba(33,40,66,0.1)', background:'rgba(33,40,66,0.03)', color: INDIGO, textDecoration:'none', cursor:'pointer', fontFamily:FONT };
 const centerStyle: React.CSSProperties = {
-  minHeight:'100vh', display:'flex', alignItems:'center',
-  justifyContent:'center', fontFamily:'sans-serif',
-  color:'#6b7280', fontSize:14,
+  minHeight:'100dvh', display:'flex', alignItems:'center',
+  justifyContent:'center', fontFamily:FONT,
+  color: RED, fontSize:14, background:'linear-gradient(180deg,#F3ECDD,#EDE4D0)',
 };

@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSheetData } from '@/lib/sheet';
 import { google } from 'googleapis';
+import { requireSession } from '@/lib/auth';
 
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_WEBAPP_URL!;
+
+// Admin/superadmin bebas; mitra HANYA boleh akses dokumennya sendiri.
+async function checkAkses(req: NextRequest, idDokumen: string) {
+  const session = await requireSession(req);
+  if (!session) return null;
+  if (['admin', 'superadmin'].includes(String(session.role))) return session;
+  if (session.role === 'mitra' && String(session.idDokumen) === idDokumen) return session;
+  return null;
+}
 
 function getAuth() {
   return new google.auth.GoogleAuth({
@@ -20,6 +30,11 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const idDokumen = searchParams.get('idDokumen')?.trim();
     if (!idDokumen) return NextResponse.json({ message: 'idDokumen wajib diisi.' }, { status: 400 });
+
+    const session = await checkAkses(req, idDokumen);
+    if (!session) {
+      return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+    }
 
     const rows = await getSheetData('Dokumen Kerja sama');
     const row  = rows.find(r => String(r[0] || '').trim() === idDokumen);
@@ -55,6 +70,12 @@ export async function POST(req: NextRequest) {
     const { idDokumen, fileBase64, fileName, fileMime } = body;
 
     if (!idDokumen)  return NextResponse.json({ message: 'idDokumen wajib diisi.' }, { status: 400 });
+
+    const session = await checkAkses(req, idDokumen);
+    if (!session) {
+      return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+    }
+
     if (!fileBase64 || !fileName || !fileMime) {
       return NextResponse.json({ message: 'File wajib diunggah.' }, { status: 400 });
     }

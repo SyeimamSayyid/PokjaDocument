@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSheetData } from '@/lib/sheet';
+import { requireSession } from '@/lib/auth';
 
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_WEBAPP_URL!;
 
@@ -33,6 +34,11 @@ async function listFoto(fotoFolderId: string) {
 }
 
 export async function GET(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const detailFoto = searchParams.get('foto'); // fotoFolderId untuk ambil foto satu dokumen
@@ -98,6 +104,11 @@ export async function GET(req: NextRequest) {
 
 // DELETE: admin hapus foto mitra → memicu notifikasi
 export async function DELETE(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { fileId, fotoFolderId, idDokumen, idMitra, namaFile, alasan } = await req.json();
     if (!fileId || !fotoFolderId) {

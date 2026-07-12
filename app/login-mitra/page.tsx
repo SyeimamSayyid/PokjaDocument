@@ -1,342 +1,335 @@
 'use client';
 
 import { useState } from 'react';
-import { 
-  FiKey, FiLock, FiAlertCircle, FiCheckCircle, 
-  FiUser, FiShield, FiExternalLink,
-  FiArrowRight, FiInfo
-} from 'react-icons/fi';
-import { FaKey, FaBuilding, FaLock, FaShieldAlt } from 'react-icons/fa';
+import { FaUserTie, FaUserShield, FaBuilding } from 'react-icons/fa';
 
-export default function LoginMitraPage() {
-  const [kode, setKode]       = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState('');
+type Tab = 'admin' | 'pegawai_bnn';
+type ActualRole = 'admin' | 'superadmin' | 'pegawai_bnn';
 
-  const handleLogin = async (e: React.FormEvent) => {
+const TABS: { value: Tab; label: string; icon: React.ReactNode }[] = [
+  { value: 'admin',       label: 'Admin / Superadmin', icon: <FaUserTie size={16} /> },
+  { value: 'pegawai_bnn', label: 'Pegawai BNN',         icon: <FaUserShield size={16} /> },
+];
+
+const REDIRECT: Record<ActualRole, string> = {
+  superadmin:  '/dashboard/superadmin',
+  admin:       '/dashboard/admin',
+  pegawai_bnn: '/dashboard/pegawai', // ⚠️ placeholder — Modul Penegak Hukum belum dibangun
+};
+
+const CREAM = '#FBF9E4';
+const BLUE  = '#C8D9E6';
+const INK   = '#1E293B';
+
+export default function LoginPage() {
+  const [tab, setTab]           = useState<Tab>('admin');
+  const [identifier, setIdentifier] = useState(''); // email (admin) atau NIP/NRP (pegawai)
+  const [password, setPassword] = useState('');
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState('');
+
+  const isPegawai = tab === 'pegawai_bnn';
+
+  const handleTabChange = (t: Tab) => {
+    setTab(t);
+    setIdentifier('');
+    setPassword('');
+    setError('');
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!kode.trim()) return;
+    setError('');
+    setLoading(true);
 
-    setLoading(true); setError('');
     try {
-      const res = await fetch('/api/auth/login-mitra', {
+      // Tab 'admin' = gabungan Admin & Superadmin — backend yang menentukan
+      // role sebenarnya (cek sheet Superadmin dulu, lalu Admin).
+      // Tab 'pegawai_bnn' = hanya NIP/NRP, tanpa password.
+      const body = isPegawai
+        ? { role: 'pegawai_bnn', nip: identifier.trim() }
+        : { role: 'admin', username: identifier.trim(), password };
+
+      const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kode: kode.trim() }),
+        body: JSON.stringify(body),
       });
-      const d = await res.json();
 
-      if (!res.ok) { setError(d.message || 'Kode tidak valid.'); setLoading(false); return; }
+      const data = await res.json();
 
-      localStorage.setItem('paktasign_mitra', JSON.stringify(d.user));
-      window.location.href = '/dashboard/mitra';
+      if (!res.ok) {
+        setError(data.message || 'Login gagal. Periksa kembali data Anda.');
+        setLoading(false);
+        return;
+      }
+
+      localStorage.setItem('paktasign_user', JSON.stringify(data.user));
+      window.location.href = REDIRECT[data.user.role as ActualRole];
     } catch {
-      setError('Terjadi kesalahan koneksi.');
+      setError('Terjadi kesalahan koneksi. Coba lagi.');
       setLoading(false);
     }
   };
 
   return (
-    <div style={{ 
-      minHeight: '100vh', 
-      background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%)', 
-      display: 'flex', 
-      alignItems: 'center', 
-      justifyContent: 'center', 
-      fontFamily: 'sans-serif', 
-      padding: '1rem',
-      position: 'relative',
-      overflow: 'hidden'
-    }}>
-      {/* Animated background elements */}
-      <div style={{
-        position: 'absolute',
-        top: '-50%',
-        left: '-50%',
-        width: '200%',
-        height: '200%',
-        background: 'radial-gradient(circle at 30% 40%, rgba(29, 158, 117, 0.05) 0%, transparent 60%)',
-        animation: 'pulse 8s ease-in-out infinite'
-      }} />
-      <div style={{
-        position: 'absolute',
-        bottom: '-30%',
-        right: '-30%',
-        width: '150%',
-        height: '150%',
-        background: 'radial-gradient(circle at 70% 60%, rgba(26, 115, 232, 0.05) 0%, transparent 50%)',
-        animation: 'pulse 10s ease-in-out infinite reverse'
-      }} />
-
-      <div style={{ 
-        width: '100%', 
-        maxWidth: 420, 
-        background: 'linear-gradient(145deg, rgba(50, 50, 50, 0.95) 0%, rgba(30, 30, 30, 0.98) 100%)', 
-        borderRadius: 16, 
-        padding: '2.5rem 2rem',
-        border: '1px solid rgba(255, 255, 255, 0.06)',
-        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(29, 158, 117, 0.05)',
-        backdropFilter: 'blur(10px)',
-        position: 'relative',
-        zIndex: 1
-      }}>
-
-        <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <div style={{ 
-            width: 72, 
-            height: 72, 
-            borderRadius: '50%', 
-            background: 'linear-gradient(135deg, #1D9E75 0%, #0F6E56 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            margin: '0 auto 12px',
-            boxShadow: '0 4px 20px rgba(29, 158, 117, 0.3)',
-            animation: 'float 3s ease-in-out infinite'
-          }}>
-            <FaBuilding size={32} color="#fff" />
-          </div>
-          <div style={{ 
-            fontSize: 20, 
-            fontWeight: 700, 
-            color: '#f5deb3',
-            letterSpacing: 0.5
-          }}>
-            Akses Dokumen Mitra
-          </div>
-          <div style={{ 
-            fontSize: 12, 
-            color: 'rgba(245,222,179,0.4)',
-            marginTop: 4,
-            letterSpacing: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 4
-          }}>
-            <FiShield size={12} style={{ opacity: 0.5 }} />
-            SI-POKJA HUMKER
-          </div>
-        </div>
-
-        <form onSubmit={handleLogin}>
-          <div style={{ marginBottom: 6 }}>
-            <label style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: 6,
-              fontSize: 11, 
-              color: 'rgba(245,222,179,0.5)', 
-              marginBottom: 8, 
-              textTransform: 'uppercase', 
-              letterSpacing: 0.8,
-              fontWeight: 500
-            }}>
-              <FiKey size={12} />
-              Kode Akses Dokumen
-            </label>
-          </div>
-          <div style={{ position: 'relative' }}>
-            <div style={{
-              position: 'absolute',
-              left: 14,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              color: 'rgba(245,222,179,0.3)',
-              pointerEvents: 'none'
-            }}>
-              <FaKey size={16} />
-            </div>
-            <input
-              type="text"
-              value={kode}
-              onChange={e => setKode(e.target.value.toUpperCase())}
-              placeholder="MOU-XXXXXX atau PKS-XXXXXX"
-              maxLength={12}
-              autoFocus
-              style={{
-                width: '100%',
-                padding: '14px 14px 14px 42px',
-                borderRadius: 10,
-                border: error ? '2px solid #f87171' : '2px solid rgba(255,255,255,0.06)',
-                background: 'rgba(255,255,255,0.04)',
-                color: '#f5deb3',
-                fontSize: 16,
-                fontWeight: 600,
-                letterSpacing: 3,
-                textTransform: 'uppercase',
-                boxSizing: 'border-box',
-                marginBottom: 12,
-                outline: 'none',
-                transition: 'all 0.3s ease',
-                fontFamily: 'monospace',
-              }}
-              onFocus={(e) => {
-                e.target.style.borderColor = 'rgba(29, 158, 117, 0.4)';
-                e.target.style.boxShadow = '0 0 0 4px rgba(29, 158, 117, 0.05)';
-              }}
-              onBlur={(e) => {
-                e.target.style.borderColor = error ? '#f87171' : 'rgba(255,255,255,0.06)';
-                e.target.style.boxShadow = 'none';
-              }}
-            />
-          </div>
-
-          {error && (
-            <div style={{ 
-              fontSize: 12, 
-              color: '#f87171', 
-              background: 'rgba(248,113,113,0.08)', 
-              padding: '10px 14px', 
-              borderRadius: 8, 
-              marginBottom: 14, 
-              borderLeft: '3px solid #f87171',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8
-            }}>
-              <FiAlertCircle size={14} style={{ flexShrink: 0 }} />
-              <span>{error}</span>
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading || !kode.trim()}
-            className="submit-btn"
-            style={{
-              width: '100%',
-              padding: '14px',
-              borderRadius: 10,
-              border: 'none',
-              background: loading || !kode.trim() 
-                ? 'rgba(29, 158, 117, 0.3)' 
-                : 'linear-gradient(135deg, #1D9E75 0%, #0F6E56 100%)',
-              color: '#fff',
-              fontSize: 14,
-              fontWeight: 600,
-              cursor: loading || !kode.trim() ? 'not-allowed' : 'pointer',
-              opacity: loading || !kode.trim() ? 0.5 : 1,
-              fontFamily: 'sans-serif',
-              transition: 'all 0.3s ease',
-              boxShadow: loading || !kode.trim() 
-                ? 'none' 
-                : '0 4px 20px rgba(29, 158, 117, 0.3)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              position: 'relative',
-              overflow: 'hidden'
-            }}
-          >
-            {loading ? (
-              <>
-                <span className="spin-icon">
-                  <FiLock size={18} />
-                </span>
-                Memverifikasi...
-              </>
-            ) : (
-              <>
-                <FiCheckCircle size={18} />
-                Akses Dokumen Saya
-                <FiArrowRight size={16} className="arrow-icon" />
-              </>
-            )}
-          </button>
-        </form>
-
-        <div style={{ 
-          marginTop: 20, 
-          paddingTop: 20,
-          borderTop: '1px solid rgba(255,255,255,0.04)',
-          fontSize: 11, 
-          color: 'rgba(245,222,179,0.3)', 
-          textAlign: 'center', 
-          lineHeight: 1.8
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-            <FiInfo size={11} />
-            Kode dikirim oleh Pokja Kerja Sama saat pengajuan disetujui.
-          </div>
-          <a href="/cek-pengajuan" className="link-hover" style={{ 
-            color: 'rgba(29, 158, 117, 0.7)', 
-            textDecoration: 'none',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-            marginTop: 4,
-            transition: 'all 0.3s ease',
-            padding: '4px 8px',
-            borderRadius: 4,
-          }}>
-            Belum punya kode? Cek status pengajuan
-            <FiExternalLink size={10} />
-          </a>
-        </div>
-
-        {/* Decorative corner accents */}
-        <div style={{
-          position: 'absolute',
-          top: -1,
-          right: -1,
-          width: 60,
-          height: 60,
-          borderTopRightRadius: 16,
-          background: 'linear-gradient(135deg, transparent 50%, rgba(29, 158, 117, 0.1) 100%)',
-          pointerEvents: 'none'
-        }} />
-        <div style={{
-          position: 'absolute',
-          bottom: -1,
-          left: -1,
-          width: 60,
-          height: 60,
-          borderBottomLeftRadius: 16,
-          background: 'linear-gradient(225deg, transparent 50%, rgba(29, 158, 117, 0.1) 100%)',
-          pointerEvents: 'none'
-        }} />
-      </div>
-
-      {/* All styles at root level */}
-      <style jsx>{`
-        @keyframes pulse {
-          0%, 100% { transform: scale(1); opacity: 0.5; }
-          50% { transform: scale(1.1); opacity: 1; }
+    <div className="auth-page">
+      <style>{`
+        @keyframes glowDrift1 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          33% { transform: translate(40px, -30px) scale(1.1); }
+          66% { transform: translate(-30px, 20px) scale(0.95); }
         }
-        @keyframes float {
-          0%, 100% { transform: translateY(0px); }
-          50% { transform: translateY(-10px); }
+        @keyframes glowDrift2 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          33% { transform: translate(-35px, 25px) scale(1.08); }
+          66% { transform: translate(30px, -20px) scale(0.92); }
         }
-        @keyframes spin {
-          from { transform: rotate(0deg); }
+        @keyframes cardIn {
+          from { opacity: 0; transform: translateY(18px) scale(0.97); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes iconFloat {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-5px); }
+        }
+        @keyframes shakeError {
+          0%, 100% { transform: translateX(0); }
+          25% { transform: translateX(-5px); }
+          75% { transform: translateX(5px); }
+        }
+        @keyframes spinDot {
           to { transform: rotate(360deg); }
         }
-        .spin-icon {
-          display: inline-block;
-          animation: spin 1s linear infinite;
+        @keyframes fieldIn {
+          from { opacity: 0; transform: translateY(-6px); }
+          to { opacity: 1; transform: translateY(0); }
         }
-        .submit-btn:hover:not(:disabled) .arrow-icon {
-          transform: translateX(4px);
+        @keyframes subtitleFade {
+          from { opacity: 0; transform: translateY(-3px); }
+          to { opacity: 1; transform: translateY(0); }
         }
-        .link-hover:hover {
-          color: #1D9E75 !important;
-          background: rgba(29, 158, 117, 0.05);
+
+        .auth-page {
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 1.5rem;
+          font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+          background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+          position: relative;
+          overflow: hidden;
         }
-        .shimmer-text {
-          background: linear-gradient(90deg, #f5deb3, #ffd700, #f5deb3);
-          background-size: 200% auto;
-          animation: shimmer 3s linear infinite;
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
+        .auth-glow {
+          position: absolute;
+          border-radius: 50%;
+          filter: blur(70px);
+          pointer-events: none;
         }
-        @keyframes shimmer {
-          0% { background-position: -200% center; }
-          100% { background-position: 200% center; }
+        .auth-glow-1 {
+          width: 460px; height: 460px;
+          top: -140px; left: -110px;
+          background: radial-gradient(circle, ${BLUE} 0%, transparent 70%);
+          opacity: 0.16;
+          animation: glowDrift1 15s ease-in-out infinite;
         }
+        .auth-glow-2 {
+          width: 500px; height: 500px;
+          bottom: -170px; right: -130px;
+          background: radial-gradient(circle, ${CREAM} 0%, transparent 70%);
+          opacity: 0.14;
+          animation: glowDrift2 18s ease-in-out infinite;
+        }
+        .auth-glow-3 {
+          width: 280px; height: 280px;
+          top: 55%; right: 10%;
+          background: radial-gradient(circle, #A9C3D8 0%, transparent 70%);
+          opacity: 0.12;
+          animation: glowDrift1 21s ease-in-out infinite reverse;
+        }
+
+        .auth-card {
+          position: relative;
+          z-index: 1;
+          width: 100%;
+          max-width: 380px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 22px;
+          padding: 2.4rem 2rem 2.2rem;
+          border-radius: 22px;
+          background: ${CREAM};
+          box-shadow: 0 30px 70px rgba(0,0,0,0.5), 20px 20px 44px #d9d6c0, -10px -10px 28px #ffffff;
+          animation: cardIn 0.55s cubic-bezier(0.32,0.72,0,1) both;
+        }
+        .auth-brand {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 10px;
+        }
+        .auth-brand-icon {
+          width: 46px; height: 46px; border-radius: 14px;
+          background: linear-gradient(135deg, ${BLUE}, #A9C3D8);
+          display: flex; align-items: center; justify-content: center;
+          color: ${INK};
+          box-shadow: 6px 6px 14px #d9d6c0, -6px -6px 14px #ffffff;
+          animation: iconFloat 3.5s ease-in-out infinite;
+        }
+        .auth-title {
+          font-size: 17px; font-weight: 800; letter-spacing: 0.06em;
+          text-transform: uppercase; color: ${INK}; text-align: center;
+        }
+        .auth-subtitle {
+          font-size: 11.5px; color: #64748b; text-align: center; margin-top: -6px;
+          animation: subtitleFade 0.3s ease-out;
+        }
+        .auth-role-row {
+          display: flex; width: 100%; gap: 6px;
+        }
+        .auth-role-btn {
+          flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px;
+          padding: 10px 6px; border-radius: 12px; border: none; cursor: pointer;
+          background: ${CREAM};
+          box-shadow: inset 3px 3px 7px #d9d6c0, inset -3px -3px 7px #ffffff;
+          color: #7c8794; font-family: inherit;
+          transition: background 0.3s cubic-bezier(0.32,0.72,0,1), color 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease;
+        }
+        .auth-role-btn:hover:not(.active) { transform: translateY(-1px); color: #4b5563; }
+        .auth-role-btn:active { transform: scale(0.96); }
+        .auth-role-btn.active {
+          background: linear-gradient(135deg, ${BLUE}, #A9C3D8);
+          color: ${INK};
+          box-shadow: 4px 4px 10px #d9d6c0, -2px -2px 8px #ffffff;
+        }
+        .auth-role-label { font-size: 10px; font-weight: 700; letter-spacing: 0.02em; text-align: center; }
+
+        .auth-field { position: relative; width: 100%; margin-top: 14px; animation: fieldIn 0.35s ease-out both; }
+        .auth-field input {
+          width: 100%; padding: 12px 10px 10px; font-size: 14px; font-family: inherit;
+          color: ${INK}; background: transparent; outline: none;
+          border: none; border-left: 2px solid ${INK}; border-bottom: 2px solid ${INK};
+          border-bottom-left-radius: 10px; box-sizing: border-box;
+          transition: border-color 0.3s cubic-bezier(0.32,0.72,0,1);
+        }
+        .auth-field input:focus, .auth-field input:valid { border-color: #2563EB; }
+        .auth-field label {
+          position: absolute; left: 10px; top: 12px;
+          font-size: 11px; text-transform: uppercase; letter-spacing: 0.18em;
+          color: #94a3b8; pointer-events: none;
+          transition: transform 0.35s cubic-bezier(0.32,0.72,0,1), font-size 0.35s ease, padding 0.35s ease, background 0.35s ease, color 0.35s ease;
+        }
+        .auth-field input:focus ~ label, .auth-field input:valid ~ label {
+          transform: translate(2px, -26px);
+          font-size: 9.5px; padding: 4px 9px; border-radius: 7px;
+          background: ${INK}; color: #fff; letter-spacing: 0.16em;
+        }
+
+        .auth-error {
+          width: 100%; font-size: 11.5px; color: #b91c1c;
+          background: rgba(185,28,28,0.08); border-left: 3px solid #b91c1c;
+          padding: 9px 12px; border-radius: 8px; line-height: 1.4;
+          animation: shakeError 0.4s ease-out;
+        }
+
+        .auth-submit {
+          margin-top: 8px; height: 46px; width: 140px; border-radius: 10px;
+          border: 2px solid ${INK}; background: transparent; color: ${INK};
+          cursor: pointer; font-family: inherit; font-size: 11px; font-weight: 700;
+          text-transform: uppercase; letter-spacing: 0.16em;
+          transition: background 0.3s cubic-bezier(0.32,0.72,0,1), color 0.3s ease, transform 0.2s ease, box-shadow 0.3s ease;
+          display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .auth-submit:hover:not(:disabled) {
+          background: ${INK}; color: #fff;
+          box-shadow: 6px 6px 14px #d9d6c0, -4px -4px 10px #ffffff;
+        }
+        .auth-submit:active:not(:disabled) { transform: scale(0.96); }
+        .auth-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+        .auth-spinner {
+          width: 12px; height: 12px; border-radius: 50%;
+          border: 2px solid rgba(255,255,255,0.35); border-top-color: #fff;
+          animation: spinDot 0.7s linear infinite;
+        }
+
+        .auth-footer {
+          font-size: 11px; color: #94a3b8; text-align: center; margin-top: 4px;
+        }
+        .auth-footer a {
+          color: #2563EB; text-decoration: none; font-weight: 600;
+          transition: color 0.25s ease;
+        }
+        .auth-footer a:hover { color: #1E3A8A; text-decoration: underline; }
       `}</style>
+
+      <div className="auth-glow auth-glow-1" />
+      <div className="auth-glow auth-glow-2" />
+      <div className="auth-glow auth-glow-3" />
+
+      <form className="auth-card" onSubmit={handleSubmit} noValidate>
+        <div className="auth-brand">
+          <div className="auth-brand-icon"><FaBuilding size={20} /></div>
+          <div className="auth-title">SI-POKJA HUMKER</div>
+          <div className="auth-subtitle" key={isPegawai ? 'sub-pegawai' : 'sub-admin'}>
+            {isPegawai ? 'Pengajuan/Pendampingan Hukum' : 'Sistem Manajemen Kerja Sama'}
+          </div>
+        </div>
+
+        <div className="auth-role-row">
+          {TABS.map(t => (
+            <button
+              key={t.value}
+              type="button"
+              className={`auth-role-btn ${tab === t.value ? 'active' : ''}`}
+              onClick={() => handleTabChange(t.value)}
+            >
+              {t.icon}
+              <span className="auth-role-label">{t.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <div style={{ width: '100%' }}>
+          <div className="auth-field" key={isPegawai ? 'nip' : 'email'}>
+            <input
+              type="text"
+              value={identifier}
+              onChange={e => setIdentifier(e.target.value)}
+              required
+              autoComplete="username"
+              autoFocus
+            />
+            <label>{isPegawai ? 'NIP / NRP' : 'Email'}</label>
+          </div>
+
+          {!isPegawai && (
+            <div className="auth-field">
+              <input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+              />
+              <label>Password</label>
+            </div>
+          )}
+        </div>
+
+        {error && <div className="auth-error">{error}</div>}
+
+        <button className="auth-submit" type="submit" disabled={loading}>
+          {loading && <span className="auth-spinner" />}
+          {loading ? 'Memproses' : 'Masuk'}
+        </button>
+
+        <div className="auth-footer">
+          Anda mitra kerja sama?{' '}
+          <a href="/login-mitra">Akses dokumen Anda di sini</a>
+        </div>
+      </form>
     </div>
   );
 }

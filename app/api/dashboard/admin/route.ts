@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSheetData } from '@/lib/sheet';
+import { requireSession } from '@/lib/auth';
 
-// Kolom "Kegiatan Eplanning" (0-based):
-// 0 ID, 1 Kategori, 2 Layanan/Divisi, 3 Judul, 4 Deskripsi, 5 Jenis Dokumen,
-// 6 Target Mitra, 7 Kuota Terisi, 8 Biaya, 9 Tgl Mulai, 10 Tgl Target,
-// 11 Status (Dibuka/Penuh), 12 Tampil Publik, 13 Dibuat Oleh, 14 Tgl Dibuat, 15 Catatan
 const KEG = { ID: 0, STATUS: 11 };
 
 export async function GET(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const [dokRows, pengRows, mitraRows, kegRows, daftarRows] = await Promise.all([
       getSheetData('Dokumen Kerja sama'),
@@ -20,7 +22,6 @@ export async function GET(req: NextRequest) {
     const now = new Date();
     const batasExpire = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
 
-    // ── Stats dokumen ──
     const dokList = dokRows.filter(r => r[0]);
     let dokDraft = 0, dokAktif = 0, dokHampirExpire = 0, dokExpired = 0;
     let mouCount = 0, pksCount = 0;
@@ -59,27 +60,21 @@ export async function GET(req: NextRequest) {
       });
     });
 
-    // ── Stats pengajuan ──
     const pjnList = pengRows.filter(r => r[0]);
     const pengajuanMenunggu = pjnList.filter(r => ['Diajukan','Ditinjau'].includes(String(r[9] || ''))).length;
     const pengajuanDiterima = pjnList.filter(r => String(r[9] || '') === 'Disetujui').length;
     const pengajuanDitolak  = pjnList.filter(r => String(r[9] || '') === 'Ditolak').length;
 
-    // ── Stats E-Planning ──
-    // Kegiatan aktif = status "Dibuka" (masih menerima pendaftaran)
     const kegList = kegRows.filter(r => r[KEG.ID]);
     const rencanaKegiatanAktif = kegList.filter(r =>
       String(r[KEG.STATUS] || '').trim().toLowerCase() === 'dibuka'
     ).length;
 
-    // ── Pendaftaran menunggu ──
-    // Cari kolom yang berisi nilai "Menunggu" (status pendaftaran)
     const daftarList = daftarRows.filter(r => r[0]);
     const pendaftaranMenunggu = daftarList.filter(r =>
       r.some(cell => String(cell || '').trim().toLowerCase() === 'menunggu')
     ).length;
 
-    // ── Stats kerja sama per filter (untuk halaman lain) ──
     const ksStats = {
       draft:        dokList.filter(r => ['Draft','Diajukan','Ditinjau'].includes(String(r[9]))).length,
       'akan-mulai': dokList.filter(r => ['Selesai','Kegiatan Akan Berlangsung'].includes(String(r[9]))).length,

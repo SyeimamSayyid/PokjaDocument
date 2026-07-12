@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSheetData, appendRow, findRow } from '@/lib/sheet';
 import { generateId, formatTanggalWaktu } from '@/lib/utils';
+import { requireSession } from '@/lib/auth';
 
 // Kolom Sheet "Mitra" (0-based):
 // 0 ID Mitra | 1 Nama Institusi | 2 Singkatan | 3 Email PIC | 4 Nama PIC | 5 Jabatan PIC
@@ -10,7 +11,12 @@ const COL = {
   ALAMAT: 6, TELP: 7, STATUS: 8, TGL_DAFTAR: 9, FOLDER: 10,
 };
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const rows = await getSheetData('Mitra');
     const data = rows
@@ -31,6 +37,11 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { namaInstitusi, singkatan, emailPIC, namaPIC, jabatan, alamat, noTelp } = await req.json();
 

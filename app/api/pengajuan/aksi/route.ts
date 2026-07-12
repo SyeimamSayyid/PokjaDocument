@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { appendRow, findRow, updateCell } from '@/lib/sheet';
 import { generateId, generateKodeAkses, formatTanggal, formatTanggalWaktu } from '@/lib/utils';
+import { requireSession } from '@/lib/auth';
 
-// Kolom Sheet "Pengajuan Mitra" (0-based):
 const PCOL = {
   ID: 0, ID_MITRA: 1, NAMA_MITRA: 2, JENIS: 3, ARAH: 4, PERIHAL: 5,
   TGL: 6, STATUS: 7, ALASAN: 8, KODE_TRACKING: 9, ID_DOKUMEN: 10, DICATAT_OLEH: 11,
 };
 
 export async function PATCH(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { id, action, alasan } = await req.json();
 
@@ -29,7 +34,6 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ message: `Pengajuan ini sudah diproses sebelumnya (${currentStatus}).` }, { status: 409 });
     }
 
-    // ── TOLAK ──────────────────────────────────────────
     if (action === 'tolak') {
       if (!alasan?.trim()) {
         return NextResponse.json({ message: 'Alasan penolakan wajib diisi.' }, { status: 400 });
@@ -39,7 +43,6 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ message: 'Pengajuan ditolak.' });
     }
 
-    // ── TERIMA ─────────────────────────────────────────
     const namaMitra = String(found.data[PCOL.NAMA_MITRA]);
     const idMitra   = String(found.data[PCOL.ID_MITRA] || '');
     const jenis     = String(found.data[PCOL.JENIS]);
@@ -48,13 +51,12 @@ export async function PATCH(req: NextRequest) {
     const now = new Date();
     const idDokumen  = generateId(jenis);
     const kodeAkses  = generateKodeAkses(jenis);
-    const kodeExpire = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 hari kerja draft
+    const kodeExpire = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
     const tglBerlaku  = now;
     const tglBerakhir = new Date(now);
-    tglBerakhir.setFullYear(tglBerakhir.getFullYear() + 5); // estimasi 5 tahun
+    tglBerakhir.setFullYear(tglBerakhir.getFullYear() + 5);
 
-    // Buat baris dokumen baru (status Draft)
     await appendRow('Dokumen Kerja sama', [
       idDokumen, jenis, perihal, idMitra, namaMitra,
       formatTanggalWaktu(now),
@@ -64,7 +66,6 @@ export async function PATCH(req: NextRequest) {
       '', '', 'Admin Pokja', `Dari pengajuan ${id}`, '', '',
     ]);
 
-    // Update pengajuan
     await updateCell('Pengajuan Mitra', found.rowNumber, PCOL.STATUS + 1, 'Diterima');
     await updateCell('Pengajuan Mitra', found.rowNumber, PCOL.ID_DOKUMEN + 1, idDokumen);
 

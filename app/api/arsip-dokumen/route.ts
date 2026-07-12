@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { appendRow, getSheetData } from '@/lib/sheet';
 import { generateId, formatTanggalWaktu } from '@/lib/utils';
 import { google } from 'googleapis';
+import { requireSession } from '@/lib/auth';
 
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_WEBAPP_URL!;
 const SHEET = 'Arsip Dokumen';
@@ -66,6 +67,11 @@ async function resolveKontak(idMitra: string, namaInstitusi: string, pjRows: str
 
 // ── GET: daftar arsip GABUNGAN — manual (Arsip Dokumen) + sistem (Dokumen Kerja sama) ──
 export async function GET(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const jenis  = searchParams.get('jenis')?.trim();
@@ -158,6 +164,11 @@ export async function GET(req: NextRequest) {
 
 // ── POST: tambah arsip manual baru ──────────────────────────
 export async function POST(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const body = await req.json();
     const {
@@ -215,6 +226,11 @@ export async function POST(req: NextRequest) {
 // Hanya berlaku utk entri manual — entri sistem tidak bisa dihapus dari sini
 // karena itu representasi live dari dokumen asli, bukan data milik sheet Arsip.
 export async function DELETE(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id')?.trim();

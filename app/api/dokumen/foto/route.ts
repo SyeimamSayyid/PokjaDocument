@@ -1,10 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSheetData } from '@/lib/sheet';
+import { requireSession } from '@/lib/auth';
 
 const URL_GS = process.env.APPS_SCRIPT_WEBAPP_URL!;
 
 // Kolom "Dokumen Kerja sama" (0-based) — cuma yang dipakai di sini
 const DOK_COL = { ID: 0, ID_MITRA: 3, FOTO_FOLDER: 18 };
+
+// Admin/superadmin bebas; mitra HANYA boleh akses foto dokumennya sendiri
+// (idDokumen yang diminta harus sama dengan session.idDokumen miliknya).
+async function checkAkses(req: NextRequest, idDokumen: string) {
+  const session = await requireSession(req);
+  if (!session) return null;
+  if (['admin', 'superadmin'].includes(String(session.role))) return session;
+  if (session.role === 'mitra' && String(session.idDokumen) === idDokumen) return session;
+  return null;
+}
 
 async function resolveFotoFolderId(idDokumen: string): Promise<string | null> {
   const rows = await getSheetData('Dokumen Kerja sama');
@@ -21,6 +32,11 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const idDokumen = searchParams.get('idDokumen')?.trim();
     if (!idDokumen) return NextResponse.json({ files: [], terpakai: 0 });
+
+    const session = await checkAkses(req, idDokumen);
+    if (!session) {
+      return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+    }
 
     const fotoFolderId = await resolveFotoFolderId(idDokumen);
     if (!fotoFolderId) return NextResponse.json({ files: [], terpakai: 0 });
@@ -50,6 +66,11 @@ export async function POST(req: NextRequest) {
     const { idDokumen, namaFile, base64Data, mimeType, caption } = await req.json();
     if (!idDokumen || !base64Data) {
       return NextResponse.json({ message: 'Data foto tidak lengkap.' }, { status: 400 });
+    }
+
+    const session = await checkAkses(req, idDokumen);
+    if (!session) {
+      return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
     }
 
     const fotoFolderId = await resolveFotoFolderId(idDokumen);
@@ -86,6 +107,11 @@ export async function DELETE(req: NextRequest) {
     const { idDokumen, fileId } = await req.json();
     if (!idDokumen || !fileId) {
       return NextResponse.json({ message: 'Data tidak lengkap.' }, { status: 400 });
+    }
+
+    const session = await checkAkses(req, idDokumen);
+    if (!session) {
+      return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
     }
 
     const fotoFolderId = await resolveFotoFolderId(idDokumen);

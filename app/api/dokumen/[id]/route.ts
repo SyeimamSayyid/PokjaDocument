@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSheetData, updateCell, appendRow } from '@/lib/sheet';
 import { generateId, formatTanggalWaktu } from '@/lib/utils';
 import { google } from 'googleapis';
+import { requireSession } from '@/lib/auth';
 
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_WEBAPP_URL!;
 
@@ -11,8 +12,7 @@ const COL = {
   KODE_EXP:11, DOCS_ID:12, DOCS_URL:13, FOLDER_ID:14,
   DIBUAT_OLEH:15, CATATAN:16, TERAKHIR_DIAKSES:17, FOTO_FOLDER:18,
   TEMPLATE_MITRA:19, TGL_KEG_MULAI:20, TGL_KEG_SELESAI:21, PDF_ID:22,
-  DIVISI:23, // sudah ada dari desain awal — JANGAN dipakai ulang untuk field lain
-  // Penandatanganan (TTD) — digeser ke 24-28 supaya tidak bentrok dgn DIVISI (23)
+  DIVISI:23,
   TTD_TIPE:24, TTD_TGL_DIAJUKAN:25, TTD_STATUS:26, TTD_TGL_FINAL:27, TTD_CATATAN:28,
 };
 
@@ -20,6 +20,18 @@ const URUTAN_STATUS = [
   'Draft','Dalam Proses','Selesai','Kegiatan Berlangsung',
   'Kegiatan Selesai','MOU/PKS Berlaku','Kedaluwarsa',
 ];
+
+// Dipakai admin/superadmin (akses semua dokumen) MAUPUN mitra
+// (HANYA boleh akses dokumen miliknya sendiri — idDokumen di sesi harus
+// sama persis dengan :id di URL, supaya satu mitra tidak bisa mengintip
+// dokumen mitra lain hanya dengan mengganti angka di address bar).
+async function checkAksesDokumen(req: NextRequest, idDokumen: string) {
+  const session = await requireSession(req);
+  if (!session) return null;
+  if (['admin', 'superadmin'].includes(String(session.role))) return session;
+  if (session.role === 'mitra' && String(session.idDokumen) === String(idDokumen)) return session;
+  return null;
+}
 
 function getAuth() {
   return new google.auth.GoogleAuth({
@@ -75,7 +87,6 @@ async function kirimNotifikasi(idDokumen: string, tipe: string, judul: string, p
   } catch (e) { console.error('[NOTIF MITRA]', e); }
 }
 
-// Notifikasi ke kotak masuk ADMIN (bukan mitra) — dipakai utk kejadian yg mitra picu tapi perlu perhatian admin
 async function kirimNotifikasiAdmin(idDokumen: string, tipe: string, judul: string, pesan: string) {
   try {
     await fetch(APPS_SCRIPT_URL, {
@@ -96,8 +107,14 @@ async function catatKomentarSistem(idDokumen: string, pesan: string) {
 
 // ── GET: Detail dokumen ────────────────────────────────────
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+
+  const session = await checkAksesDokumen(req, id);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
-    const { id } = await params;
     const { searchParams } = new URL(req.url);
     const extractPoin = searchParams.get('extractPoin') === 'true';
 
@@ -141,7 +158,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       pdfId:        String(row[COL.PDF_ID] || ''),
       sisaHari,
       divisi:       String(row[COL.DIVISI] || '').split(',').map(s => s.trim()).filter(Boolean),
-      // Penandatanganan
       ttdTipe:         String(row[COL.TTD_TIPE] || ''),
       ttdTglDiajukan:  String(row[COL.TTD_TGL_DIAJUKAN] || ''),
       ttdStatus:       String(row[COL.TTD_STATUS] || ''),
@@ -173,16 +189,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       }
     }
 
-    // Cek apakah admin sudah mempublikasikan kegiatan ini lewat Extract Poin —
-    // dipakai mitra buat gate fitur upload foto (baru boleh setelah dipublikasi).
-    let sudahDipublikasi = false;
-    try {
-      const pubRows = await getSheetData('Poin Publik Kegiatan');
-      const found = pubRows.find(r => String(r[1]).trim() === id && String(r[5] || '').trim());
-      sudahDipublikasi = !!found;
-    } catch { /* sheet belum ada isinya, anggap belum dipublikasi */ }
-
-    return NextResponse.json({ dokumen: { ...dokumen, sudahDipublikasi }, poinOtomatis });
+    return NextResponse.json({ dokumen, poinOtomatis });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
@@ -190,8 +197,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
 // ── PATCH: Update poin / status / tanggal kegiatan / TTD ───
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+
+  const session = await checkAksesDokumen(req, id);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
-    const { id } = await params;
     const body = await req.json();
     const {
       poin, status, catatan, tglKegiatanMulai, tglKegiatanSelesai, transisi, alasanKembali,
@@ -206,7 +219,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const statusSkrg = String(rows[idx][COL.STATUS]).trim();
     const judulDok = String(rows[idx][COL.JUDUL] || '');
 
-    // ── Alur Penandatanganan (TTD) ──────────────────────────
     if (ttdAction) {
       if (ttdAction === 'pilihBasah') {
         await updateCell('Dokumen Kerja sama', rowNumber, COL.TTD_TIPE + 1, 'basah');
@@ -230,6 +242,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
 
       if (ttdAction === 'setujuiOnline') {
+        if (!['admin', 'superadmin'].includes(String(session.role))) {
+          return NextResponse.json({ message: 'Aksi ini khusus admin.' }, { status: 403 });
+        }
         const tglAjuan = String(rows[idx][COL.TTD_TGL_DIAJUKAN] || '');
         if (!tglAjuan) return NextResponse.json({ message: 'Tidak ada tanggal yang diajukan.' }, { status: 400 });
         await updateCell('Dokumen Kerja sama', rowNumber, COL.TTD_STATUS + 1, 'Disetujui');
@@ -241,6 +256,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
 
       if (ttdAction === 'tolakOnline') {
+        if (!['admin', 'superadmin'].includes(String(session.role))) {
+          return NextResponse.json({ message: 'Aksi ini khusus admin.' }, { status: 403 });
+        }
         const alasan = String(alasanTolak || '').trim();
         if (!alasan) return NextResponse.json({ message: 'Alasan penolakan wajib diisi.' }, { status: 400 });
         await updateCell('Dokumen Kerja sama', rowNumber, COL.TTD_STATUS + 1, '');
@@ -254,6 +272,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
 
       if (ttdAction === 'inputBasah') {
+        if (!['admin', 'superadmin'].includes(String(session.role))) {
+          return NextResponse.json({ message: 'Aksi ini khusus admin.' }, { status: 403 });
+        }
         const tgl = String(tglFinal || '').trim();
         if (!tgl) return NextResponse.json({ message: 'Tanggal TTD wajib diisi.' }, { status: 400 });
         await updateCell('Dokumen Kerja sama', rowNumber, COL.TTD_STATUS + 1, 'Disetujui');
@@ -267,12 +288,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ message: 'Aksi TTD tidak dikenali.' }, { status: 400 });
     }
 
-    // ── Transisi terkontrol (tombol mitra/admin) — validasi maju ──
     if (transisi) {
       const posSkrg = URUTAN_STATUS.indexOf(statusSkrg);
       const posBaru = URUTAN_STATUS.indexOf(transisi);
       const bolehMaju  = posBaru === posSkrg + 1;
       const bolehMundur = transisi === 'Draft' && statusSkrg === 'Dalam Proses';
+
+      // Kembali ke Draft khusus wewenang admin, bukan mitra.
+      if (bolehMundur && !['admin', 'superadmin'].includes(String(session.role))) {
+        return NextResponse.json({ message: 'Aksi ini khusus admin.' }, { status: 403 });
+      }
+
       if (!bolehMaju && !bolehMundur) {
         return NextResponse.json({ message: `Transisi dari "${statusSkrg}" ke "${transisi}" tidak diizinkan.` }, { status: 400 });
       }
@@ -290,7 +316,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           `Dokumen "${judulDok}" dikembalikan admin ke tahap Draft. Alasan: ${alasanBersih}`);
       }
 
-      // Mitra klik "Selesai Mengisi" (Draft -> Dalam Proses) — beri tahu admin
       if (transisi === 'Dalam Proses' && statusSkrg === 'Draft') {
         await kirimNotifikasiAdmin(id, 'selesai-mengisi', 'Dokumen siap ditinjau',
           `Mitra telah selesai mengisi dokumen "${judulDok}" dan mengirimkannya untuk ditinjau.`);
@@ -299,7 +324,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ message: 'Status diperbarui.', statusBaru: transisi });
     }
 
-    // Edit status manual admin (bebas)
+    // Sisa aksi (edit status manual, poin, catatan, tanggal kegiatan) khusus admin.
+    if (!['admin', 'superadmin'].includes(String(session.role))) {
+      return NextResponse.json({ message: 'Aksi ini khusus admin.' }, { status: 403 });
+    }
+
     if (status) {
       await updateCell('Dokumen Kerja sama', rowNumber, COL.STATUS + 1, status);
     }

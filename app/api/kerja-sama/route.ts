@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSheetData, findRow, updateCell } from '@/lib/sheet';
+import { requireSession } from '@/lib/auth';
 
 // Kolom "Dokumen Kerja sama" (0-based)
 const COL = {
@@ -23,6 +24,11 @@ const STATUS_LIST = [
 
 // ── GET: List dokumen dengan filter ───────────────────────
 export async function GET(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const filter = searchParams.get('filter') || '';
@@ -55,20 +61,17 @@ export async function GET(req: NextRequest) {
       }))
       .reverse();
 
-    // Filter status
     if (filter && STATUS_FILTER_MAP[filter]) {
       const statuses = STATUS_FILTER_MAP[filter];
       data = data.filter(d => statuses.includes(d.status));
     }
 
-    // Filter mitra
     if (mitra) {
       data = data.filter(d =>
         d.namaMitra.toLowerCase().includes(mitra.toLowerCase())
       );
     }
 
-    // Search
     if (search) {
       const q = search.toLowerCase();
       data = data.filter(d =>
@@ -79,7 +82,6 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Statistik per filter untuk badge count
     const allRows = rows.filter(r => r[COL.ID]).map(r => String(r[COL.STATUS]));
     const stats = {
       draft:       allRows.filter(s => STATUS_FILTER_MAP['draft'].includes(s)).length,
@@ -97,6 +99,11 @@ export async function GET(req: NextRequest) {
 
 // ── PATCH: Update status dokumen ──────────────────────────
 export async function PATCH(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { id, status, catatan } = await req.json();
 

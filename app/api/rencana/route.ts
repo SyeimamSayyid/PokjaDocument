@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSheetData, appendRow, findRow, updateCell, deleteRow } from '@/lib/sheet';
 import { generateId, formatTanggalWaktu } from '@/lib/utils';
+import { requireSession } from '@/lib/auth';
 
 const SHEET = 'Kegiatan Eplanning';
 
@@ -23,6 +24,11 @@ function parseDivisi(raw: string): string[] {
 
 // ── GET: List kegiatan (filter divisi opsional) ────────────
 export async function GET(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const divisi = searchParams.get('divisi');
@@ -63,6 +69,11 @@ export async function GET(req: NextRequest) {
 
 // ── POST: Buat kegiatan baru ────────────────────────────────
 export async function POST(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const b = await req.json();
     const {
@@ -107,6 +118,11 @@ export async function POST(req: NextRequest) {
 
 // ── PATCH: Update kegiatan / status / kuota ────────────────
 export async function PATCH(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { id, fields } = await req.json();
     if (!id || !fields) return NextResponse.json({ message: 'ID & fields wajib.' }, { status: 400 });
@@ -149,6 +165,11 @@ export async function PATCH(req: NextRequest) {
 
 // ── DELETE: Hapus kegiatan ──────────────────────────────────
 export async function DELETE(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { id } = await req.json();
     const found = await findRow(SHEET, COL.ID, id);

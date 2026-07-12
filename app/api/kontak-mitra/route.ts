@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSheetData, updateCell, findRow } from '@/lib/sheet';
+import { requireSession } from '@/lib/auth';
 
 // Kolom Pengajuan Mitra (0-based): 2 Nama Institusi, 3 Jenis, 7 Email,
 // 8 No.Wa, 9 Status, 11 Tgl Submit, 13 Jurusan, 17 Divisi, 18 Nama PIC
@@ -29,7 +30,12 @@ interface KontakItem {
   sumber: 'pengajuan' | 'arsip';
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     // ── Sumber 1: Pengajuan Mitra (alur normal via sistem) ──
     const rowsPengajuan = await getSheetData('Pengajuan Mitra');
@@ -71,10 +77,10 @@ export async function GET() {
           sumber:        'arsip',
         }));
     } catch {
-      dataArsip = []; // sheet Arsip Dokumen belum ada — aman, tetap tampilkan Pengajuan Mitra saja
+      dataArsip = [];
     }
 
-    const data = [...dataPengajuan, ...dataArsip].reverse(); // terbaru di atas
+    const data = [...dataPengajuan, ...dataArsip].reverse();
 
     return NextResponse.json({ data });
   } catch (err) {
@@ -82,8 +88,12 @@ export async function GET() {
   }
 }
 
-// ── PATCH: Admin mengoreksi Nama PIC / Email / No. WA yang salah input mitra ──
 export async function PATCH(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const body = await req.json();
     const { id, sumber, namaPIC, email, noWa } = body;
@@ -106,7 +116,7 @@ export async function PATCH(req: NextRequest) {
     const sheetName = sumber === 'pengajuan' ? 'Pengajuan Mitra' : 'Arsip Dokumen';
     const found = await findRow(sheetName, 0, String(id));
     if (!found) {
-      return NextResponse.json({ message: 'Data kontak tidak ditemukan (mungkin sudah dihapus otomatis atau diarsipkan ulang).' }, { status: 404 });
+      return NextResponse.json({ message: 'Data kontak tidak ditemukan.' }, { status: 404 });
     }
 
     const kolom = sumber === 'pengajuan'

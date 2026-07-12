@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSheetData, findRow, updateCell } from '@/lib/sheet';
 import { formatTanggalWaktu } from '@/lib/utils';
+import { requireSession } from '@/lib/auth';
 
-// Kolom sheet "Pengajuan Mitra" (0-based) — sesuai struktur asli:
 const COL = {
   ID:0, ID_MITRA:1, NAMA:2, JENIS:3, DESKRIPSI:4, TGL_KEGIATAN:5,
   BIAYA:6, EMAIL:7, WA:8, STATUS:9, KODE:10, TGL_SUBMIT:11,
   CATATAN:12, JURUSAN:13, FILE_ID:14, FILE_URL:15, FILE_NAMA:16, DIVISI:17,
-  // Kolom 18 = Nama PIC (dipakai file lain, tidak di-map di sini karena tidak perlu tampil di list)
-  TGL_KEPUTUSAN: 19, // BARU — dicatat otomatis saat status Disetujui/Ditolak (dasar hapus 14 hari)
+  TGL_KEPUTUSAN: 19,
 };
 
 const STATUS_DOKUMEN = [
@@ -21,6 +20,11 @@ const STATUS_PENGAJUAN_FINAL = ['Disetujui', 'Ditolak'];
 
 // ── GET: List pengajuan masuk (Admin) ──────────────────────
 export async function GET(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const filter       = searchParams.get('status') || '';
@@ -63,6 +67,11 @@ export async function GET(req: NextRequest) {
 
 // ── PATCH: Update status pengajuan / dokumen ───────────────
 export async function PATCH(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { tipe, id, statusBaru, catatan } = await req.json();
 
@@ -76,8 +85,8 @@ export async function PATCH(req: NextRequest) {
       }
       const found = await findRow('Dokumen Kerja sama', 0, id);
       if (!found) return NextResponse.json({ message: 'Dokumen tidak ditemukan.' }, { status: 404 });
-      await updateCell('Dokumen Kerja sama', found.rowNumber, 10, statusBaru); // kolom J Status
-      if (catatan) await updateCell('Dokumen Kerja sama', found.rowNumber, 17, catatan); // kolom Q Catatan
+      await updateCell('Dokumen Kerja sama', found.rowNumber, 10, statusBaru);
+      if (catatan) await updateCell('Dokumen Kerja sama', found.rowNumber, 17, catatan);
       return NextResponse.json({ message: `Status dokumen diubah ke "${statusBaru}".` });
     }
 
@@ -90,11 +99,9 @@ export async function PATCH(req: NextRequest) {
       if (idx === -1) return NextResponse.json({ message: 'Pengajuan tidak ditemukan.' }, { status: 404 });
 
       const rowNumber = idx + 2;
-      await updateCell('Pengajuan Mitra', rowNumber, COL.STATUS + 1, statusBaru);   // J Status (kolom 10)
-      if (catatan) await updateCell('Pengajuan Mitra', rowNumber, COL.CATATAN + 1, catatan); // M Catatan Admin (kolom 13)
+      await updateCell('Pengajuan Mitra', rowNumber, COL.STATUS + 1, statusBaru);
+      if (catatan) await updateCell('Pengajuan Mitra', rowNumber, COL.CATATAN + 1, catatan);
 
-      // Catat tanggal keputusan HANYA saat pertama kali masuk status final
-      // (Disetujui/Ditolak) — dasar hitung 14 hari sebelum baris dihapus otomatis.
       const statusLama = String(rows[idx][COL.STATUS] || '');
       if (STATUS_PENGAJUAN_FINAL.includes(statusBaru) && !STATUS_PENGAJUAN_FINAL.includes(statusLama)) {
         await updateCell('Pengajuan Mitra', rowNumber, COL.TGL_KEPUTUSAN + 1, formatTanggalWaktu(new Date()));

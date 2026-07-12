@@ -1,16 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSheetData, appendRow, updateCell, findRow } from '@/lib/sheet';
 import { generateId, formatTanggalWaktu } from '@/lib/utils';
+import { requireSession } from '@/lib/auth';
 
-// Kolom Sheet "Admin" (0-based):
-// 0 ID | 1 Nama | 2 Email | 3 Password Hash | 4 Status | 5 Dibuat Oleh | 6 Tanggal Dibuat | 7 Terakhir Login
 const COL = { ID: 0, NAMA: 1, EMAIL: 2, PASSWORD: 3, STATUS: 4, DIBUAT_OLEH: 5, TGL_DIBUAT: 6, TERAKHIR_LOGIN: 7 };
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const session = await requireSession(req, ['superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const rows = await getSheetData('Admin');
     const data = rows
-      .filter(r => r[COL.ID]) // skip baris kosong
+      .filter(r => r[COL.ID])
       .map(r => ({
         id: String(r[COL.ID]).trim(),
         nama: r[COL.NAMA],
@@ -26,6 +30,11 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const session = await requireSession(req, ['superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { nama, email, password, dibuatOleh } = await req.json();
 
@@ -36,7 +45,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'Password minimal 6 karakter.' }, { status: 400 });
     }
 
-    // Cek email sudah terdaftar?
     const existing = await findRow('Admin', COL.EMAIL, email.trim().toLowerCase());
     if (existing) {
       return NextResponse.json({ message: 'Email sudah terdaftar sebagai Admin Pokja.' }, { status: 409 });
@@ -61,6 +69,11 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const session = await requireSession(req, ['superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { id, action, newPassword } = await req.json();
 

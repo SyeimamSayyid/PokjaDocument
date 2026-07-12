@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { appendRow, getSheetData } from '@/lib/sheet';
 import { generateId, generateKodeAkses, formatTanggalWaktu } from '@/lib/utils';
+import { checkRateLimit, getClientIp } from '@/lib/rateLimit';
 
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_WEBAPP_URL!;
 
@@ -24,6 +25,17 @@ const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_WEBAPP_URL!;
 // 16 Nama File Dokumen
 // 17 Divisi
 // 18 Nama PIC            ← BARU
+
+// Submit form: maksimal 3 pengajuan per 10 menit per IP — cukup longgar untuk
+// pemakaian wajar (orang mungkin submit ulang kalau salah isi), tapi menutup
+// kemungkinan spam otomatis ratusan/ribuan entri sekaligus.
+const POST_LIMIT = 3;
+const POST_WINDOW_MS = 10 * 60 * 1000;
+
+// Cek status: lebih longgar (orang wajar cuma cek sesekali), tapi tetap
+// dibatasi supaya kode tracking (6 karakter) tidak bisa ditebak lewat brute force.
+const GET_LIMIT = 15;
+const GET_WINDOW_MS = 5 * 60 * 1000;
 
 async function uploadDokumenMitra(params: {
   namaFile: string;
@@ -49,6 +61,16 @@ async function uploadDokumenMitra(params: {
 
 // ── POST: Submit form pengajuan publik ─────────────────────
 export async function POST(req: NextRequest) {
+  const ip = getClientIp(req);
+  const limitResult = checkRateLimit(`pengajuan-post:${ip}`, POST_LIMIT, POST_WINDOW_MS);
+
+  if (!limitResult.allowed) {
+    return NextResponse.json(
+      { message: `Terlalu banyak pengajuan dikirim. Coba lagi dalam ${Math.ceil(limitResult.retryAfterSeconds / 60)} menit.` },
+      { status: 429, headers: { 'Retry-After': String(limitResult.retryAfterSeconds) } }
+    );
+  }
+
   try {
     let fileData: { namaFile: string; base64Data: string; mimeType: string } | null = null;
 
@@ -158,6 +180,16 @@ export async function POST(req: NextRequest) {
 
 // ── GET: Cek status via kode tracking ─────────────────────
 export async function GET(req: NextRequest) {
+  const ip = getClientIp(req);
+  const limitResult = checkRateLimit(`pengajuan-get:${ip}`, GET_LIMIT, GET_WINDOW_MS);
+
+  if (!limitResult.allowed) {
+    return NextResponse.json(
+      { message: `Terlalu banyak permintaan. Coba lagi dalam ${Math.ceil(limitResult.retryAfterSeconds / 60)} menit.` },
+      { status: 429, headers: { 'Retry-After': String(limitResult.retryAfterSeconds) } }
+    );
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const kode = searchParams.get('kode')?.trim().toUpperCase();

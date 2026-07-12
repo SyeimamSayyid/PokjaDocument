@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSheetData } from '@/lib/sheet';
 import * as XLSX from 'xlsx';
+import { requireSession } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const tipe  = (searchParams.get('tipe') || 'bulanan') as 'bulanan' | 'tahunan';
@@ -35,7 +41,6 @@ export async function GET(req: NextRequest) {
       'Status': r[9],
     }));
 
-    // Sheet kosong tetap punya header
     const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{
       'ID Dokumen': '', 'Jenis': '', 'Judul': '', 'Mitra': '', 'Tanggal Dibuat': '',
       'Tanggal Berlaku': '', 'Tanggal Berakhir': '', 'Durasi (Tahun)': '', 'Status': '',
@@ -51,7 +56,7 @@ export async function GET(req: NextRequest) {
       ? `Laporan_Tahunan_${tahun}.xlsx`
       : `Laporan_Bulanan_${bulan}-${tahun}.xlsx`;
 
-    return new NextResponse(buffer, {
+    return new NextResponse(new Uint8Array(buffer), {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'Content-Disposition': `attachment; filename="${filename}"`,

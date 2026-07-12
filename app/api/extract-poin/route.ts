@@ -2,22 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSheetData, findRow, updateCell, appendRow } from '@/lib/sheet';
 import { google } from 'googleapis';
 import { generateId, formatTanggalWaktu } from '@/lib/utils';
-
-// Sheet "Poin Publik Kegiatan" — kolom:
-// 0  ID
-// 1  ID Dokumen
-// 2  Jenis (MOU/PKS)
-// 3  Judul Dokumen
-// 4  Nama Mitra
-// 5  Status Publikasi (akan-berlangsung / telah-berlangsung)
-// 6  Tanggal Kegiatan
-// 7  Tempat Kegiatan
-// 8  Poin Dipilih (JSON array of string)
-// 9  Tgl Dibuat
-// 10 Dibuat Oleh
-// 11 Divisi — ditambahkan sebelumnya, JANGAN dipakai ulang untuk field lain
-// 12 Narasi Kustom — BARU, ditaruh setelah Divisi. Kalau kosong,
-//    Beranda fallback generate otomatis dari poin yang dipilih.
+import { requireSession } from '@/lib/auth';
 
 const COL_DOK = {
   ID:0, JENIS:1, JUDUL:2, ID_MITRA:3, NAMA_MITRA:4, TGL_DIBUAT:5,
@@ -96,12 +81,16 @@ function extractSemuaPasal(paragraphs: string[]): PasalData[] {
 
 // ── GET: List dokumen Selesai + poin tersimpan ─────────────
 export async function GET(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const idDokumen  = searchParams.get('idDokumen');
     const getPoin    = searchParams.get('getPoin') === 'true';
 
-    // Ambil semua dokumen berstatus "Selesai"
     const rows = await getSheetData('Dokumen Kerja sama');
     const selesai = rows
       .filter(r => r[COL_DOK.ID] && String(r[COL_DOK.STATUS]).trim() === 'Selesai')
@@ -117,7 +106,6 @@ export async function GET(req: NextRequest) {
         fotoFolderId: String(r[COL_DOK.FOTO_FOLDER] || ''),
       }));
 
-    // Kalau request poin untuk dokumen tertentu
     if (idDokumen && getPoin) {
       const dok = selesai.find(d => d.id === idDokumen) ||
         rows.filter(r => r[COL_DOK.ID]).map(r => ({
@@ -132,7 +120,6 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ message: 'Dokumen tidak ditemukan atau tidak punya Docs.' }, { status: 404 });
       }
 
-      // Extract pasal dari Google Docs
       let paragraphs: string[] = [];
       try {
         const auth = getAuth();
@@ -152,7 +139,6 @@ export async function GET(req: NextRequest) {
       }
       const pasalData = extractSemuaPasal(paragraphs);
 
-      // Cek apakah sudah ada data publik tersimpan
       let savedData = null;
       try {
         const pubRows = await getSheetData('Poin Publik Kegiatan');
@@ -171,7 +157,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ dok, pasalData, savedData });
     }
 
-    // Ambil juga data publik yang sudah ada
     let publikMap: Record<string, any> = {};
     try {
       const pubRows = await getSheetData('Poin Publik Kegiatan');
@@ -195,6 +180,11 @@ export async function GET(req: NextRequest) {
 
 // ── POST: Simpan pilihan pasal untuk publik ────────────────
 export async function POST(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const {
       idDokumen, jenis, judul, namaMitra,
@@ -206,7 +196,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'Data tidak lengkap.' }, { status: 400 });
     }
 
-    // Cek apakah sudah ada — kalau ada, update
     try {
       const pubRows = await getSheetData('Poin Publik Kegiatan');
       const idx     = pubRows.findIndex(r => String(r[1]).trim() === idDokumen);
@@ -216,12 +205,11 @@ export async function POST(req: NextRequest) {
         await updateCell('Poin Publik Kegiatan', rowNum, 7,  tanggalKegiatan || '');
         await updateCell('Poin Publik Kegiatan', rowNum, 8,  tempatKegiatan  || '');
         await updateCell('Poin Publik Kegiatan', rowNum, 9,  JSON.stringify(poinDipilih));
-        await updateCell('Poin Publik Kegiatan', rowNum, 13, narasiKustom || ''); // kolom 13 (1-based) = index 12, TIDAK menyentuh kolom 11 (Divisi)
+        await updateCell('Poin Publik Kegiatan', rowNum, 13, narasiKustom || '');
         return NextResponse.json({ message: 'Poin publik berhasil diperbarui.' });
       }
     } catch {}
 
-    // Buat baru
     await appendRow('Poin Publik Kegiatan', [
       generateId('PPK'),
       idDokumen, jenis, judul, namaMitra,
@@ -231,8 +219,8 @@ export async function POST(req: NextRequest) {
       JSON.stringify(poinDipilih),
       formatTanggalWaktu(new Date()),
       dibuatOleh || 'Admin',
-      '',                 // index 11 — Divisi (reserved, diisi proses lain, bukan di sini)
-      narasiKustom || '', // index 12 — Narasi Kustom
+      '',
+      narasiKustom || '',
     ]);
 
     return NextResponse.json({ message: 'Poin publik berhasil disimpan.' });
@@ -243,13 +231,17 @@ export async function POST(req: NextRequest) {
 
 // ── DELETE: Hapus dari publik ──────────────────────────────
 export async function DELETE(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { idDokumen } = await req.json();
     const pubRows = await getSheetData('Poin Publik Kegiatan');
     const idx     = pubRows.findIndex(r => String(r[1]).trim() === idDokumen);
     if (idx === -1) return NextResponse.json({ message: 'Data tidak ditemukan.' }, { status: 404 });
 
-    // Kosongkan poin dipilih (soft delete)
     await updateCell('Poin Publik Kegiatan', idx + 2, 6, '');
     await updateCell('Poin Publik Kegiatan', idx + 2, 9, '[]');
     return NextResponse.json({ message: 'Poin berhasil dihapus dari publik.' });

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSession } from '@/lib/auth';
 
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_WEBAPP_URL!;
 
@@ -12,6 +13,17 @@ async function callScript(payload: Record<string, unknown>) {
   return res.json();
 }
 
+// Admin/superadmin bebas; mitra HANYA boleh akses notifikasi dokumennya sendiri
+// (session mitra menyimpan idDokumen, bukan idMitra — jadi mitra wajib sertakan
+// idDokumen yang cocok dengan session-nya untuk bisa lolos).
+async function checkAkses(req: NextRequest, idDokumen: string) {
+  const session = await requireSession(req);
+  if (!session) return null;
+  if (['admin', 'superadmin'].includes(String(session.role))) return session;
+  if (session.role === 'mitra' && idDokumen && String(session.idDokumen) === idDokumen) return session;
+  return null;
+}
+
 // GET: daftar notifikasi mitra ?idMitra= atau ?idDokumen=
 export async function GET(req: NextRequest) {
   try {
@@ -21,6 +33,12 @@ export async function GET(req: NextRequest) {
     if (!idMitra && !idDokumen) {
       return NextResponse.json({ notifikasi: [], belumDibaca: 0 });
     }
+
+    const session = await checkAkses(req, idDokumen);
+    if (!session) {
+      return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+    }
+
     const d = await callScript({ action: 'listNotifikasi', idMitra, idDokumen });
     return NextResponse.json({ notifikasi: d.notifikasi || [], belumDibaca: d.belumDibaca || 0 });
   } catch (err) {
@@ -32,6 +50,14 @@ export async function GET(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const body = await req.json();
+
+    // Untuk mitra, wajib sertakan idDokumen yang cocok dengan sesinya — baik
+    // saat menandai satu notifikasi (id) maupun semua sekaligus (semua:true).
+    const session = await checkAkses(req, String(body.idDokumen || ''));
+    if (!session) {
+      return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+    }
+
     const d = await callScript({ action: 'tandaiNotifikasi', ...body });
     if (!d.success) return NextResponse.json({ message: d.error || 'Gagal.' }, { status: 500 });
     return NextResponse.json({ message: d.message });

@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { google } from 'googleapis';
+import { requireSession } from '@/lib/auth';
 
-// Scope 'drive' penuh (bukan readonly) — dibutuhkan untuk comments.create / replies.create.
-// Instance auth terpisah dari route lain (mis. extract-poin) yang cuma perlu readonly.
 function getAuth() {
   return new google.auth.GoogleAuth({
     credentials: {
@@ -13,6 +12,16 @@ function getAuth() {
   });
 }
 
+// Admin/superadmin bebas; mitra HANYA boleh akses komentar docsId miliknya sendiri
+// (session mitra menyimpan docsId langsung, bukan idDokumen, sesuai payload login-mitra).
+async function checkAkses(req: NextRequest, docsId: string) {
+  const session = await requireSession(req);
+  if (!session) return null;
+  if (['admin', 'superadmin'].includes(String(session.role))) return session;
+  if (session.role === 'mitra' && String(session.docsId) === docsId) return session;
+  return null;
+}
+
 // ── GET: daftar komentar Google Docs (native) untuk satu docsId ──
 export async function GET(req: NextRequest) {
   try {
@@ -20,6 +29,11 @@ export async function GET(req: NextRequest) {
     const docsId = searchParams.get('docsId')?.trim();
     if (!docsId) {
       return NextResponse.json({ message: 'docsId wajib diisi.' }, { status: 400 });
+    }
+
+    const session = await checkAkses(req, docsId);
+    if (!session) {
+      return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
     }
 
     const auth  = getAuth();
@@ -48,7 +62,6 @@ export async function GET(req: NextRequest) {
       })),
     }));
 
-    // urut kronologis lama → baru (selaras dgn panel chat kita)
     comments.sort((a, b) => new Date(a.createdTime || 0).getTime() - new Date(b.createdTime || 0).getTime());
 
     return NextResponse.json({ data: comments });
@@ -58,8 +71,6 @@ export async function GET(req: NextRequest) {
 }
 
 // ── POST: kirim komentar baru / balasan ke Google Docs ────────────
-// Nama pengirim disisipkan manual ke isi teks, karena penulis resmi
-// di Drive API selalu tercatat sebagai service account, bukan orangnya.
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -69,6 +80,12 @@ export async function POST(req: NextRequest) {
     const replyToCommentId  = String(body.replyToCommentId || '').trim();
 
     if (!docsId) return NextResponse.json({ message: 'docsId wajib diisi.' }, { status: 400 });
+
+    const session = await checkAkses(req, docsId);
+    if (!session) {
+      return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+    }
+
     if (!content) return NextResponse.json({ message: 'Isi komentar tidak boleh kosong.' }, { status: 400 });
     if (content.length > 2000) {
       return NextResponse.json({ message: 'Komentar terlalu panjang (maks 2000 karakter).' }, { status: 400 });

@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSheetData } from '@/lib/sheet';
 import { generatePdfTinggi } from '@/lib/pdfGenerator';
+import { requireSession } from '@/lib/auth';
 
 const COL = { ID:0, JENIS:1, JUDUL:2, NAMA_MITRA:4, STATUS:9, DOCS_ID:12 };
+
+// Admin/superadmin bebas; mitra HANYA boleh unduh PDF dokumennya sendiri.
+async function checkAkses(req: NextRequest, idDokumen: string) {
+  const session = await requireSession(req);
+  if (!session) return null;
+  if (['admin', 'superadmin'].includes(String(session.role))) return session;
+  if (session.role === 'mitra' && String(session.idDokumen) === idDokumen) return session;
+  return null;
+}
 
 // ── POST: Generate & unduh PDF kualitas tinggi ─────────────
 // Hanya untuk dokumen status Selesai ke atas
@@ -11,6 +21,11 @@ export async function POST(req: NextRequest) {
     const { idDokumen } = await req.json();
     if (!idDokumen) {
       return NextResponse.json({ message: 'ID dokumen wajib.' }, { status: 400 });
+    }
+
+    const session = await checkAkses(req, idDokumen);
+    if (!session) {
+      return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
     }
 
     const rows = await getSheetData('Dokumen Kerja sama');

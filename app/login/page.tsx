@@ -1,45 +1,42 @@
 'use client';
 
 import { useState } from 'react';
-import { 
-  FiUser, FiLock, FiAlertCircle, FiCheckCircle, 
-  FiShield, FiUsers, FiKey, FiExternalLink,
-  FiArrowRight, FiBriefcase, FiStar, FiTool
-} from 'react-icons/fi';
-import { 
-  FaUser, FaLock, FaShieldAlt, FaKey, 
-  FaCrown, FaUserTie, FaBuilding
-} from 'react-icons/fa';
-import { SiGoogle } from 'react-icons/si';
+import { FaUserTie, FaUserShield, FaBuilding } from 'react-icons/fa';
+import { FiSearch } from 'react-icons/fi';
 
-type Role = 'superadmin' | 'admin';
+type Tab = 'admin' | 'pegawai_bnn';
+type ActualRole = 'admin' | 'superadmin' | 'pegawai_bnn';
 
-const ROLES: { value: Role; label: string; desc: string; icon: React.ReactNode }[] = [
-  { 
-    value: 'superadmin', 
-    label: 'Superadmin',  
-    desc: 'Akses & statistik penuh', 
-    icon: <FaCrown size={20} /> 
-  },
-  { 
-    value: 'admin',      
-    label: 'Admin Pokja',  
-    desc: 'Kelola draft & dokumen',  
-    icon: <FiTool size={20} /> 
-  },
+const TABS: { value: Tab; label: string; icon: React.ReactNode }[] = [
+  { value: 'admin',       label: 'Admin / Superadmin', icon: <FaUserTie size={16} /> },
+  { value: 'pegawai_bnn', label: 'Pegawai BNN',         icon: <FaUserShield size={16} /> },
 ];
 
-const REDIRECT: Record<Role, string> = {
-  superadmin: '/dashboard/superadmin',
-  admin:      '/dashboard/admin',
+const REDIRECT: Record<ActualRole, string> = {
+  superadmin:  '/dashboard/superadmin',
+  admin:       '/dashboard/admin',
+  pegawai_bnn: '/dashboard/pegawai',
 };
 
+const CREAM = '#FBF9E4';
+const BLUE  = '#C8D9E6';
+const INK   = '#1E293B';
+
 export default function LoginPage() {
-  const [role, setRole]         = useState<Role>('admin');
-  const [username, setUsername] = useState('');
+  const [tab, setTab]           = useState<Tab>('admin');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState('');
+
+  const isPegawai = tab === 'pegawai_bnn';
+
+  const handleTabChange = (t: Tab) => {
+    setTab(t);
+    setIdentifier('');
+    setPassword('');
+    setError('');
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,10 +44,14 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
+      const body = isPegawai
+        ? { role: 'pegawai_bnn', nip: identifier.trim() }
+        : { role: 'admin', username: identifier.trim(), password };
+
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role, username: username.trim(), password }),
+        body: JSON.stringify(body),
       });
 
       const data = await res.json();
@@ -61,12 +62,8 @@ export default function LoginPage() {
         return;
       }
 
-      const userStr = JSON.stringify(data.user);
-      localStorage.setItem('paktasign_user', userStr);
-      document.cookie = `paktasign_user=${encodeURIComponent(userStr)}; path=/; max-age=86400`;
-      document.cookie = `paktasign_role=${data.user.role}; path=/; max-age=86400`;
-      window.location.href = REDIRECT[data.user.role as Role];
-
+      localStorage.setItem('paktasign_user', JSON.stringify(data.user));
+      window.location.href = REDIRECT[data.user.role as ActualRole];
     } catch {
       setError('Terjadi kesalahan koneksi. Coba lagi.');
       setLoading(false);
@@ -74,523 +71,280 @@ export default function LoginPage() {
   };
 
   return (
-    <>
+    <div className="auth-page">
       <style>{`
-        /* Reset dan base styles */
-        .login-wrap {
+        @keyframes glowDrift1 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          33% { transform: translate(40px, -30px) scale(1.1); }
+          66% { transform: translate(-30px, 20px) scale(0.95); }
+        }
+        @keyframes glowDrift2 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          33% { transform: translate(-35px, 25px) scale(1.08); }
+          66% { transform: translate(30px, -20px) scale(0.92); }
+        }
+        @keyframes cardIn {
+          from { opacity: 0; transform: translateY(18px) scale(0.97); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes iconFloat {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-5px); }
+        }
+        @keyframes shakeError {
+          0%, 100% { transform: translateX(0); }
+          25% { transform: translateX(-5px); }
+          75% { transform: translateX(5px); }
+        }
+        @keyframes spinDot {
+          to { transform: rotate(360deg); }
+        }
+        @keyframes fieldIn {
+          from { opacity: 0; transform: translateY(-6px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes footerIn {
+          from { opacity: 0; transform: translateY(6px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        .auth-page {
           min-height: 100vh;
           display: flex;
           align-items: center;
           justify-content: center;
+          padding: 1.5rem;
+          font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
           background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
-          padding: 1rem;
           position: relative;
           overflow: hidden;
         }
-
-        .login-wrap::before {
-          content: '';
+        .auth-glow {
           position: absolute;
-          top: -50%;
-          left: -50%;
-          width: 200%;
-          height: 200%;
-          background: radial-gradient(circle at 30% 40%, rgba(175, 169, 236, 0.03) 0%, transparent 60%);
-          animation: pulse-bg 8s ease-in-out infinite;
+          border-radius: 50%;
+          filter: blur(70px);
+          pointer-events: none;
+        }
+        .auth-glow-1 {
+          width: 460px; height: 460px;
+          top: -140px; left: -110px;
+          background: radial-gradient(circle, ${BLUE} 0%, transparent 70%);
+          opacity: 0.16;
+          animation: glowDrift1 15s ease-in-out infinite;
+        }
+        .auth-glow-2 {
+          width: 500px; height: 500px;
+          bottom: -170px; right: -130px;
+          background: radial-gradient(circle, ${CREAM} 0%, transparent 70%);
+          opacity: 0.14;
+          animation: glowDrift2 18s ease-in-out infinite;
+        }
+        .auth-glow-3 {
+          width: 280px; height: 280px;
+          top: 55%; right: 10%;
+          background: radial-gradient(circle, #A9C3D8 0%, transparent 70%);
+          opacity: 0.12;
+          animation: glowDrift1 21s ease-in-out infinite reverse;
         }
 
-        .login-wrap::after {
-          content: '';
-          position: absolute;
-          bottom: -30%;
-          right: -30%;
-          width: 150%;
-          height: 150%;
-          background: radial-gradient(circle at 70% 60%, rgba(245, 222, 179, 0.03) 0%, transparent 50%);
-          animation: pulse-bg 10s ease-in-out infinite reverse;
-        }
-
-        @keyframes pulse-bg {
-          0%, 100% { transform: scale(1); opacity: 0.5; }
-          50% { transform: scale(1.1); opacity: 1; }
-        }
-
-        .login-wrap ::selection { 
-          background-color: #424242; 
-        }
-
-        .login-wrap .container {
-          width: 100%;
-          display: flex;
-          justify-content: center;
-          align-items: center;
+        .auth-card {
           position: relative;
           z-index: 1;
-        }
-
-        .login-wrap .form {
           width: 100%;
-          max-width: 420px;
-          background: linear-gradient(145deg, rgba(50, 50, 50, 0.95) 0%, rgba(30, 30, 30, 0.98) 100%);
+          max-width: 380px;
           display: flex;
           flex-direction: column;
           align-items: center;
-          border-radius: 16px;
-          padding: 2.5rem 2rem;
-          border: 1px solid rgba(255, 255, 255, 0.06);
-          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(175, 169, 236, 0.03);
-          backdrop-filter: blur(10px);
-          position: relative;
+          gap: 22px;
+          padding: 2.4rem 2rem 2.2rem;
+          border-radius: 22px;
+          background: ${CREAM};
+          box-shadow: 0 30px 70px rgba(0,0,0,0.5), 20px 20px 44px #d9d6c0, -10px -10px 28px #ffffff;
+          animation: cardIn 0.55s cubic-bezier(0.32,0.72,0,1) both;
         }
-
-        .login-wrap .brand {
+        .auth-brand {
           display: flex;
+          flex-direction: column;
           align-items: center;
           gap: 10px;
-          margin-bottom: 4px;
+        }
+        .auth-brand-icon {
+          width: 46px; height: 46px; border-radius: 14px;
+          background: linear-gradient(135deg, ${BLUE}, #A9C3D8);
+          display: flex; align-items: center; justify-content: center;
+          color: ${INK};
+          box-shadow: 6px 6px 14px #d9d6c0, -6px -6px 14px #ffffff;
+          animation: iconFloat 3.5s ease-in-out infinite;
+        }
+        .auth-title {
+          font-size: 17px; font-weight: 800; letter-spacing: 0.06em;
+          text-transform: uppercase; color: ${INK}; text-align: center;
+        }
+        .auth-subtitle {
+          font-size: 11.5px; color: #64748b; text-align: center; margin-top: -6px;
+        }
+        .auth-role-row {
+          display: flex; width: 100%; gap: 6px;
+        }
+        .auth-role-btn {
+          flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px;
+          padding: 10px 6px; border-radius: 12px; border: none; cursor: pointer;
+          background: ${CREAM};
+          box-shadow: inset 3px 3px 7px #d9d6c0, inset -3px -3px 7px #ffffff;
+          color: #7c8794; font-family: inherit;
+          transition: background 0.3s cubic-bezier(0.32,0.72,0,1), color 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease;
+        }
+        .auth-role-btn:hover:not(.active) { transform: translateY(-1px); color: #4b5563; }
+        .auth-role-btn:active { transform: scale(0.96); }
+        .auth-role-btn.active {
+          background: linear-gradient(135deg, ${BLUE}, #A9C3D8);
+          color: ${INK};
+          box-shadow: 4px 4px 10px #d9d6c0, -2px -2px 8px #ffffff;
+        }
+        .auth-role-label { font-size: 10px; font-weight: 700; letter-spacing: 0.02em; text-align: center; }
+
+        .auth-field { position: relative; width: 100%; margin-top: 14px; animation: fieldIn 0.35s ease-out both; }
+        .auth-field input {
+          width: 100%; padding: 12px 10px 10px; font-size: 14px; font-family: inherit;
+          color: ${INK}; background: transparent; outline: none;
+          border: none; border-left: 2px solid ${INK}; border-bottom: 2px solid ${INK};
+          border-bottom-left-radius: 10px; box-sizing: border-box;
+          transition: border-color 0.3s cubic-bezier(0.32,0.72,0,1);
+        }
+        .auth-field input:focus, .auth-field input:valid { border-color: #2563EB; }
+        .auth-field label {
+          position: absolute; left: 10px; top: 12px;
+          font-size: 11px; text-transform: uppercase; letter-spacing: 0.18em;
+          color: #94a3b8; pointer-events: none;
+          transition: transform 0.35s cubic-bezier(0.32,0.72,0,1), font-size 0.35s ease, padding 0.35s ease, background 0.35s ease, color 0.35s ease;
+        }
+        .auth-field input:focus ~ label, .auth-field input:valid ~ label {
+          transform: translate(2px, -26px);
+          font-size: 9.5px; padding: 4px 9px; border-radius: 7px;
+          background: ${INK}; color: #fff; letter-spacing: 0.16em;
         }
 
-        .login-wrap .brand-icon { 
-          width: 40px;
-          height: 40px;
-          border-radius: 10px;
-          background: linear-gradient(135deg, #1D9E75 0%, #0F6E56 100%);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #fff;
-          font-size: 18px;
-          box-shadow: 0 4px 12px rgba(29, 158, 117, 0.3);
+        .auth-error {
+          width: 100%; font-size: 11.5px; color: #b91c1c;
+          background: rgba(185,28,28,0.08); border-left: 3px solid #b91c1c;
+          padding: 9px 12px; border-radius: 8px; line-height: 1.4;
+          animation: shakeError 0.4s ease-out;
         }
 
-        .login-wrap .brand-name {
-          font-size: 18px;
-          font-weight: 700;
-          color: #f5deb3;
-          letter-spacing: 0.5px;
-          background: linear-gradient(90deg, #f5deb3, #ffd700, #f5deb3);
-          background-size: 200% auto;
-          animation: shimmer 3s linear infinite;
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
+        .auth-submit {
+          margin-top: 8px; height: 46px; width: 140px; border-radius: 10px;
+          border: 2px solid ${INK}; background: transparent; color: ${INK};
+          cursor: pointer; font-family: inherit; font-size: 11px; font-weight: 700;
+          text-transform: uppercase; letter-spacing: 0.16em;
+          transition: background 0.3s cubic-bezier(0.32,0.72,0,1), color 0.3s ease, transform 0.2s ease, box-shadow 0.3s ease;
+          display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .auth-submit:hover:not(:disabled) {
+          background: ${INK}; color: #fff;
+          box-shadow: 6px 6px 14px #d9d6c0, -4px -4px 10px #ffffff;
+        }
+        .auth-submit:active:not(:disabled) { transform: scale(0.96); }
+        .auth-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+        .auth-spinner {
+          width: 12px; height: 12px; border-radius: 50%;
+          border: 2px solid rgba(255,255,255,0.35); border-top-color: #fff;
+          animation: spinDot 0.7s linear infinite;
         }
 
-        @keyframes shimmer {
-          0% { background-position: -200% center; }
-          100% { background-position: 200% center; }
+        .auth-footer {
+          font-size: 11px; color: #94a3b8; text-align: center; margin-top: 4px; line-height: 1.8;
         }
+        .auth-footer a {
+          color: #2563EB; text-decoration: none; font-weight: 600;
+          transition: color 0.25s ease;
+        }
+        .auth-footer a:hover { color: #1E3A8A; text-decoration: underline; }
 
-        .login-wrap .subtitle {
-          font-size: 12px;
-          color: rgba(245, 222, 179, 0.4);
-          margin-bottom: 24px;
-          letter-spacing: 0.5px;
-          display: flex;
-          align-items: center;
-          gap: 4px;
+        .cek-nip-toggle {
+          display: inline-flex; align-items: center; gap: 8px;
+          margin-top: 4px; padding: 10px 18px; border-radius: 100px;
+          border: 1.5px solid rgba(37,99,235,0.25); background: rgba(37,99,235,0.05);
+          color: #1E3A8A; font-size: 11.5px; font-weight: 700; font-family: inherit;
+          text-decoration: none; cursor: pointer;
+          transition: all 0.3s cubic-bezier(0.32,0.72,0,1);
+          animation: footerIn 0.35s ease-out both;
         }
-
-        .login-wrap .role-row {
-          display: flex;
-          gap: 8px;
-          width: 100%;
-          margin-bottom: 20px;
-        }
-
-        .login-wrap .role-btn {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 4px;
-          padding: 14px 10px;
-          background: rgba(255, 255, 255, 0.03);
-          border: 2px solid rgba(245, 222, 179, 0.08);
-          border-radius: 10px;
-          cursor: pointer;
-          transition: all 0.3s ease;
-          color: rgba(245, 222, 179, 0.3);
-          font-family: inherit;
-        }
-
-        .login-wrap .role-btn:hover {
-          background: rgba(255, 255, 255, 0.06);
-          border-color: rgba(245, 222, 179, 0.2);
-          color: rgba(245, 222, 179, 0.6);
-          transform: translateY(-2px);
-        }
-
-        .login-wrap .role-icon { 
-          font-size: 20px;
-          color: inherit;
-        }
-
-        .login-wrap .role-label { 
-          font-size: 13px; 
-          font-weight: 600; 
-          color: inherit; 
-        }
-
-        .login-wrap .role-desc { 
-          font-size: 10px; 
-          text-align: center; 
-          opacity: 0.7; 
-          line-height: 1.3; 
-          color: inherit; 
-        }
-
-        .login-wrap .role-active { 
-          border-width: 2px; 
-          color: wheat; 
-        }
-
-        .login-wrap .role-active.role-superadmin {
-          background: rgba(175, 169, 236, 0.15);
-          border-color: #AFA9EC;
-          box-shadow: 0 0 20px rgba(175, 169, 236, 0.1);
-        }
-
-        .login-wrap .role-active.role-admin {
-          background: rgba(245, 222, 179, 0.08);
-          border-color: wheat;
-          box-shadow: 0 0 20px rgba(245, 222, 179, 0.05);
-        }
-
-        .login-wrap .field-group {
-          width: 100%;
-          margin-bottom: 12px;
-        }
-
-        .login-wrap .field-label {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          font-size: 11px;
-          color: rgba(245, 222, 179, 0.5);
-          margin-bottom: 6px;
-          letter-spacing: 0.5px;
-          text-transform: uppercase;
-          font-weight: 500;
-        }
-
-        .login-wrap .input-wrapper {
-          position: relative;
-        }
-
-        .login-wrap .input-icon {
-          position: absolute;
-          left: 12px;
-          top: 50%;
-          transform: translateY(-50%);
-          color: rgba(245, 222, 179, 0.2);
-          pointer-events: none;
-          font-size: 14px;
-        }
-
-        .login-wrap .input {
-          width: 100%;
-          padding: 12px 14px 12px 40px;
-          background: rgba(255, 255, 255, 0.04);
-          color: #f5deb3;
-          border: 2px solid rgba(255, 255, 255, 0.06);
-          outline: none;
-          transition: all 0.3s ease;
-          font-size: 14px;
-          font-family: inherit;
-          border-radius: 10px;
-        }
-
-        .login-wrap .input::placeholder {
-          color: rgba(245, 222, 179, 0.2);
-          font-size: 13px;
-        }
-
-        .login-wrap .input:hover {
-          background: rgba(255, 255, 255, 0.06);
-          border-color: rgba(245, 222, 179, 0.15);
-        }
-
-        .login-wrap .input:focus {
-          background: rgba(255, 255, 255, 0.08);
-          border-color: rgba(29, 158, 117, 0.4);
-          box-shadow: 0 0 0 4px rgba(29, 158, 117, 0.05);
-        }
-
-        .login-wrap .error-box {
-          width: 100%;
-          font-size: 12px;
-          color: #f87171;
-          padding: 10px 14px;
-          background: rgba(248, 113, 113, 0.08);
-          border-radius: 8px;
-          border-left: 3px solid #f87171;
-          margin-bottom: 12px;
-          line-height: 1.4;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .login-wrap .btn {
-          width: 100%;
-          padding: 14px;
-          margin-top: 12px;
-          border-radius: 10px;
-          border: none;
-          font-size: 14px;
-          font-weight: 600;
-          transition: all 0.3s ease;
-          cursor: pointer;
-          font-family: inherit;
-          letter-spacing: 0.3px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-        }
-
-        .login-wrap .btn:hover:not(:disabled) {
-          transform: translateY(-2px);
-          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-        }
-
-        .login-wrap .btn:active:not(:disabled) { 
-          transform: scale(0.98); 
-        }
-
-        .login-wrap .btn:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-          transform: none;
-        }
-
-        .login-wrap .btn-superadmin {
-          background: linear-gradient(135deg, #AFA9EC 0%, #8B83D9 100%);
-          color: #1a1a2e;
-          box-shadow: 0 4px 20px rgba(175, 169, 236, 0.3);
-        }
-
-        .login-wrap .btn-superadmin:hover:not(:disabled) { 
-          background: linear-gradient(135deg, #CECBF6 0%, #AFA9EC 100%);
-          box-shadow: 0 6px 30px rgba(175, 169, 236, 0.4);
-        }
-
-        .login-wrap .btn-admin {
-          background: linear-gradient(135deg, #f5deb3 0%, #e8cfa0 100%);
-          color: #1a1a2e;
-          box-shadow: 0 4px 20px rgba(245, 222, 179, 0.2);
-        }
-
-        .login-wrap .btn-admin:hover:not(:disabled) { 
-          background: linear-gradient(135deg, #ffebcd 0%, #f5deb3 100%);
-          box-shadow: 0 6px 30px rgba(245, 222, 179, 0.3);
-        }
-
-        .login-wrap .role-info {
-          margin-top: 16px;
-          font-size: 11px;
-          color: rgba(245, 222, 179, 0.25);
-          text-align: center;
-        }
-
-        .login-wrap .role-info strong { 
-          color: rgba(245, 222, 179, 0.5); 
-        }
-
-        .login-wrap .mitra-link {
-          margin-top: 16px;
-          padding-top: 16px;
-          border-top: 1px solid rgba(245, 222, 179, 0.06);
-          width: 100%;
-          text-align: center;
-          font-size: 12px;
-          color: rgba(245, 222, 179, 0.3);
-        }
-
-        .login-wrap .mitra-link a {
-          color: #1D9E75;
-          text-decoration: none;
-          font-weight: 500;
-          transition: all 0.3s ease;
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-        }
-
-        .login-wrap .mitra-link a:hover {
-          color: #2DB888;
-          text-decoration: underline;
-        }
-
-        .login-wrap .corner-decor {
-          position: absolute;
-          top: -1px;
-          right: -1px;
-          width: 60px;
-          height: 60px;
-          border-top-right-radius: 16px;
-          background: linear-gradient(135deg, transparent 50%, rgba(175, 169, 236, 0.05) 100%);
-          pointer-events: none;
-        }
-
-        .login-wrap .corner-decor-bottom {
-          position: absolute;
-          bottom: -1px;
-          left: -1px;
-          width: 60px;
-          height: 60px;
-          border-bottom-left-radius: 16px;
-          background: linear-gradient(225deg, transparent 50%, rgba(245, 222, 179, 0.05) 100%);
-          pointer-events: none;
-        }
-
-        @media (max-width: 480px) {
-          .login-wrap .form { 
-            border-radius: 0; 
-            min-height: 100vh; 
-            justify-content: center;
-            padding: 1.5rem;
-          }
-          .login-wrap .role-desc { 
-            display: none; 
-          }
-          .login-wrap .brand-name {
-            font-size: 16px;
-          }
-        }
+        .cek-nip-toggle:hover { background: rgba(37,99,235,0.1); transform: translateY(-1px); }
+        .cek-nip-toggle:active { transform: scale(0.96); }
       `}</style>
-      <div className="login-wrap">
-        <div className="container">
-          <form className="form" onSubmit={handleSubmit} noValidate>
 
-            <div className="brand">
-              <div className="brand-icon">
-                <FaBuilding size={18} color="#fff" />
-              </div>
-              <span className="brand-name">SI-POKJA HUMKER</span>
-            </div>
-            <p className="subtitle">
-              <FiShield size={12} style={{ opacity: 0.5 }} />
-              Sistem Manajemen Kerja Sama
-            </p>
+      <div className="auth-glow auth-glow-1" />
+      <div className="auth-glow auth-glow-2" />
+      <div className="auth-glow auth-glow-3" />
 
-            <div className="role-row">
-              {ROLES.map((r) => (
-                <button
-                  key={r.value}
-                  type="button"
-                  className={`role-btn ${role === r.value ? `role-active role-${r.value}` : ''}`}
-                  onClick={() => {
-                    setRole(r.value);
-                    setError('');
-                    setUsername('');
-                    setPassword('');
-                  }}
-                >
-                  <span className="role-icon">{r.icon}</span>
-                  <span className="role-label">{r.label}</span>
-                  <span className="role-desc">{r.desc}</span>
-                </button>
-              ))}
-            </div>
-
-            <div className="field-group">
-              <label className="field-label">
-                <FiUser size={12} /> Email / Username
-              </label>
-              <div className="input-wrapper">
-                <span className="input-icon">
-                  <FaUser size={14} />
-                </span>
-                <input
-                  className="input"
-                  type="text"
-                  placeholder={role === 'superadmin' ? 'superadmin@bnn.go.id' : 'admin@bnn.go.id'}
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  autoComplete="username"
-                  required
-                />
-              </div>
-            </div>
-            <div className="field-group">
-              <label className="field-label">
-                <FiLock size={12} /> Password
-              </label>
-              <div className="input-wrapper">
-                <span className="input-icon">
-                  <FaLock size={14} />
-                </span>
-                <input
-                  className="input"
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete="current-password"
-                  required
-                />
-              </div>
-            </div>
-
-            {error && (
-              <div className="error-box">
-                <FiAlertCircle size={16} style={{ flexShrink: 0 }} />
-                <span>{error}</span>
-              </div>
-            )}
-
-            <button className={`btn btn-${role}`} type="submit" disabled={loading}>
-              {loading ? (
-                <>
-                  <span className="spin-icon">
-                    <FiLock size={18} />
-                  </span>
-                  Memproses...
-                </>
-              ) : (
-                <>
-                  <FiCheckCircle size={18} />
-                  Masuk ke Sistem
-                  <FiArrowRight size={16} className="arrow-icon" />
-                </>
-              )}
-            </button>
-
-            <div className="role-info">
-              Masuk sebagai <strong>{ROLES.find(r => r.value === role)?.label}</strong>
-            </div>
-
-            <div className="mitra-link">
-              Anda mitra kerja sama?{' '}
-              <a href="/login-mitra">
-                Akses dokumen Anda di sini <FiExternalLink size={12} />
-              </a>
-            </div>
-
-            <div className="corner-decor" />
-            <div className="corner-decor-bottom" />
-
-            <style jsx>{`
-              @keyframes spin {
-                from { transform: rotate(0deg); }
-                to { transform: rotate(360deg); }
-              }
-              .spin-icon {
-                display: inline-block;
-                animation: spin 1s linear infinite;
-              }
-              .btn:hover:not(:disabled) .arrow-icon {
-                transform: translateX(4px);
-              }
-              .arrow-icon {
-                transition: transform 0.3s ease;
-              }
-            `}</style>
-          </form>
+      <form className="auth-card" onSubmit={handleSubmit} noValidate>
+        <div className="auth-brand">
+          <div className="auth-brand-icon"><FaBuilding size={20} /></div>
+          <div className="auth-title">SI-POKJA HUMKER</div>
+          <div className="auth-subtitle">
+            {isPegawai ? 'Pengajuan/Pendampingan Hukum' : 'Sistem Manajemen Kerja Sama'}
+          </div>
         </div>
-      </div>
-    </>
+
+        <div className="auth-role-row">
+          {TABS.map(t => (
+            <button
+              key={t.value}
+              type="button"
+              className={`auth-role-btn ${tab === t.value ? 'active' : ''}`}
+              onClick={() => handleTabChange(t.value)}
+            >
+              {t.icon}
+              <span className="auth-role-label">{t.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <div style={{ width: '100%' }}>
+          <div className="auth-field" key={isPegawai ? 'nip' : 'email'}>
+            <input
+              type="text"
+              value={identifier}
+              onChange={e => setIdentifier(e.target.value)}
+              required
+              autoComplete="username"
+              autoFocus
+            />
+            <label>{isPegawai ? 'NIP / NRP' : 'Email'}</label>
+          </div>
+
+          {!isPegawai && (
+            <div className="auth-field">
+              <input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+              />
+              <label>Password</label>
+            </div>
+          )}
+        </div>
+
+        {error && <div className="auth-error">{error}</div>}
+
+        <button className="auth-submit" type="submit" disabled={loading}>
+          {loading && <span className="auth-spinner" />}
+          {loading ? 'Memproses' : 'Masuk'}
+        </button>
+
+        {isPegawai ? (
+          <a href="/cek-nip" className="cek-nip-toggle">
+            <FiSearch size={13} /> Cek NIP / NRP
+          </a>
+        ) : (
+          <div className="auth-footer">
+            Anda mitra kerja sama?{' '}
+            <a href="/login-mitra">Akses dokumen Anda di sini</a>
+          </div>
+        )}
+      </form>
+    </div>
   );
 }

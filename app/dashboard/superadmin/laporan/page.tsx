@@ -1,42 +1,57 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import LoaderPage from '@/components/LoaderPage';
+import {
+  FiArrowLeft, FiFileText, FiEdit2, FiSave, FiX,
+  FiCalendar, FiInbox, FiEye,
+} from 'react-icons/fi';
+import { FaFilePdf, FaFileWord } from 'react-icons/fa';
 
-interface Ringkasan {
-  mouBaru: number; pksBaru: number; totalBaru: number;
-  aktif: number; kedaluwarsaPeriode: number; mitraBaru: number;
+const FONT = "'Plus Jakarta Sans', -apple-system, sans-serif";
+const INDIGO = '#212842';
+const CREAM = '#F0E7D5';
+
+interface BaristData {
+  no: number; tglBerlaku: string; jenis: string; instansi: string; judul: string;
+  namaPIC: string; noPIC: string; emailPIC: string;
+  bidang: { pemberantasan: boolean; rehabilitasi: boolean; pencegahan: boolean; pemberdayaan: boolean };
+  durasi: string; tglBerakhir: string;
 }
-interface DokumenItem { id: string; jenis: string; judul: string; mitra: string; tanggal: string; status: string }
-interface LaporanData { tipe: string; periode: string; ringkasan: Ringkasan; listDokumen: DokumenItem[] }
 
-const BULAN_NAMA = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
-
-export default function LaporanPage() {
+export default function LaporanKerjasamaPage() {
   const now = new Date();
-  const [tipe, setTipe] = useState<'bulanan' | 'tahunan'>('bulanan');
-  const [bulan, setBulan] = useState(now.getMonth() + 1);
   const [tahun, setTahun] = useState(now.getFullYear());
-  const [data, setData] = useState<LaporanData | null>(null);
+  const [data, setData] = useState<BaristData[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const [namaKepala, setNamaKepala] = useState('');
+  const [pangkat, setPangkat] = useState('');
+  const [editPengaturan, setEditPengaturan] = useState(false);
+  const [savingPengaturan, setSavingPengaturan] = useState(false);
+
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   useEffect(() => {
     const raw = localStorage.getItem('paktasign_user');
     if (!raw) { window.location.href = '/login'; return; }
     const u = JSON.parse(raw);
     if (u.role !== 'superadmin') { window.location.href = '/login'; return; }
+
+    fetch('/api/superadmin/laporan/pengaturan')
+      .then(r => r.json())
+      .then(d => { setNamaKepala(d.namaKepala || ''); setPangkat(d.pangkat || ''); })
+      .catch(() => {});
   }, []);
 
   const tampilkan = async () => {
     setLoading(true); setError(''); setData(null);
     try {
-      const params = new URLSearchParams({ tipe, tahun: String(tahun) });
-      if (tipe === 'bulanan') params.set('bulan', String(bulan));
-      const res = await fetch(`/api/superadmin/laporan?${params}`);
+      const res = await fetch(`/api/superadmin/laporan/kerjasama?tahun=${tahun}`);
       const d = await res.json();
       if (!res.ok) { setError(d.message || 'Gagal memuat laporan.'); return; }
-      setData(d);
+      setData(d.data || []);
     } catch {
       setError('Terjadi kesalahan koneksi.');
     } finally {
@@ -44,150 +59,240 @@ export default function LaporanPage() {
     }
   };
 
-  const downloadExcel = () => {
-    const params = new URLSearchParams({ tipe, tahun: String(tahun) });
-    if (tipe === 'bulanan') params.set('bulan', String(bulan));
-    window.location.href = `/api/superadmin/laporan/export?${params}`;
+  const simpanPengaturan = async () => {
+    if (!namaKepala.trim() || !pangkat.trim()) { setError('Nama dan pangkat Kepala wajib diisi.'); return; }
+    setSavingPengaturan(true); setError('');
+    try {
+      const raw = localStorage.getItem('paktasign_user');
+      const u = raw ? JSON.parse(raw) : null;
+      const res = await fetch('/api/superadmin/laporan/pengaturan', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ namaKepala: namaKepala.trim(), pangkat: pangkat.trim(), diubahOleh: u?.nama || '' }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setError(d.message || 'Gagal menyimpan.'); return; }
+      setEditPengaturan(false);
+    } catch {
+      setError('Terjadi kesalahan koneksi.');
+    } finally {
+      setSavingPengaturan(false);
+    }
   };
 
-  const ringkasanCards = data ? [
-    { label: 'MOU baru', val: data.ringkasan.mouBaru },
-    { label: 'PKS baru', val: data.ringkasan.pksBaru },
-    { label: 'Total dokumen baru', val: data.ringkasan.totalBaru },
-    { label: 'Dokumen aktif', val: data.ringkasan.aktif },
-    { label: 'Kedaluwarsa', val: data.ringkasan.kedaluwarsaPeriode },
-    { label: 'Mitra baru', val: data.ringkasan.mitraBaru },
-  ] : [];
+  const download = (format: 'docx' | 'pdf') => {
+    window.location.href = `/api/superadmin/laporan/kerjasama/download?tahun=${tahun}&format=${format}`;
+  };
+
+  const bukaPreview = async () => {
+    setPreviewLoading(true); setError('');
+    try {
+      const res = await fetch(`/api/superadmin/laporan/kerjasama/download?tahun=${tahun}&format=pdf&mode=inline`);
+      if (!res.ok) { setError('Gagal membuat preview.'); return; }
+      const blob = await res.blob();
+      setPreviewUrl(URL.createObjectURL(blob));
+    } catch {
+      setError('Terjadi kesalahan saat membuat preview.');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const tutupPreview = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl('');
+  };
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f5f5f5', fontFamily: 'sans-serif' }}>
-      <nav style={navStyle}>
-        <a href="/dashboard/superadmin" style={backLink}>← Dashboard</a>
-        <div style={{ fontWeight: 600, fontSize: 14 }}>Laporan Performa</div>
-        <div style={{ width: 80 }}></div>
-      </nav>
+    <div style={{ minHeight: '100dvh', fontFamily: FONT, background: 'radial-gradient(1100px 520px at 85% -8%, rgba(33,40,66,0.05) 0%, rgba(33,40,66,0) 55%), linear-gradient(180deg,#F3ECDD,#EDE4D0)' }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
+        @keyframes fadeUp { from { opacity:0; transform:translateY(16px); filter:blur(4px); } to { opacity:1; transform:none; filter:blur(0); } }
+        .rise { animation: fadeUp 0.6s cubic-bezier(0.32,0.72,0,1) both; }
+        .btn-hover { transition: all 0.3s cubic-bezier(0.32,0.72,0,1); }
+        .btn-hover:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.05); }
+        .btn-hover:active:not(:disabled) { transform: scale(0.97); }
+        input::placeholder { color: rgba(33,40,66,0.3); }
+      `}</style>
 
-      <div style={{ maxWidth: 760, margin: '0 auto', padding: '1.25rem' }}>
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '1.4rem 1.5rem 0' }}>
+        <nav style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: 'rgba(240,231,213,0.75)', backdropFilter: 'blur(12px)',
+          border: '1px solid rgba(33,40,66,0.1)', borderRadius: 100, padding: '10px 14px 10px 18px',
+          boxShadow: '0 10px 30px -18px rgba(33,40,66,0.3)',
+        }} className="rise">
+          <a href="/dashboard/superadmin" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: INDIGO, textDecoration: 'none', fontWeight: 600 }}>
+            <FiArrowLeft size={13} /> Dashboard
+          </a>
+          <div style={{ fontWeight: 800, fontSize: 14, color: INDIGO }}>Laporan Data Arsip Kerja Sama</div>
+          <div style={{ width: 90 }} />
+        </nav>
+      </div>
 
-        {error && <div style={msgBox('#A32D2D', '#FCEBEB')}>{error}</div>}
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '1.4rem 1.5rem 3rem' }}>
 
-        <div style={card}>
-          <div style={cardTitle}>Pilih Periode Laporan</div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'end' }}>
-            <div>
-              <label style={label}>Tipe</label>
-              <div style={{ display: 'flex', gap: 6 }}>
-                {(['bulanan', 'tahunan'] as const).map(t => (
-                  <button
-                    key={t}
-                    onClick={() => setTipe(t)}
-                    style={{
-                      ...btnSm,
-                      background: tipe === t ? '#0F6E56' : '#fff',
-                      color: tipe === t ? '#fff' : '#374151',
-                      borderColor: tipe === t ? '#0F6E56' : '#e5e7eb',
-                    }}
-                  >
-                    {t.charAt(0).toUpperCase() + t.slice(1)}
-                  </button>
-                ))}
-              </div>
+        {error && <div style={{ ...msgBox('#A32D2D', '#FCEBEB'), marginBottom: 16 }} className="rise">{error}</div>}
+
+        {/* Pengaturan Kepala BNNP */}
+        <div style={{ ...shell, marginBottom: 14 }} className="rise">
+          <div style={{ ...core, padding: '1.2rem 1.4rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: editPengaturan ? 14 : 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: INDIGO }}>Kepala BNNP (Penanda Tangan Laporan)</div>
+              {!editPengaturan && (
+                <button onClick={() => setEditPengaturan(true)} className="btn-hover" style={btnGhostSm}>
+                  <FiEdit2 size={11} /> Ubah
+                </button>
+              )}
             </div>
 
-            {tipe === 'bulanan' && (
-              <div>
-                <label style={label}>Bulan</label>
-                <select style={input} value={bulan} onChange={e => setBulan(parseInt(e.target.value))}>
-                  {BULAN_NAMA.map((b, i) => <option key={i} value={i + 1}>{b}</option>)}
-                </select>
+            {editPengaturan ? (
+              <>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <label style={fieldLabel}>Nama Kepala</label>
+                    <input style={fieldInput} value={namaKepala} onChange={e => setNamaKepala(e.target.value)} placeholder="Drs. Nama Kepala" />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <label style={fieldLabel}>Pangkat</label>
+                    <input style={fieldInput} value={pangkat} onChange={e => setPangkat(e.target.value)} placeholder="Brigadir Jenderal Polisi" />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={simpanPengaturan} disabled={savingPengaturan} className="btn-hover" style={btnPrimarySm}>
+                    <FiSave size={11} /> {savingPengaturan ? 'Menyimpan...' : 'Simpan'}
+                  </button>
+                  <button onClick={() => setEditPengaturan(false)} className="btn-hover" style={btnGhostSm}>
+                    <FiX size={11} /> Batal
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: 12.5, color: 'rgba(33,40,66,0.6)' }}>
+                {namaKepala || <span style={{ fontStyle: 'italic', color: 'rgba(33,40,66,0.35)' }}>Belum diisi</span>}
+                {pangkat && <span> — {pangkat}</span>}
               </div>
             )}
+          </div>
+        </div>
 
+        {/* Pilih tahun */}
+        <div style={{ ...shell, marginBottom: 16 }} className="rise">
+          <div style={{ ...core, padding: '1.2rem 1.4rem', display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <div>
-              <label style={label}>Tahun</label>
+              <label style={fieldLabel}><FiCalendar size={11} style={{ marginRight: 4, verticalAlign: 'middle' }} />Tahun</label>
               <input
-                style={{ ...input, width: 90 }}
                 type="number"
+                style={{ ...fieldInput, width: 110 }}
                 value={tahun}
                 onChange={e => setTahun(parseInt(e.target.value) || now.getFullYear())}
               />
             </div>
-
-            <button onClick={tampilkan} disabled={loading} style={btnPrimary}>
+            <button onClick={tampilkan} disabled={loading} className="btn-hover" style={btnPrimarySm}>
               {loading ? 'Memuat...' : 'Tampilkan'}
             </button>
           </div>
         </div>
 
-        {data && (
-          <>
-            <div style={card}>
-              <div style={cardTitle}>
-                Ringkasan {tipe === 'bulanan' ? `${BULAN_NAMA[bulan - 1]} ${tahun}` : `Tahun ${tahun}`}
+        {data !== null && (
+          <div style={shell} className="rise">
+            <div style={{ ...core, padding: '1.3rem 1.4rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: INDIGO, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <FiFileText size={16} /> Data Kerja Sama Tahun {tahun} ({data.length})
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button onClick={bukaPreview} disabled={previewLoading} className="btn-hover" style={btnGhostSm}>
+                    <FiEye size={12} /> {previewLoading ? 'Menyiapkan...' : 'Preview'}
+                  </button>
+                  <button onClick={() => download('docx')} className="btn-hover" style={btnDownload}>
+                    <FaFileWord size={13} /> Word
+                  </button>
+                  <button onClick={() => download('pdf')} className="btn-hover" style={{ ...btnDownload, background: '#A32D2D' }}>
+                    <FaFilePdf size={13} /> PDF
+                  </button>
+                </div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 8, marginBottom: 12 }}>
-                {ringkasanCards.map((c, i) => (
-                  <div key={i} style={{ background: '#f9fafb', borderRadius: 8, padding: '0.75rem', textAlign: 'center' }}>
-                    <div style={{ fontSize: 22, fontWeight: 600, color: '#0F6E56' }}>{c.val}</div>
-                    <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>{c.label}</div>
-                  </div>
-                ))}
-              </div>
-              <button onClick={downloadExcel} style={{ ...btnPrimary, width: '100%', height: 38 }}>
-                ⬇ Download Excel (.xlsx)
-              </button>
-            </div>
 
-            <div style={card}>
-              <div style={cardTitle}>Daftar Dokumen ({data.listDokumen.length})</div>
-              {data.listDokumen.length === 0 ? (
-                <p style={{ fontSize: 12, color: '#9ca3af' }}>Tidak ada dokumen pada periode ini.</p>
+              {data.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '2.5rem', color: 'rgba(33,40,66,0.4)' }}>
+                  <FiInbox size={30} style={{ marginBottom: 8, opacity: 0.5 }} />
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>Data PKS/MOU saat itu tidak ditemukan</div>
+                </div>
               ) : (
                 <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                  <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse', minWidth: 900 }}>
                     <thead>
-                      <tr style={{ textAlign: 'left', color: '#6b7280', borderBottom: '1px solid #e5e7eb' }}>
-                        <th style={th}>Jenis</th>
-                        <th style={th}>Judul</th>
-                        <th style={th}>Mitra</th>
-                        <th style={th}>Tanggal</th>
-                        <th style={th}>Status</th>
+                      <tr>
+                        {['No', 'Tgl Berlaku', 'Jenis', 'Instansi', 'Judul', 'Nama PIC', 'Bidang', 'Durasi', 'Berakhir'].map(h => (
+                          <th key={h} style={th}>{h}</th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {data.listDokumen.map((d, i) => (
-                        <tr key={i} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                          <td style={td}>{d.jenis}</td>
-                          <td style={td}>{d.judul}</td>
-                          <td style={td}>{d.mitra}</td>
-                          <td style={td}>{d.tanggal}</td>
-                          <td style={td}>{d.status}</td>
-                        </tr>
-                      ))}
+                      {data.map(d => {
+                        const bidangList = [
+                          d.bidang.pencegahan && 'Pencegahan',
+                          d.bidang.pemberantasan && 'Pemberantasan',
+                          d.bidang.rehabilitasi && 'Rehabilitasi',
+                          d.bidang.pemberdayaan && 'Pemberdayaan',
+                        ].filter(Boolean).join(', ');
+                        return (
+                          <tr key={d.no} style={{ borderBottom: '1px solid rgba(33,40,66,0.06)' }}>
+                            <td style={td}>{d.no}</td>
+                            <td style={td}>{d.tglBerlaku}</td>
+                            <td style={td}>{d.jenis}</td>
+                            <td style={td}>{d.instansi}</td>
+                            <td style={td}>{d.judul}</td>
+                            <td style={td}>{d.namaPIC || '—'}</td>
+                            <td style={td}>{bidangList || '—'}</td>
+                            <td style={td}>{d.durasi ? `${d.durasi} Th` : '—'}</td>
+                            <td style={td}>{d.tglBerakhir}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
               )}
             </div>
-          </>
+          </div>
         )}
       </div>
+
+      {/* Modal Preview PDF */}
+      {previewUrl && (
+        <div onClick={tutupPreview} style={{
+          position: 'fixed', inset: 0, background: 'rgba(33,40,66,0.65)', backdropFilter: 'blur(6px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: '2rem',
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: '#fff', borderRadius: 20, width: '100%', maxWidth: 1000, height: '90vh',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 40px 90px -30px rgba(33,40,66,0.5)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', borderBottom: '1px solid rgba(33,40,66,0.08)' }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: INDIGO, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <FiEye size={14} /> Preview Laporan Tahun {tahun}
+              </div>
+              <button onClick={tutupPreview} className="btn-hover" style={{ ...btnGhostSm, padding: '6px 10px' }}>
+                <FiX size={14} />
+              </button>
+            </div>
+            <iframe src={previewUrl} style={{ flex: 1, border: 'none', width: '100%' }} title="Preview Laporan" />
+          </div>
+        </div>
+      )}
     </div>
   );
-
-
 }
 
-const navStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.85rem 1.5rem', background: '#fff', borderBottom: '1px solid #e5e7eb', position: 'sticky', top: 0, zIndex: 100 };
-const backLink: React.CSSProperties = { fontSize: 12, color: '#6b7280', textDecoration: 'none' };
-const card: React.CSSProperties = { background: '#fff', borderRadius: 12, padding: '1rem 1.25rem', border: '1px solid #e5e7eb', marginBottom: '1rem' };
-const cardTitle: React.CSSProperties = { fontSize: 13, fontWeight: 600, marginBottom: 12 };
-const label: React.CSSProperties = { display: 'block', fontSize: 11, color: '#6b7280', marginBottom: 4 };
-const input: React.CSSProperties = { padding: '8px 10px', borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 12, fontFamily: 'sans-serif', boxSizing: 'border-box', height: 36 };
-const btnPrimary: React.CSSProperties = { padding: '8px 16px', borderRadius: 8, border: 'none', background: '#0F6E56', color: '#fff', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'sans-serif', whiteSpace: 'nowrap', height: 36 };
-const btnSm: React.CSSProperties = { padding: '8px 12px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', color: '#374151', fontSize: 12, cursor: 'pointer', fontFamily: 'sans-serif' };
-const th: React.CSSProperties = { padding: '8px 6px', fontWeight: 500 };
-const td: React.CSSProperties = { padding: '8px 6px' };
-const msgBox = (color: string, bg: string): React.CSSProperties => ({
-  fontSize: 12, color, background: bg, padding: '8px 12px', borderRadius: 8, marginBottom: 10,
-});
+const shell: React.CSSProperties = { background: 'rgba(255,255,255,0.55)', border: '1px solid rgba(33,40,66,0.07)', borderRadius: 24, padding: 7, boxShadow: '0 1px 2px rgba(33,40,66,0.04), 0 30px 60px -38px rgba(33,40,66,0.18)' };
+const core: React.CSSProperties = { background: '#fff', borderRadius: 18, boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.9)' };
+const fieldLabel: React.CSSProperties = { display: 'block', fontSize: 10.5, fontWeight: 700, color: INDIGO, marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.05em' };
+const fieldInput: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: 10, border: '1.5px solid rgba(33,40,66,0.1)', background: 'rgba(33,40,66,0.02)', fontSize: 12.5, fontFamily: FONT, outline: 'none', color: INDIGO, boxSizing: 'border-box' };
+const btnPrimarySm: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 18px', borderRadius: 100, border: 'none', background: INDIGO, color: CREAM, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: FONT };
+const btnGhostSm: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 100, border: '1px solid rgba(33,40,66,0.12)', background: 'rgba(33,40,66,0.03)', color: INDIGO, fontSize: 11.5, fontWeight: 600, cursor: 'pointer', fontFamily: FONT };
+const btnDownload: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 100, border: 'none', background: INDIGO, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: FONT };
+const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontWeight: 700, color: 'rgba(33,40,66,0.45)', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid rgba(33,40,66,0.1)' };
+const td: React.CSSProperties = { padding: '8px 10px', color: INDIGO };
+const msgBox = (color: string, bg: string): React.CSSProperties => ({ fontSize: 12.5, color, background: bg, padding: '10px 14px', borderRadius: 10 });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { appendRow, getSheetData, findRow, updateCell, deleteRow } from '@/lib/sheet';
 import { generateId, generateKodeAkses, formatTanggal, formatTanggalWaktu } from '@/lib/utils';
 import { buatDariTemplate, hapusDariDrive } from '@/lib/gdocs';
+import { requireSession } from '@/lib/auth';
 
 // Kolom "Dokumen Kerja sama" (0-based)
 const COL = {
@@ -14,6 +15,11 @@ const COL = {
 
 // ── POST: Generate kode + buat Docs + Drive via Apps Script ──
 export async function POST(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const body = await req.json();
     const {
@@ -61,9 +67,7 @@ export async function POST(req: NextRequest) {
       const tglMulaiDate = new Date(tglBerlakuInput);
       if (isNaN(tglMulaiDate.getTime())) {
         return NextResponse.json({ message: 'Format tanggal mulai tidak valid.' }, { status: 400 });
-      }
-
-      // Tanggal berakhir OPSIONAL saat generate — bisa dikosongkan dulu dan
+      }     // Tanggal berakhir OPSIONAL saat generate — bisa dikosongkan dulu dan
       // diisi admin belakangan lewat halaman detail dokumen.
       let tglAkhirDate: Date | null = null;
       if (tglBerakhirInput) {
@@ -135,8 +139,7 @@ export async function POST(req: NextRequest) {
         message: 'Dokumen berhasil dibuat di Google Docs.',
       });
     }
-
-    return NextResponse.json({ message: 'tipeKode tidak valid.' }, { status: 400 });
+  return NextResponse.json({ message: 'tipeKode tidak valid.' }, { status: 400 });
   } catch (err) {
     console.error('[GENERATE KODE]', err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
@@ -144,7 +147,12 @@ export async function POST(req: NextRequest) {
 }
 
 // ── GET: List semua dokumen ────────────────────────────────
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const rows = await getSheetData('Dokumen Kerja sama');
     const data = rows.filter(r => r[COL.ID]).map(r => ({
@@ -174,6 +182,11 @@ export async function GET() {
 
 // ── DELETE: Hapus dokumen dari Sheets + Docs + Drive ───────
 export async function DELETE(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { id } = await req.json();
     if (!id) return NextResponse.json({ message: 'ID wajib diisi.' }, { status: 400 });
@@ -199,6 +212,11 @@ export async function DELETE(req: NextRequest) {
 
 // ── PATCH: Edit judul / status dokumen ────────────────────
 export async function PATCH(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { id, fields } = await req.json();
     if (!id || !fields) return NextResponse.json({ message: 'ID dan fields wajib.' }, { status: 400 });

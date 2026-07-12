@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSheetData } from '@/lib/sheet';
+import { requireSession } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const tipe  = (searchParams.get('tipe') || 'bulanan') as 'bulanan' | 'tahunan';
-    const bulan = parseInt(searchParams.get('bulan') || '0'); // 1-12
+    const bulan = parseInt(searchParams.get('bulan') || '0');
     const tahun = parseInt(searchParams.get('tahun') || '0');
 
     if (!tahun || (tipe === 'bulanan' && !bulan)) {
@@ -23,7 +29,7 @@ export async function GET(req: NextRequest) {
       if (isNaN(d.getTime())) return false;
       if (d.getFullYear() !== tahun) return false;
       if (tipe === 'bulanan') return (d.getMonth() + 1) === bulan;
-      return true; // tahunan = seluruh tahun
+      return true;
     };
 
     const dibuatPeriode = dokRows.filter(r => matchPeriod(String(r[5])));

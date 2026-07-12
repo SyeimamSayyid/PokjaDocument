@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSheetData, updateCell } from '@/lib/sheet';
+import { requireSession } from '@/lib/auth';
 
 const SHEET = 'Pengajuan Mitra';
 const COL_ID = 0;
@@ -14,6 +15,11 @@ function parseDivisi(raw: string): string[] {
 
 // ── PATCH: Assign / ubah divisi pengajuan (mendukung multi, maks 4) ──
 export async function PATCH(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { id, divisi } = await req.json();
     if (!id) return NextResponse.json({ message: 'ID pengajuan wajib.' }, { status: 400 });
@@ -46,6 +52,11 @@ export async function PATCH(req: NextRequest) {
 
 // ── GET: List pengajuan + divisi (filter admin) ────────────
 export async function GET(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const divisiFilter = searchParams.get('divisi');

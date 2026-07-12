@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSheetData } from '@/lib/sheet';
 import { google } from 'googleapis';
+import { requireSession } from '@/lib/auth';
 
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_WEBAPP_URL!;
 
@@ -19,10 +20,12 @@ function getAuth() {
 interface Kandidat { fileId: string; namaFile: string; fileUrl: string; namaInstansi: string; sumber: 'dashboard'; }
 
 // ── GET: satu-satunya sumber = upload mitra khusus untuk dokumen INI ──
-// (kolom "Template Mitra ID" di baris dokumen — diisi via card "Draf Template Anda"
-// di halaman mitra). TIDAK lagi menebak dari riwayat Pengajuan Mitra lama,
-// karena itu menangkap upload lama yang tidak relevan / sudah tidak dipakai.
 export async function GET(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const idDokumen = searchParams.get('idDokumen')?.trim();
@@ -58,6 +61,11 @@ export async function GET(req: NextRequest) {
 
 // ── POST: eksekusi ganti dokumen kerja ke template mitra ──────
 export async function POST(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { idDokumen, templateFileId } = await req.json();
     if (!idDokumen || !templateFileId) {
