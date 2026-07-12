@@ -1,73 +1,38 @@
 'use client';
 
 import { useState } from 'react';
-import { FaUserTie, FaUserShield, FaBuilding } from 'react-icons/fa';
-
-type Tab = 'admin' | 'pegawai_bnn';
-type ActualRole = 'admin' | 'superadmin' | 'pegawai_bnn';
-
-const TABS: { value: Tab; label: string; icon: React.ReactNode }[] = [
-  { value: 'admin',       label: 'Admin / Superadmin', icon: <FaUserTie size={16} /> },
-  { value: 'pegawai_bnn', label: 'Pegawai BNN',         icon: <FaUserShield size={16} /> },
-];
-
-const REDIRECT: Record<ActualRole, string> = {
-  superadmin:  '/dashboard/superadmin',
-  admin:       '/dashboard/admin',
-  pegawai_bnn: '/dashboard/pegawai', // ⚠️ placeholder — Modul Penegak Hukum belum dibangun
-};
+import { FaBuilding } from 'react-icons/fa';
 
 const CREAM = '#FBF9E4';
 const BLUE  = '#C8D9E6';
 const INK   = '#1E293B';
 
-export default function LoginPage() {
-  const [tab, setTab]           = useState<Tab>('admin');
-  const [identifier, setIdentifier] = useState(''); // email (admin) atau NIP/NRP (pegawai)
-  const [password, setPassword] = useState('');
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState('');
+export default function LoginMitraPage() {
+  const [kode, setKode]       = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState('');
 
-  const isPegawai = tab === 'pegawai_bnn';
-
-  const handleTabChange = (t: Tab) => {
-    setTab(t);
-    setIdentifier('');
-    setPassword('');
-    setError('');
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-    setLoading(true);
+    if (!kode.trim()) return;
 
+    setLoading(true); setError('');
     try {
-      // Tab 'admin' = gabungan Admin & Superadmin — backend yang menentukan
-      // role sebenarnya (cek sheet Superadmin dulu, lalu Admin).
-      // Tab 'pegawai_bnn' = hanya NIP/NRP, tanpa password.
-      const body = isPegawai
-        ? { role: 'pegawai_bnn', nip: identifier.trim() }
-        : { role: 'admin', username: identifier.trim(), password };
-
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch('/api/auth/login-mitra', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ kode: kode.trim() }),
       });
+      const d = await res.json();
 
-      const data = await res.json();
+      if (!res.ok) { setError(d.message || 'Kode tidak valid.'); setLoading(false); return; }
 
-      if (!res.ok) {
-        setError(data.message || 'Login gagal. Periksa kembali data Anda.');
-        setLoading(false);
-        return;
-      }
-
-      localStorage.setItem('paktasign_user', JSON.stringify(data.user));
-      window.location.href = REDIRECT[data.user.role as ActualRole];
+      // Cookie sesi (httpOnly, JWT) sudah di-set otomatis oleh server.
+      // localStorage HANYA untuk kebutuhan tampilan di halaman mitra.
+      localStorage.setItem('paktasign_mitra', JSON.stringify(d.user));
+      window.location.href = '/dashboard/mitra';
     } catch {
-      setError('Terjadi kesalahan koneksi. Coba lagi.');
+      setError('Terjadi kesalahan koneksi.');
       setLoading(false);
     }
   };
@@ -91,7 +56,7 @@ export default function LoginPage() {
         }
         @keyframes iconFloat {
           0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-5px); }
+          50% { transform: translateY(-6px); }
         }
         @keyframes shakeError {
           0%, 100% { transform: translateX(0); }
@@ -100,14 +65,6 @@ export default function LoginPage() {
         }
         @keyframes spinDot {
           to { transform: rotate(360deg); }
-        }
-        @keyframes fieldIn {
-          from { opacity: 0; transform: translateY(-6px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes subtitleFade {
-          from { opacity: 0; transform: translateY(-3px); }
-          to { opacity: 1; transform: translateY(0); }
         }
 
         .auth-page {
@@ -129,24 +86,24 @@ export default function LoginPage() {
         }
         .auth-glow-1 {
           width: 460px; height: 460px;
-          top: -140px; left: -110px;
+          top: -140px; right: -110px;
           background: radial-gradient(circle, ${BLUE} 0%, transparent 70%);
           opacity: 0.16;
-          animation: glowDrift1 15s ease-in-out infinite;
+          animation: glowDrift1 16s ease-in-out infinite;
         }
         .auth-glow-2 {
           width: 500px; height: 500px;
-          bottom: -170px; right: -130px;
+          bottom: -170px; left: -130px;
           background: radial-gradient(circle, ${CREAM} 0%, transparent 70%);
           opacity: 0.14;
-          animation: glowDrift2 18s ease-in-out infinite;
+          animation: glowDrift2 19s ease-in-out infinite;
         }
         .auth-glow-3 {
           width: 280px; height: 280px;
-          top: 55%; right: 10%;
+          top: 58%; left: 8%;
           background: radial-gradient(circle, #A9C3D8 0%, transparent 70%);
           opacity: 0.12;
-          animation: glowDrift1 21s ease-in-out infinite reverse;
+          animation: glowDrift1 22s ease-in-out infinite reverse;
         }
 
         .auth-card {
@@ -157,58 +114,28 @@ export default function LoginPage() {
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 22px;
+          gap: 20px;
           padding: 2.4rem 2rem 2.2rem;
           border-radius: 22px;
           background: ${CREAM};
           box-shadow: 0 30px 70px rgba(0,0,0,0.5), 20px 20px 44px #d9d6c0, -10px -10px 28px #ffffff;
           animation: cardIn 0.55s cubic-bezier(0.32,0.72,0,1) both;
         }
-        .auth-brand {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 10px;
-        }
         .auth-brand-icon {
-          width: 46px; height: 46px; border-radius: 14px;
+          width: 60px; height: 60px; border-radius: 50%;
           background: linear-gradient(135deg, ${BLUE}, #A9C3D8);
           display: flex; align-items: center; justify-content: center;
           color: ${INK};
           box-shadow: 6px 6px 14px #d9d6c0, -6px -6px 14px #ffffff;
           animation: iconFloat 3.5s ease-in-out infinite;
         }
-        .auth-title {
-          font-size: 17px; font-weight: 800; letter-spacing: 0.06em;
-          text-transform: uppercase; color: ${INK}; text-align: center;
-        }
-        .auth-subtitle {
-          font-size: 11.5px; color: #64748b; text-align: center; margin-top: -6px;
-          animation: subtitleFade 0.3s ease-out;
-        }
-        .auth-role-row {
-          display: flex; width: 100%; gap: 6px;
-        }
-        .auth-role-btn {
-          flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px;
-          padding: 10px 6px; border-radius: 12px; border: none; cursor: pointer;
-          background: ${CREAM};
-          box-shadow: inset 3px 3px 7px #d9d6c0, inset -3px -3px 7px #ffffff;
-          color: #7c8794; font-family: inherit;
-          transition: background 0.3s cubic-bezier(0.32,0.72,0,1), color 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease;
-        }
-        .auth-role-btn:hover:not(.active) { transform: translateY(-1px); color: #4b5563; }
-        .auth-role-btn:active { transform: scale(0.96); }
-        .auth-role-btn.active {
-          background: linear-gradient(135deg, ${BLUE}, #A9C3D8);
-          color: ${INK};
-          box-shadow: 4px 4px 10px #d9d6c0, -2px -2px 8px #ffffff;
-        }
-        .auth-role-label { font-size: 10px; font-weight: 700; letter-spacing: 0.02em; text-align: center; }
+        .auth-title { font-size: 17px; font-weight: 800; letter-spacing: 0.04em; color: ${INK}; text-align: center; }
+        .auth-subtitle { font-size: 11px; color: #94a3b8; letter-spacing: 0.12em; text-transform: uppercase; }
 
-        .auth-field { position: relative; width: 100%; margin-top: 14px; animation: fieldIn 0.35s ease-out both; }
+        .auth-field { position: relative; width: 100%; margin-top: 8px; }
         .auth-field input {
-          width: 100%; padding: 12px 10px 10px; font-size: 14px; font-family: inherit;
+          width: 100%; padding: 13px 10px 11px; font-size: 15px; font-family: monospace;
+          font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
           color: ${INK}; background: transparent; outline: none;
           border: none; border-left: 2px solid ${INK}; border-bottom: 2px solid ${INK};
           border-bottom-left-radius: 10px; box-sizing: border-box;
@@ -216,15 +143,15 @@ export default function LoginPage() {
         }
         .auth-field input:focus, .auth-field input:valid { border-color: #2563EB; }
         .auth-field label {
-          position: absolute; left: 10px; top: 12px;
-          font-size: 11px; text-transform: uppercase; letter-spacing: 0.18em;
-          color: #94a3b8; pointer-events: none;
+          position: absolute; left: 10px; top: 13px;
+          font-size: 11px; text-transform: uppercase; letter-spacing: 0.16em;
+          color: #94a3b8; pointer-events: none; font-family: 'Plus Jakarta Sans', sans-serif;
           transition: transform 0.35s cubic-bezier(0.32,0.72,0,1), font-size 0.35s ease, padding 0.35s ease, background 0.35s ease, color 0.35s ease;
         }
         .auth-field input:focus ~ label, .auth-field input:valid ~ label {
-          transform: translate(2px, -26px);
+          transform: translate(2px, -27px);
           font-size: 9.5px; padding: 4px 9px; border-radius: 7px;
-          background: ${INK}; color: #fff; letter-spacing: 0.16em;
+          background: ${INK}; color: #fff; letter-spacing: 0.14em;
         }
 
         .auth-error {
@@ -235,10 +162,10 @@ export default function LoginPage() {
         }
 
         .auth-submit {
-          margin-top: 8px; height: 46px; width: 140px; border-radius: 10px;
+          margin-top: 8px; height: 46px; width: 180px; border-radius: 10px;
           border: 2px solid ${INK}; background: transparent; color: ${INK};
-          cursor: pointer; font-family: inherit; font-size: 11px; font-weight: 700;
-          text-transform: uppercase; letter-spacing: 0.16em;
+          cursor: pointer; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 11px; font-weight: 700;
+          text-transform: uppercase; letter-spacing: 0.14em;
           transition: background 0.3s cubic-bezier(0.32,0.72,0,1), color 0.3s ease, transform 0.2s ease, box-shadow 0.3s ease;
           display: flex; align-items: center; justify-content: center; gap: 8px;
         }
@@ -250,13 +177,11 @@ export default function LoginPage() {
         .auth-submit:disabled { opacity: 0.5; cursor: not-allowed; }
         .auth-spinner {
           width: 12px; height: 12px; border-radius: 50%;
-          border: 2px solid rgba(255,255,255,0.35); border-top-color: #fff;
+          border: 2px solid rgba(30,41,59,0.3); border-top-color: ${INK};
           animation: spinDot 0.7s linear infinite;
         }
 
-        .auth-footer {
-          font-size: 11px; color: #94a3b8; text-align: center; margin-top: 4px;
-        }
+        .auth-footer { font-size: 11px; color: #94a3b8; text-align: center; line-height: 1.7; }
         .auth-footer a {
           color: #2563EB; text-decoration: none; font-weight: 600;
           transition: color 0.25s ease;
@@ -268,66 +193,33 @@ export default function LoginPage() {
       <div className="auth-glow auth-glow-2" />
       <div className="auth-glow auth-glow-3" />
 
-      <form className="auth-card" onSubmit={handleSubmit} noValidate>
-        <div className="auth-brand">
-          <div className="auth-brand-icon"><FaBuilding size={20} /></div>
-          <div className="auth-title">SI-POKJA HUMKER</div>
-          <div className="auth-subtitle" key={isPegawai ? 'sub-pegawai' : 'sub-admin'}>
-            {isPegawai ? 'Pengajuan/Pendampingan Hukum' : 'Sistem Manajemen Kerja Sama'}
-          </div>
-        </div>
+      <form className="auth-card" onSubmit={handleLogin} noValidate>
+        <div className="auth-brand-icon"><FaBuilding size={26} /></div>
+        <div className="auth-title">Akses Dokumen Mitra</div>
+        <div className="auth-subtitle">SI-POKJA HUMKER</div>
 
-        <div className="auth-role-row">
-          {TABS.map(t => (
-            <button
-              key={t.value}
-              type="button"
-              className={`auth-role-btn ${tab === t.value ? 'active' : ''}`}
-              onClick={() => handleTabChange(t.value)}
-            >
-              {t.icon}
-              <span className="auth-role-label">{t.label}</span>
-            </button>
-          ))}
-        </div>
-
-        <div style={{ width: '100%' }}>
-          <div className="auth-field" key={isPegawai ? 'nip' : 'email'}>
-            <input
-              type="text"
-              value={identifier}
-              onChange={e => setIdentifier(e.target.value)}
-              required
-              autoComplete="username"
-              autoFocus
-            />
-            <label>{isPegawai ? 'NIP / NRP' : 'Email'}</label>
-          </div>
-
-          {!isPegawai && (
-            <div className="auth-field">
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                required
-                autoComplete="current-password"
-              />
-              <label>Password</label>
-            </div>
-          )}
+        <div className="auth-field" style={{ marginTop: 10 }}>
+          <input
+            type="text"
+            value={kode}
+            onChange={e => setKode(e.target.value.toUpperCase())}
+            maxLength={12}
+            required
+            autoFocus
+          />
+          <label>Kode Akses</label>
         </div>
 
         {error && <div className="auth-error">{error}</div>}
 
-        <button className="auth-submit" type="submit" disabled={loading}>
+        <button className="auth-submit" type="submit" disabled={loading || !kode.trim()}>
           {loading && <span className="auth-spinner" />}
-          {loading ? 'Memproses' : 'Masuk'}
+          {loading ? 'Memverifikasi' : 'Akses Dokumen Saya'}
         </button>
 
         <div className="auth-footer">
-          Anda mitra kerja sama?{' '}
-          <a href="/login-mitra">Akses dokumen Anda di sini</a>
+          Kode dikirim oleh Pokja Kerja Sama saat pengajuan disetujui.<br />
+          <a href="/cek-pengajuan">Belum punya kode? Cek status pengajuan</a>
         </div>
       </form>
     </div>
