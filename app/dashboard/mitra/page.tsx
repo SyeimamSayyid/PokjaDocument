@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import LoaderPage from '@/components/LoaderPage';
+import EditPencilIndicator from '@/components/EditPencilIndicator';
 import {
   FiFileText, FiImage, FiDownload, FiTrash2,
   FiClock, FiAlertCircle, FiCheckCircle, FiInfo, FiUpload,
@@ -55,6 +56,9 @@ export default function DashboardMitraPage() {
   const [error, setError]         = useState('');
   const [msg, setMsg]             = useState('');
   const fileInputRef              = useRef<HTMLInputElement>(null);
+  const lastModRef                = useRef<string | null>(null);
+  const debounceRef               = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastInteractionRef        = useRef<number>(Date.now());
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [pendingCaption, setPendingCaption] = useState('');
   const [editingCaption, setEditingCaption] = useState<string | null>(null);
@@ -67,6 +71,7 @@ export default function DashboardMitraPage() {
   const [tglKegiatanSelesai, setTglKegiatanSelesai] = useState('');
   const [tglBerlakuFresh, setTglBerlakuFresh] = useState('');
   const [tglBerakhirFresh, setTglBerakhirFresh] = useState('');
+  const [manualLog, setManualLog] = useState<string | null>(null);
 
   const loadFoto = useCallback((idDokumen: string) => {
     fetch(`/api/dokumen/foto?idDokumen=${idDokumen}`)
@@ -101,8 +106,6 @@ export default function DashboardMitraPage() {
         .then(d => setLabelMitra(d.label || u.namaMitra))
         .catch(() => setLabelMitra(u.namaMitra));
 
-      // Data user di localStorage cuma snapshot saat login — status publikasi
-      // & tanggal kegiatan bisa berubah belakangan, jadi ambil yang terbaru.
       fetch(`/api/dokumen/${u.idDokumen}`)
         .then(r => r.json())
         .then(d => {
@@ -120,9 +123,82 @@ export default function DashboardMitraPage() {
         body: JSON.stringify({ idDokumen: u.idDokumen, aktor: u.namaMitra, peran: 'mitra' }),
       }).catch(() => {});
 
+      fetch(`/api/dokumen/aktivitas?idDokumen=${u.idDokumen}`)
+        .then(r => r.json())
+        .then(d => setManualLog(d.manualLog || null))
+        .catch(() => {});
+
       setLoading(false);
     } catch { window.location.href = '/login-mitra'; }
   }, [loadFoto, loadNotif]);
+
+  // Catat kapan terakhir kali mitra benar-benar berinteraksi dengan halaman
+  // ini (bukan sekadar jendela terbuka) — dipakai sebagai syarat sebelum
+  // mengklaim aktivitas edit, supaya sesi yang dibiarkan idle di browser/
+  // profil lain tidak ikut berebut atribusi saat dokumen berubah.
+  useEffect(() => {
+    const tandaiAktif = () => { lastInteractionRef.current = Date.now(); };
+    window.addEventListener('mousemove', tandaiAktif);
+    window.addEventListener('keydown', tandaiAktif);
+    window.addEventListener('click', tandaiAktif);
+    window.addEventListener('scroll', tandaiAktif);
+    return () => {
+      window.removeEventListener('mousemove', tandaiAktif);
+      window.removeEventListener('keydown', tandaiAktif);
+      window.removeEventListener('click', tandaiAktif);
+      window.removeEventListener('scroll', tandaiAktif);
+    };
+  }, []);
+
+  // Polling ringan tiap 10 detik untuk deteksi editan Google Docs.
+  // Kalau modifiedTime berubah, mulai hitung mundur 30 detik "hening" —
+  // kalau tidak berubah lagi selama itu, DAN jendela ini masih fokus +
+  // ada interaksi nyata dalam 2 menit terakhir, baru dicatat sebagai
+  // editan Mitra.
+  useEffect(() => {
+    if (!user?.docsId) return;
+
+    const catatPerubahanMitra = () => {
+      fetch('/api/dokumen/aktivitas', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idDokumen: user.idDokumen, aktor: user.namaMitra, peran: 'mitra' }),
+      })
+        .then(() => fetch(`/api/dokumen/aktivitas?idDokumen=${user.idDokumen}`))
+        .then(r => r.json())
+        .then(d => setManualLog(d.manualLog || null))
+        .catch(() => {});
+    };
+
+    const interval = setInterval(() => {
+      fetch(`/api/dokumen/docs-status?idDokumen=${user.idDokumen}`)
+        .then(r => r.json())
+        .then(d => {
+          const mt = d.modifiedTime;
+          if (!mt) return;
+          if (lastModRef.current === null) {
+            lastModRef.current = mt;
+            return;
+          }
+          if (mt !== lastModRef.current) {
+            lastModRef.current = mt;
+            if (debounceRef.current) clearTimeout(debounceRef.current);
+            debounceRef.current = setTimeout(() => {
+              const idleMs = Date.now() - lastInteractionRef.current;
+              const aktifDanFokus = document.visibilityState === 'visible' && document.hasFocus();
+              if (aktifDanFokus && idleMs < 120000) {
+                catatPerubahanMitra();
+              }
+            }, 30000);
+          }
+        })
+        .catch(() => {});
+    }, 10000);
+
+    return () => {
+      clearInterval(interval);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [user?.docsId, user?.idDokumen, user?.namaMitra]);
 
   const belumDibaca = notif.filter(n => !n.dibaca).length;
 
@@ -304,6 +380,7 @@ export default function DashboardMitraPage() {
                 {user.jenis}
               </span>
               <span style={{ ...pill, background: sc.bg, color: sc.color }}>{sc.icon}{user.status}</span>
+              <EditPencilIndicator manualLog={manualLog} />
               <span style={{ ...pill, background: '#f1f3f2', color: '#7d8985', marginLeft: 'auto' }}>
                 <FiHome size={10} /> ID {user.idDokumen.slice(0, 8)}
               </span>

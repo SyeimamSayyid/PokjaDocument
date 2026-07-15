@@ -443,7 +443,12 @@ export default function DokumenPage() {
                               </div>
                             )}
                           </td>
-                          <td style={{ ...td, color:'#64748b', whiteSpace:'nowrap' }}>{d.tglBerakhir}</td>
+                          <td style={{ ...td, color:'#64748b', whiteSpace:'nowrap' }}>
+                            {d.tglBerakhir
+                              ? d.tglBerakhir
+                              : <span style={{ color:'#A32D2D', fontWeight:700, fontSize:10.5 }}>Belum Ditentukan</span>
+                            }
+                          </td>
                           <td style={td}>
                             <span style={{ fontSize:10, fontWeight:600, padding:'3px 10px', borderRadius:100, background:sc.bg, color:sc.color, display:'inline-flex', alignItems:'center', gap:4 }}>
                               {STATUS_ICON[d.status]}
@@ -534,6 +539,11 @@ function DokFileRow({ d, kontak, notif, expanded, onToggle, onEdit, onHapus }: {
         <FiFileText size={14} style={{ color:'#94a3b8', flexShrink:0 }} />
         <span style={{ fontSize:12.5, fontWeight:600, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:'#0f1f3d' }}>{d.judul}</span>
         {notif && <NotifBadge notif={notif} />}
+        {!d.tglBerakhir && (
+          <span style={{ fontSize:9, fontWeight:700, padding:'3px 8px', borderRadius:100, background:'#FCEBEB', color:'#A32D2D', flexShrink:0, display:'inline-flex', alignItems:'center', gap:3, whiteSpace:'nowrap' }} title="Masa berlaku & berakhir belum ditentukan">
+            <FiAlertCircle size={9} /> Belum Ditentukan
+          </span>
+        )}
         <span style={{ fontSize:9.5, fontWeight:600, padding:'3px 9px', borderRadius:100, background:sc.bg, color:sc.color, flexShrink:0, display:'inline-flex', alignItems:'center', gap:4 }}>
           {STATUS_ICON[d.status]}
           {d.status}
@@ -542,11 +552,20 @@ function DokFileRow({ d, kontak, notif, expanded, onToggle, onEdit, onHapus }: {
 
       {expanded && (
         <div style={{ padding:'0 14px 12px 33px', display:'flex', flexDirection:'column', gap:8 }} className="fld">
+          {!d.tglBerakhir && (
+            <div style={{ fontSize:10.5, color:'#A32D2D', fontWeight:700, display:'flex', alignItems:'center', gap:5 }}>
+              <FiAlertCircle size={11} /> Masa Berlaku &amp; Berakhir Belum Ditentukan
+            </div>
+          )}
           <div style={{ fontSize:11, color:'#64748b', display:'flex', alignItems:'center', gap:5, flexWrap:'wrap' }}>
             <FaBuilding size={11} /> {d.namaMitra}
             <span style={{ opacity:0.4 }}>·</span>
-            <FiCalendar size={11} /> {d.tglBerlaku} s.d. {d.tglBerakhir}
-            <span style={{ opacity:0.4 }}>·</span>
+            {d.tglBerlaku && d.tglBerakhir && (
+              <>
+                <FiCalendar size={11} /> {d.tglBerlaku} s.d. {d.tglBerakhir}
+                <span style={{ opacity:0.4 }}>·</span>
+              </>
+            )}
             Kode: <strong style={{ color: BLUE }}>{d.kode}</strong>
           </div>
           {(kontak?.namaPIC || (d.jenis === 'PKS' && kontak?.jurusan)) && (

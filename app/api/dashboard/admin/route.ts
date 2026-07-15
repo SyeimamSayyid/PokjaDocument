@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     let dokDraft = 0, dokAktif = 0, dokHampirExpire = 0, dokExpired = 0;
     let mouCount = 0, pksCount = 0;
     const alertExpire: { id: string; jenis: string; judul: string; namaMitra: string; tglBerakhir: string; sisaHari: number }[] = [];
-    const dokumenTerbaru: { id: string; jenis: string; judul: string; namaMitra: string; tglBerakhir: string; status: string }[] = [];
+    const dokumenTerbaru: { id: string; jenis: string; judul: string; namaMitra: string; tglBerakhir: string; status: string; manualLog: string }[] = [];
 
     dokList.forEach(r => {
       const status = String(r[9] || '').trim();
@@ -57,6 +57,7 @@ export async function GET(req: NextRequest) {
       dokumenTerbaru.push({
         id: String(r[0]), jenis: String(r[1]), judul: String(r[2]),
         namaMitra: String(r[4]), tglBerakhir: String(r[7]), status: String(r[9]),
+        manualLog: String(r[17] || ''),
       });
     });
 

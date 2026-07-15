@@ -11,6 +11,7 @@ import {
 } from 'react-icons/fi';
 import { FaFileSignature, FaFileAlt, FaBuilding, FaBalanceScale } from 'react-icons/fa';
 import NotifikasiAdminBell from '@/components/NotifikasiAdminBell';
+import EditPencilIndicator from '@/components/EditPencilIndicator';
 
 interface Stats {
   pengajuanMenunggu: number;
@@ -33,6 +34,7 @@ interface DokItem {
   namaMitra: string;
   tglBerakhir: string;
   status: string;
+  manualLog?: string;
 }
 interface AlertItem {
   id: string;
@@ -571,7 +573,7 @@ export default function AdminDashboard() {
                     <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
                       <thead>
                         <tr>
-                          {['Jenis', 'Judul', 'Mitra', 'Berakhir', 'Status'].map(h => (
+                          {['Jenis', 'Judul', 'Mitra', 'Berakhir', 'Status', ''].map(h => (
                             <th key={h} style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 700, color: 'rgba(33,40,66,0.45)', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.08em', borderBottom: '1px solid rgba(33,40,66,0.08)' }}>{h}</th>
                           ))}
                         </tr>
@@ -585,8 +587,14 @@ export default function AdminDashboard() {
                               <td style={td}><span style={{ fontSize: 10.5, fontWeight: 700, padding: '3px 9px', borderRadius: 100, background: jp.bg, color: jp.c }}>{d.jenis}</span></td>
                               <td style={{ ...td, fontWeight: 600, color: INDIGO }}>{d.judul}</td>
                               <td style={{ ...td, color: 'rgba(33,40,66,0.6)' }}>{d.namaMitra}</td>
-                              <td style={{ ...td, color: 'rgba(33,40,66,0.6)' }}>{d.tglBerakhir}</td>
+                              <td style={{ ...td, color: 'rgba(33,40,66,0.6)' }}>
+                                {d.tglBerakhir
+                                  ? d.tglBerakhir
+                                  : <span style={{ color: '#A32D2D', fontWeight: 700, fontSize: 10.5 }}>Masa Berlaku &amp; Berakhir Belum Ditentukan</span>
+                                }
+                              </td>
                               <td style={td}><span style={{ fontSize: 10.5, fontWeight: 700, padding: '3px 10px', borderRadius: 100, background: si.bg, color: si.c }}>{si.label}</span></td>
+                              <td style={td}><EditPencilIndicator manualLog={d.manualLog} size={26} /></td>
                             </tr>
                           );
                         })}

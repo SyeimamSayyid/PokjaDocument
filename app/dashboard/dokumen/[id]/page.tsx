@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState, use } from 'react';
+import { useEffect, useState, useRef, use } from 'react';
 import KomentarRevisi from '@/components/KomentarRevisi';
 import KomentarDocs from '@/components/KomentarDocs';
 import NotifikasiAdminBell from '@/components/NotifikasiAdminBell';
+import EditPencilIndicator from '@/components/EditPencilIndicator';
 import {
   FiArrowLeft, FiExternalLink, FiEyeOff, FiEye, FiCheckCircle, FiCornerUpLeft,
   FiClock, FiInfo, FiHome, FiCalendar, FiDownload, FiCheck,
@@ -78,6 +79,10 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
 
   const [namaAdmin, setNamaAdmin] = useState('Admin Pokja');
   const [idAdmin, setIdAdmin]     = useState('');
+  const [manualLog, setManualLog] = useState<string | null>(null);
+  const lastModRef = useRef<string | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastInteractionRef = useRef<number>(Date.now());
 
   const [templateKandidat, setTemplateKandidat]   = useState<Kandidat[]>([]);
   const [templateChecked, setTemplateChecked]     = useState(false);
@@ -88,6 +93,7 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
 
   const [showKembaliBox, setShowKembaliBox] = useState(false);
   const [alasanKembali, setAlasanKembali] = useState('');
+  const [needTglBerakhir, setNeedTglBerakhir] = useState(false);
 
   const [divisiDraft, setDivisiDraft] = useState<string[]>([]);
   const [divisiSaving, setDivisiSaving] = useState(false);
@@ -131,6 +137,10 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
     setNamaAdmin(u.nama || u.email || 'Admin Pokja');
     setIdAdmin(u.id || u.email || '');
     loadDok();
+    fetch(`/api/dokumen/aktivitas?idDokumen=${id}`)
+      .then(r => r.json())
+      .then(d => setManualLog(d.manualLog || null))
+      .catch(() => {});
   }, [id]);
 
   useEffect(() => {
@@ -150,6 +160,75 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
       .catch(() => {});
   }, [dok, id]);
 
+  const catatPerubahanAdmin = () => {
+    fetch('/api/dokumen/aktivitas', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idDokumen: id, aktor: namaAdmin, peran: 'admin' }),
+    })
+      .then(() => fetch(`/api/dokumen/aktivitas?idDokumen=${id}`))
+      .then(r => r.json())
+      .then(d => setManualLog(d.manualLog || null))
+      .catch(() => {});
+  };
+
+  // Catat kapan terakhir kali admin benar-benar berinteraksi dengan halaman ini
+  // (bukan sekadar tab/jendela terbuka) — dipakai sebagai syarat sebelum
+  // mengklaim aktivitas edit, supaya sesi yang dibiarkan idle di browser lain
+  // tidak ikut berebut atribusi saat dokumen berubah.
+  useEffect(() => {
+    const tandaiAktif = () => { lastInteractionRef.current = Date.now(); };
+    window.addEventListener('mousemove', tandaiAktif);
+    window.addEventListener('keydown', tandaiAktif);
+    window.addEventListener('click', tandaiAktif);
+    window.addEventListener('scroll', tandaiAktif);
+    return () => {
+      window.removeEventListener('mousemove', tandaiAktif);
+      window.removeEventListener('keydown', tandaiAktif);
+      window.removeEventListener('click', tandaiAktif);
+      window.removeEventListener('scroll', tandaiAktif);
+    };
+  }, []);
+
+  // Polling ringan tiap 10 detik untuk deteksi editan Google Docs.
+  // Kalau modifiedTime berubah, mulai hitung mundur 30 detik "hening" —
+  // kalau tidak berubah lagi selama itu, DAN jendela ini masih fokus +
+  // ada interaksi nyata dalam 2 menit terakhir, baru dicatat sebagai
+  // editan Admin. Ini mencegah sesi yang cuma dibiarkan terbuka di
+  // browser/profil lain ikut berebut klaim aktivitas.
+  useEffect(() => {
+    if (!dok?.docsId) return;
+
+    const interval = setInterval(() => {
+      fetch(`/api/dokumen/docs-status?idDokumen=${id}`)
+        .then(r => r.json())
+        .then(d => {
+          const mt = d.modifiedTime;
+          if (!mt) return;
+          if (lastModRef.current === null) {
+            lastModRef.current = mt;
+            return;
+          }
+          if (mt !== lastModRef.current) {
+            lastModRef.current = mt;
+            if (debounceRef.current) clearTimeout(debounceRef.current);
+            debounceRef.current = setTimeout(() => {
+              const idleMs = Date.now() - lastInteractionRef.current;
+              const aktifDanFokus = document.visibilityState === 'visible' && document.hasFocus();
+              if (aktifDanFokus && idleMs < 120000) {
+                catatPerubahanAdmin();
+              }
+            }, 30000);
+          }
+        })
+        .catch(() => {});
+    }, 10000);
+
+    return () => {
+      clearInterval(interval);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [dok?.docsId, id]);
+
   const salinTeks = (teks: string, label: string) => {
     navigator.clipboard.writeText(teks);
     setCopied(label);
@@ -168,6 +247,30 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
       setDok(prev => prev ? { ...prev, status: statusBaru } : prev);
       setEditStatus(statusBaru);
       setMsg(`Status berhasil diubah ke "${statusBaru}".`);
+    } catch { setError('Terjadi kesalahan.'); }
+    finally { setSaving(false); }
+  };
+
+  const handleAcc = async () => {
+    setSaving(true); setError(''); setMsg(''); setNeedTglBerakhir(false);
+    try {
+      const res = await fetch(`/api/dokumen/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transisi: 'Selesai' }),
+      });
+      const d = await res.json();
+      if (!res.ok) {
+        if (d.code === 'NEED_TGL_BERAKHIR') {
+          setNeedTglBerakhir(true);
+          setEditTglBerakhir(true);
+          return;
+        }
+        setError(d.message);
+        return;
+      }
+      setDok(prev => prev ? { ...prev, status: d.statusBaru } : prev);
+      setEditStatus(d.statusBaru);
+      setMsg(d.message);
     } catch { setError('Terjadi kesalahan.'); }
     finally { setSaving(false); }
   };
@@ -219,6 +322,7 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
       setDok(prev => prev ? { ...prev, tglBerakhir: tglBerakhirDraft } : prev);
       setMsg('Tanggal berakhir kesepakatan berhasil disimpan.');
       setEditTglBerakhir(false);
+      setNeedTglBerakhir(false);
     } catch { setError('Gagal menyimpan tanggal berakhir.'); }
     finally { setSavingTglBerakhir(false); }
   };
@@ -356,6 +460,7 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
               <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:10, flexWrap:'wrap' }}>
                 <span style={{ ...pill, background:dok.jenis==='MOU'?'#DBEAFE':'#FEF3C7', color:dok.jenis==='MOU'?BLUE_DARK:'#92400E' }}>{dok.jenis}</span>
                 <span style={{ ...pill, ...sc }}>{dok.status}</span>
+                <EditPencilIndicator manualLog={manualLog} />
                 {dok.status === 'MOU/PKS Berlaku' && dok.sisaHari !== null && (
                   <span style={{ ...pill, background: dok.sisaHari <= 30 ? '#FCEBEB' : '#FEF3C7', color: dok.sisaHari <= 30 ? '#A32D2D' : GOLD }}>
                     <FiClock size={10} style={{ marginRight:4, verticalAlign:'middle' }} />
@@ -550,7 +655,12 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
                 <div style={cardTitle}>Tindakan</div>
                 {dok.status === 'Dalam Proses' && (
                   <>
-                    <button onClick={() => transisi('Selesai')} disabled={saving} style={{ ...btnPrimary, width:'100%', marginBottom:8 }} className="btn-hover">
+                    {needTglBerakhir && (
+                      <div style={{ ...msgBox('#92400E', '#FFFBEB'), marginBottom: 10, border: '1px solid #FDE68A' }} className="fld">
+                        Yang Terhormat Admin ({namaAdmin}), silahkan mengisi masa berlaku MOU/PKS untuk menyelesaikan dokumen {dok.jenis} ini.
+                      </div>
+                    )}
+                    <button onClick={handleAcc} disabled={saving} style={{ ...btnPrimary, width:'100%', marginBottom:8 }} className="btn-hover">
                       <FiCheck size={14} style={{ marginRight:6, verticalAlign:'middle' }} />Setujui Dokumen (Acc)
                     </button>
                     {!showKembaliBox ? (
@@ -578,7 +688,7 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
                         </div>
                       </div>
                     )}
-                    <div style={hintText}>Acc → status &quot;Selesai&quot;. Saat tanggal kegiatan tiba, otomatis jadi &quot;Kegiatan Berlangsung&quot;.</div>
+                    <div style={hintText}>Acc wajib mengisi masa berlaku dulu. Kalau tanggal kegiatan sudah diisi → status &quot;Selesai&quot; (lanjut ke Kegiatan Berlangsung otomatis). Kalau belum → langsung &quot;MOU/PKS Berlaku&quot;.</div>
                   </>
                 )}
                 {dok.status === 'Draft' && (

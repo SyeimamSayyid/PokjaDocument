@@ -289,6 +289,43 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
 
     if (transisi) {
+      // ══ KASUS KHUSUS: Acc dokumen (Dalam Proses → Selesai/MOU-PKS Berlaku) ══
+      // Admin WAJIB isi masa berlaku (Tanggal Berakhir) dulu sebelum bisa Acc.
+      // Status akhir tergantung apakah tanggal kegiatan sudah diisi:
+      //  - BELUM diisi → tidak ada kegiatan ditunggu, langsung lompat ke "MOU/PKS Berlaku"
+      //  - SUDAH diisi → lanjut alur normal ke "Selesai" (otomatisasi harian yang
+      //    sudah ada akan mendorongnya maju ke Kegiatan Berlangsung dst.)
+      if (transisi === 'Selesai' && statusSkrg === 'Dalam Proses') {
+        if (!['admin', 'superadmin'].includes(String(session.role))) {
+          return NextResponse.json({ message: 'Aksi ini khusus admin.' }, { status: 403 });
+        }
+
+        const tglBerakhirSkrg = String(rows[idx][COL.TGL_BERAKHIR] || '').trim();
+        if (!tglBerakhirSkrg) {
+          return NextResponse.json({
+            message: 'Masa berlaku MOU/PKS belum diisi.',
+            code: 'NEED_TGL_BERAKHIR',
+          }, { status: 400 });
+        }
+
+        const tglMulaiKeg   = String(rows[idx][COL.TGL_KEG_MULAI] || '').trim();
+        const tglSelesaiKeg = String(rows[idx][COL.TGL_KEG_SELESAI] || '').trim();
+        const adaKegiatan = !!(tglMulaiKeg && tglSelesaiKeg);
+
+        const statusFinal = adaKegiatan ? 'Selesai' : 'MOU/PKS Berlaku';
+        await updateCell('Dokumen Kerja sama', rowNumber, COL.STATUS + 1, statusFinal);
+
+        if (!adaKegiatan) {
+          await catatKomentarSistem(id, 'Dokumen disetujui admin (Acc). Belum ada tanggal kegiatan diisi, dokumen langsung berstatus "MOU/PKS Berlaku".');
+          await kirimNotifikasi(id, 'acc-langsung-berlaku', 'Dokumen disetujui & langsung berlaku',
+            `Dokumen "${judulDok}" telah disetujui admin dan langsung berstatus MOU/PKS Berlaku.`);
+        } else {
+          await catatKomentarSistem(id, 'Dokumen disetujui admin (Acc). Status: Selesai.');
+        }
+
+        return NextResponse.json({ message: `Dokumen disetujui. Status: "${statusFinal}".`, statusBaru: statusFinal });
+      }
+
       const posSkrg = URUTAN_STATUS.indexOf(statusSkrg);
       const posBaru = URUTAN_STATUS.indexOf(transisi);
       const bolehMaju  = posBaru === posSkrg + 1;

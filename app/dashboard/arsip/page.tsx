@@ -83,7 +83,7 @@ export default function ArsipDokumenPage() {
       'application/msword', 'application/pdf', 'image/jpeg', 'image/jpg', 'image/png',
     ];
     if (!allowed.includes(f.type)) { setFFileError('Format tidak didukung. Gunakan Word, PDF, atau gambar (JPG/PNG).'); setFFile(null); return; }
-    if (f.size > 5 * 1024 * 1024) { setFFileError(`File terlalu besar (${(f.size/1024/1024).toFixed(2)}MB). Maksimal 5MB.`); setFFile(null); return; }
+    if (f.size > 10 * 1024 * 1024) { setFFileError(`File terlalu besar (${(f.size/1024/1024).toFixed(2)}MB). Maksimal 10 MB.`); setFFile(null); return; }
     setFFile(f);
   };
 

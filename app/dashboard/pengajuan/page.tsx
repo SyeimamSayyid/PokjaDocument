@@ -45,7 +45,9 @@ const STATUS_COLOR: Record<StatusType, { bg: string; color: string; icon: any }>
 
 const DEFAULT_STATUS_COLOR = { bg:'#f1f5f9', color:'#64748b', icon: FileText };
 
+const FONT = "'Plus Jakarta Sans', -apple-system, sans-serif";
 const BLUE = '#1D4ED8';
+const BLUE_LIGHT = '#2563EB';
 const BLUE_DARK = '#1E3A8A';
 const GOLD = '#D97706';
 
@@ -60,9 +62,6 @@ const MAKS_DIVISI = 4;
 const divisiLabel = (key: string) => DIVISI_LIST.find(d => d.key === key)?.label || key;
 const divisiStyle = (key: string) => DIVISI_LIST.find(d => d.key === key) || { color: '#64748b', bg: '#f1f5f9' };
 
-// Backend lama (/api/pengajuan/status) masih bisa kirim divisi sebagai string tunggal,
-// sementara backend baru (/api/pengajuan/divisi) kirim array. Normalisasi di sini
-// supaya kode UI selalu bisa aman panggil .map()/.includes() tanpa peduli sumbernya.
 function toDivisiArray(raw: unknown): string[] {
   if (Array.isArray(raw)) return raw.filter(Boolean);
   if (typeof raw === 'string') return raw.split(',').map(s => s.trim()).filter(Boolean);
@@ -81,7 +80,6 @@ export default function PengajuanPage() {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [openDivisiPicker, setOpenDivisiPicker] = useState<string | null>(null);
 
-  // Detail modal
   const [detail, setDetail]           = useState<PengajuanItem | null>(null);
   const [showTolak, setShowTolak]     = useState(false);
   const [alasanTolak, setAlasanTolak] = useState('');
@@ -90,7 +88,6 @@ export default function PengajuanPage() {
   const [catatanUbah, setCatatanUbah] = useState('');
   const [submitting, setSubmitting]   = useState(false);
 
-  // Modal Acc Lengkap
   const [showAcc, setShowAcc]         = useState(false);
   const [accItem, setAccItem]         = useState<PengajuanItem | null>(null);
   const [pilihanTemplate, setPilihanTemplate] = useState<'bnn'|'mitra'>('bnn');
@@ -167,13 +164,12 @@ export default function PengajuanPage() {
     setMsg(''); setError('');
   };
 
-  // Toggle satu divisi dari array pengajuan (maks 4) — auto-save tiap klik
   const toggleDivisi = async (item: PengajuanItem, key: string) => {
     const current = item.divisi || [];
     const next = current.includes(key)
       ? current.filter(d => d !== key)
       : (current.length < MAKS_DIVISI ? [...current, key] : current);
-    if (next === current) return; // sudah penuh & tidak toggle-off
+    if (next === current) return;
 
     setError(''); setMsg('');
     try {
@@ -196,8 +192,6 @@ export default function PengajuanPage() {
     setHasilGenerate(null);
     setError('');
     setJudulDok(item.deskripsi?.slice(0, 60) || '');
-    // Auto-match ke mitra yang namanya cocok. Kalau tidak ketemu, KOSONGKAN
-    // (jangan jatuh ke mitra pertama di daftar — itu bug lama).
     const cocok = mitraList.find(m => m.nama.toLowerCase() === item.namaInstitusi.toLowerCase());
     setIdMitraAcc(cocok?.id || '');
     setShowAcc(true);
@@ -209,15 +203,13 @@ export default function PengajuanPage() {
     if (!accItem) return;
     if (!judulDok.trim()) { setError('Judul dokumen wajib diisi.'); return; }
     if ((accItem.divisi || []).length === 0) { setError('Tetapkan minimal 1 divisi sebelum generate dokumen.'); return; }
-    const tglMulaiOtomatis = new Date().toISOString().split('T')[0]; // = tanggal Acc
+    const tglMulaiOtomatis = new Date().toISOString().split('T')[0];
     setGenerating(true); setError('');
     setEmailTerkirim(false);
     setShowPlaneAnimation(false);
     const mitraCocok = mitraList.find(m => m.id === idMitraAcc);
     const namaMitra  = mitraCocok?.nama || accItem.namaInstitusi;
     try {
-      // Generate dokumen DULU — status pengajuan baru diubah kalau ini sukses,
-      // supaya tidak ada pengajuan yang "Disetujui" tapi dokumennya gagal dibuat.
       const res = await fetch('/api/superadmin/generate-kode', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -316,39 +308,42 @@ export default function PengajuanPage() {
   };
 
   if (loading) return (
-    <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background:'#f8fafc', fontFamily:'sans-serif', color:'#64748b', gap:16 }}>
+    <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background:'linear-gradient(180deg,#f7f9fc,#eef2f8)', fontFamily:FONT, color:'#64748b', gap:16 }}>
       <div style={{ width:40, height:40, border:'3px solid #eef2f6', borderTop:`3px solid ${BLUE}`, borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
       <div style={{ fontSize:13 }}>Memuat pengajuan...</div>
     </div>
   );
 
   return (
-    <div style={{ minHeight:'100vh', background:'linear-gradient(135deg,#f8fafc,#eaf1fc)', fontFamily:'sans-serif' }}>
-      <nav style={navStyle}>
-        <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-          <a href={backUrl} style={backLink}>
-            <ArrowLeft size={16} />
-            Dashboard
-          </a>
-          <span style={{ color:'#e2e8f0' }}>|</span>
-          <div style={{ fontWeight:600, fontSize:14, display:'flex', alignItems:'center', gap:8, color:'#0f1f3d' }}>
-            <FileText size={18} style={{ color: BLUE }} />
-            Kelola Pengajuan
-          </div>
-        </div>
-        <div style={{ display:'flex', gap:8 }}>
-          <a href="/dashboard/rencana" style={btnOutline}>
-            <Briefcase size={14} style={{ marginRight:4 }} />
-            E-Planning
-          </a>
-          <a href="/pengajuan" target="_blank" rel="noopener noreferrer" style={btnOutline}>
-            <ExternalLink size={14} style={{ marginRight:4 }} />
-            Form Publik
-          </a>
-        </div>
-      </nav>
+    <div style={{ minHeight:'100vh', fontFamily: FONT, background: 'radial-gradient(1000px 480px at 85% -10%, #dbeafe 0%, rgba(219,234,254,0) 55%), linear-gradient(180deg,#f7f9fc,#eef2f8)' }}>
+      <GlobalStyle />
 
-      <div style={{ maxWidth:960, margin:'0 auto', padding:'1.25rem' }}>
+      <div style={{ maxWidth:960, margin:'0 auto', padding:'1.4rem 1.25rem 0' }}>
+        <nav style={navStyle} className="fld">
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            <a href={backUrl} style={backLink} className="btn-hover">
+              <ArrowLeft size={14} />
+              Dashboard
+            </a>
+            <div style={{ fontWeight:800, fontSize:14, display:'flex', alignItems:'center', gap:8, color:'#0f1f3d' }}>
+              <FileText size={16} style={{ color: BLUE }} />
+              Kelola Pengajuan
+            </div>
+          </div>
+          <div style={{ display:'flex', gap:8 }}>
+            <a href="/dashboard/rencana" style={btnOutline} className="btn-hover">
+              <Briefcase size={13} />
+              E-Planning
+            </a>
+            <a href="/pengajuan" target="_blank" rel="noopener noreferrer" style={btnOutline} className="btn-hover">
+              <ExternalLink size={13} />
+              Form Publik
+            </a>
+          </div>
+        </nav>
+      </div>
+
+      <div style={{ maxWidth:960, margin:'0 auto', padding:'1.25rem 1.25rem 3rem' }}>
         {msg && (
           <div style={{ ...msgBox(BLUE_DARK,'#DBEAFE'), display:'flex', alignItems:'center', gap:8, animation:'fadeInDown 0.4s ease-out' }}>
             <CheckCircle size={16} />
@@ -362,38 +357,43 @@ export default function PengajuanPage() {
           </div>
         )}
 
-        <div style={{ position:'relative', marginBottom:12 }}>
-          <Search size={16} style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:'#94a3b8' }} />
-          <input
-            style={{ width:'100%', padding:'10px 12px 10px 36px', borderRadius:10, border:'2px solid #e2e8f0', fontSize:12, fontFamily:'sans-serif', boxSizing:'border-box', background:'#f8fafc' }}
-            placeholder="Cari institusi, kode tracking, jenis..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-          {search && (
-            <button onClick={() => setSearch('')} style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', color:'#94a3b8', cursor:'pointer', padding:4, borderRadius:'50%' }}>
-              <X size={14} />
-            </button>
-          )}
+        <div style={{ ...shellStyle, marginBottom:12 }} className="fld">
+          <div style={{ ...coreStyle, padding:'0.4rem 0.6rem' }}>
+            <div style={{ position:'relative' }}>
+              <Search size={15} style={{ position:'absolute', left:13, top:'50%', transform:'translateY(-50%)', color:'#94a3b8' }} />
+              <input
+                style={searchInput}
+                placeholder="Cari institusi, kode tracking, jenis..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+              {search && (
+                <button onClick={() => setSearch('')} style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', color:'#94a3b8', cursor:'pointer', padding:4, borderRadius:'50%', display:'flex' }}>
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
-        {/* Filter status */}
-        <div style={{ display:'flex', gap:6, marginBottom:12, flexWrap:'wrap', padding:'4px', background:'#eef2f6', borderRadius:12 }}>
+        <div style={{ display:'flex', gap:6, marginBottom:12, flexWrap:'wrap' }} className="fld">
           {countPerFilter.map(f => {
             const isActive = activeFilter === f.key;
             const Icon = f.icon;
             return (
               <button key={f.key} onClick={() => setActiveFilter(f.key)} style={{
-                padding:'8px 16px', borderRadius:8, border:'none', fontSize:12, cursor:'pointer', fontFamily:'sans-serif',
-                fontWeight: isActive ? 600 : 400,
-                background: isActive ? BLUE : 'transparent',
+                padding:'9px 16px', borderRadius:100, borderWidth:1.5, borderStyle:'solid',
+                fontSize:12, cursor:'pointer', fontFamily:FONT,
+                fontWeight: isActive ? 700 : 500,
+                background: isActive ? `linear-gradient(135deg,${BLUE_LIGHT},${BLUE_DARK})` : '#fff',
                 color: isActive ? '#fff' : '#334155',
                 display:'flex', alignItems:'center', gap:6,
-                boxShadow: isActive ? `0 2px 8px ${BLUE}30` : 'none',
-              }}>
-                <Icon size={14} />
+                boxShadow: isActive ? `0 6px 16px -6px ${BLUE}60` : 'none',
+                borderColor: isActive ? 'transparent' : 'rgba(29,78,216,0.10)',
+              }} className="btn-hover">
+                <Icon size={13} />
                 {f.label}
-                <span style={{ marginLeft:2, fontSize:10, background: isActive ? 'rgba(255,255,255,.2)' : '#e2e8f0', padding:'1px 8px', borderRadius:100, color: isActive ? '#fff' : '#64748b' }}>
+                <span style={{ marginLeft:2, fontSize:10, background: isActive ? 'rgba(255,255,255,.22)' : '#eef2f6', padding:'1px 8px', borderRadius:100, color: isActive ? '#fff' : '#64748b', fontWeight:700 }}>
                   {f.count}
                 </span>
               </button>
@@ -401,28 +401,31 @@ export default function PengajuanPage() {
           })}
         </div>
 
-        {/* Filter divisi */}
-        <div style={{ display:'flex', gap:6, marginBottom:16, flexWrap:'wrap', alignItems:'center', padding:'6px 10px', background:'#fff', borderRadius:10, border:'1px solid #e2e8f0' }}>
-          <Filter size={14} style={{ color:'#64748b' }} />
-          <span style={{ fontSize:11, color:'#64748b', marginRight:4 }}>Divisi:</span>
-          <button onClick={() => setFilterDivisi('')} style={chipDivisi(filterDivisi === '', '#334155')}>Semua</button>
-          <button onClick={() => setFilterDivisi('belum')} style={chipDivisi(filterDivisi === 'belum', GOLD)}>Belum Ditetapkan</button>
-          {DIVISI_LIST.map(dv => {
-            const count = data.filter(d => (d.divisi || []).includes(dv.key)).length;
-            return (
-              <button key={dv.key} onClick={() => setFilterDivisi(dv.key)} style={chipDivisi(filterDivisi === dv.key, dv.color)}>
-                {dv.label} ({count})
-              </button>
-            );
-          })}
+        <div style={{ ...shellStyle, marginBottom:16 }} className="fld">
+          <div style={{ ...coreStyle, padding:'0.55rem 0.7rem', display:'flex', gap:6, flexWrap:'wrap', alignItems:'center' }}>
+            <Filter size={13} style={{ color:'#94a3b8' }} />
+            <span style={{ fontSize:11, color:'#94a3b8', marginRight:2, fontWeight:600 }}>Divisi:</span>
+            <button onClick={() => setFilterDivisi('')} style={chipDivisi(filterDivisi === '', '#334155')} className="btn-hover">Semua</button>
+            <button onClick={() => setFilterDivisi('belum')} style={chipDivisi(filterDivisi === 'belum', GOLD)} className="btn-hover">Belum Ditetapkan</button>
+            {DIVISI_LIST.map(dv => {
+              const count = data.filter(d => (d.divisi || []).includes(dv.key)).length;
+              return (
+                <button key={dv.key} onClick={() => setFilterDivisi(dv.key)} style={chipDivisi(filterDivisi === dv.key, dv.color)} className="btn-hover">
+                  {dv.label} ({count})
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {filtered.length === 0 ? (
-          <div style={{ ...card, textAlign:'center', padding:'3rem', color:'#94a3b8', display:'flex', flexDirection:'column', alignItems:'center', gap:12 }}>
-            <div style={{ width:64, height:64, borderRadius:'50%', background:'#eef2f6', display:'flex', alignItems:'center', justifyContent:'center' }}>
-              <FileText size={32} style={{ color:'#cbd5e1' }} />
+          <div style={shellStyle} className="fld">
+            <div style={{ ...coreStyle, textAlign:'center', padding:'3rem 2rem', display:'flex', flexDirection:'column', alignItems:'center', gap:12 }}>
+              <div style={{ width:64, height:64, borderRadius:'50%', background:'#eef2f6', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <FileText size={30} style={{ color:'#cbd5e1' }} />
+              </div>
+              <div style={{ fontSize:13.5, color:'#64748b', fontWeight:500 }}>Tidak ada pengajuan pada filter ini.</div>
             </div>
-            <div style={{ fontSize:14, fontWeight:500 }}>Tidak ada pengajuan pada filter ini.</div>
           </div>
         ) : (
           <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
@@ -433,17 +436,19 @@ export default function PengajuanPage() {
               const dv = item.divisi || [];
               const isExpanded = expandedItems.has(item.id);
               const pickerOpen = openDivisiPicker === item.id;
+              const bisaAksi = !['Disetujui','Ditolak','Kegiatan Selesai'].includes(item.status);
 
               return (
-                <div key={item.id} style={{ ...card, animation: `fadeInUp 0.4s ease-out ${index * 0.03}s both` }}>
-                  <div style={{ display:'flex', justifyContent:'space-between', gap:10, flexWrap:'wrap' }}>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ display:'flex', gap:6, alignItems:'center', marginBottom:6, flexWrap:'wrap' }}>
-                        <span style={{ fontSize:10, fontWeight:600, padding:'3px 10px', borderRadius:100, background:item.jenis==='MOU'?'#DBEAFE':'#FEF3C7', color:item.jenis==='MOU'?BLUE_DARK:'#92400E', display:'flex', alignItems:'center', gap:4 }}>
+                <div key={item.id} style={{ ...shellStyle, animation: `fadeInUp 0.4s ease-out ${index * 0.03}s both` }}>
+                  <div style={{ ...coreStyle, padding:'1.1rem 1.3rem 0' }}>
+
+                    <div style={{ display:'flex', justifyContent:'space-between', gap:10, alignItems:'flex-start' }}>
+                      <div style={{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap', flex:1, minWidth:0 }}>
+                        <span style={{ fontSize:10, fontWeight:700, padding:'3px 10px', borderRadius:100, background:item.jenis==='MOU'?'#DBEAFE':'#FEF3C7', color:item.jenis==='MOU'?BLUE_DARK:'#92400E', display:'flex', alignItems:'center', gap:4 }}>
                           <FileText size={11} />
                           {item.jenis}
                         </span>
-                        <span style={{ fontSize:10, fontWeight:500, padding:'3px 10px', borderRadius:100, background:sc.bg, color:sc.color, display:'flex', alignItems:'center', gap:4 }}>
+                        <span style={{ fontSize:10, fontWeight:600, padding:'3px 10px', borderRadius:100, background:sc.bg, color:sc.color, display:'flex', alignItems:'center', gap:4 }}>
                           <StatusIcon size={11} />
                           {item.status}
                         </span>
@@ -477,83 +482,98 @@ export default function PengajuanPage() {
                         )}
                       </div>
 
-                      <div style={{ fontSize:15, fontWeight:700, color:'#0f1f3d' }}>{item.namaInstitusi}</div>
-
-                      <div style={{
-                        fontSize:12, color:'#64748b', marginTop:4, lineHeight:1.6,
-                        display: isExpanded ? 'block' : '-webkit-box',
-                        WebkitLineClamp: isExpanded ? 'none' as any : 2,
-                        WebkitBoxOrient: 'vertical', overflow: 'hidden',
-                      }}>
-                        {item.deskripsi}
-                      </div>
-
-                      {isExpanded && (
-                        <div style={{ marginTop:8, animation: 'fadeInUp 0.3s ease-out' }}>
-                          {(item.email||item.noWa) && (
-                            <div style={{ fontSize:11, color:'#64748b', marginTop:4, display:'flex', gap:14, flexWrap:'wrap', background:'#f8fafc', padding:'4px 10px', borderRadius:8 }}>
-                              {item.email && <span style={{ display:'flex', alignItems:'center', gap:4 }}><Mail size={12} />{item.email}</span>}
-                              {item.noWa && <span style={{ display:'flex', alignItems:'center', gap:4 }}><Phone size={12} />{item.noWa}</span>}
-                            </div>
-                          )}
-                          {item.catatan && (
-                            <div style={{ fontSize:11, color:'#92400E', background:'#FFFBEB', padding:'6px 10px', borderRadius:8, marginTop:6, display:'flex', alignItems:'flex-start', gap:4 }}>
-                              <MessageSquare size={12} style={{ flexShrink:0, marginTop:1 }} />
-                              {item.catatan}
+                      <div style={{ display:'flex', gap:5, flexShrink:0 }}>
+                        <button onClick={() => openDetail(item)} style={iconToolBtn} className="btn-hover" title="Lihat Detail">
+                          <Eye size={14} />
+                        </button>
+                        <div style={{ position:'relative' }}>
+                          <button onClick={() => setOpenDivisiPicker(pickerOpen ? null : item.id)} style={{ ...iconToolBtn, ...(dv.length === 0 ? { background:'#FEF3C7', borderColor:'#FDE68A', color:'#92400E' } : {}) }} className="btn-hover" title={`Divisi (${dv.length})`}>
+                            <Building size={14} />
+                            {dv.length > 0 && <span style={iconToolBadge}>{dv.length}</span>}
+                          </button>
+                          {pickerOpen && (
+                            <div style={divisiPopover}>
+                              {DIVISI_LIST.map(d => {
+                                const checked = dv.includes(d.key);
+                                const disabled = !checked && dv.length >= MAKS_DIVISI;
+                                return (
+                                  <button
+                                    key={d.key}
+                                    type="button"
+                                    disabled={disabled}
+                                    onClick={() => toggleDivisi(item, d.key)}
+                                    style={{
+                                      padding:'6px 12px', borderRadius:100, borderWidth:1.5, borderStyle:'solid',
+                                      borderColor: checked ? d.color : 'rgba(29,78,216,0.10)',
+                                      background: checked ? d.bg : '#fff',
+                                      color: checked ? d.color : (disabled ? '#cbd5e1' : '#334155'),
+                                      fontSize:11, fontWeight: checked ? 700 : 500, fontFamily: FONT,
+                                      cursor: disabled ? 'not-allowed' : 'pointer',
+                                      whiteSpace:'nowrap', display:'inline-flex', alignItems:'center', gap:4,
+                                    }}
+                                    className="btn-hover"
+                                  >
+                                    {checked && <Check size={11} />}
+                                    {d.label}
+                                  </button>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
-                      )}
-
-                      <div style={{ fontSize:11, color:'#94a3b8', marginTop:6, display:'flex', gap:14, flexWrap:'wrap' }}>
-                        <span style={{ display:'flex', alignItems:'center', gap:4 }}><Clipboard size={12} />Kode: <strong style={{ color:BLUE }}>{item.kodeTracking}</strong></span>
-                        <span style={{ display:'flex', alignItems:'center', gap:4 }}><Calendar size={12} />Submit: {item.tglSubmit}</span>
+                        <button onClick={() => toggleExpand(item.id)} style={iconToolBtn} className="btn-hover" title={isExpanded ? 'Sembunyikan' : 'Tampilkan detail'}>
+                          {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </button>
                       </div>
                     </div>
 
-                    <div style={{ display:'flex', flexDirection:'column', gap:5, flexShrink:0, minWidth:120, position:'relative' }}>
-                      <button onClick={() => openDetail(item)} style={{ ...btnSm, display:'flex', alignItems:'center', justifyContent:'center', gap:4 }} className="btn-hover">
-                        <Eye size={14} />
-                        Detail
-                      </button>
+                    <div style={{ fontSize:15, fontWeight:800, color:'#0f1f3d', letterSpacing:'-0.01em', marginTop:8 }}>{item.namaInstitusi}</div>
 
-                      <button onClick={() => setOpenDivisiPicker(pickerOpen ? null : item.id)} style={{ ...btnSm, display:'flex', alignItems:'center', justifyContent:'center', gap:4 }} className="btn-hover">
-                        <Building size={13} />
-                        Divisi ({dv.length})
-                      </button>
-                      {pickerOpen && (
-                        <div style={divisiPopover}>
-                          {DIVISI_LIST.map(d => {
-                            const checked = dv.includes(d.key);
-                            const disabled = !checked && dv.length >= MAKS_DIVISI;
-                            return (
-                              <label key={d.key} style={{ display:'flex', alignItems:'center', gap:6, padding:'5px 4px', fontSize:11, color: disabled ? '#cbd5e1' : '#334155', cursor: disabled ? 'not-allowed' : 'pointer' }}>
-                                <input type="checkbox" checked={checked} disabled={disabled} onChange={() => toggleDivisi(item, d.key)} style={{ accentColor: d.color, width:13, height:13 }} />
-                                {d.label}
-                              </label>
-                            );
-                          })}
-                        </div>
-                      )}
+                    <div style={{
+                      fontSize:12, color:'#64748b', marginTop:4, lineHeight:1.6,
+                      display: isExpanded ? 'block' : '-webkit-box',
+                      WebkitLineClamp: isExpanded ? 'none' as any : 2,
+                      WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                    }}>
+                      {item.deskripsi}
+                    </div>
 
-                      {!['Disetujui','Ditolak','Kegiatan Selesai'].includes(item.status) && (
-                        <>
-                          <button onClick={() => openAcc(item)} style={{ ...btnSm, background:'#DBEAFE', color:BLUE_DARK, borderColor:'#93C5FD', fontWeight:600, display:'flex', alignItems:'center', justifyContent:'center', gap:4 }} className="btn-hover">
-                            <Check size={14} />
-                            Acc
-                          </button>
-                          <button onClick={() => { openDetail(item); setShowTolak(true); }} style={{ ...btnSm, background:'#FEE2E2', color:'#991B1B', borderColor:'#FCA5A5', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }} className="btn-hover">
-                            <X size={14} />
-                            Tolak
-                          </button>
-                        </>
-                      )}
-                      <button onClick={() => toggleExpand(item.id)} style={{ ...btnSm, fontSize:10, display:'flex', alignItems:'center', justifyContent:'center', gap:4 }} className="btn-hover">
-                        {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                        {isExpanded ? 'Sembunyikan' : 'Detail'}
-                      </button>
+                    {isExpanded && (
+                      <div style={{ marginTop:8, animation: 'fadeInUp 0.3s ease-out' }}>
+                        {(item.email||item.noWa) && (
+                          <div style={{ fontSize:11, color:'#64748b', marginTop:4, display:'flex', gap:14, flexWrap:'wrap', background:'#f8fafc', padding:'4px 10px', borderRadius:8 }}>
+                            {item.email && <span style={{ display:'flex', alignItems:'center', gap:4 }}><Mail size={12} />{item.email}</span>}
+                            {item.noWa && <span style={{ display:'flex', alignItems:'center', gap:4 }}><Phone size={12} />{item.noWa}</span>}
+                          </div>
+                        )}
+                        {item.catatan && (
+                          <div style={{ fontSize:11, color:'#92400E', background:'#FFFBEB', padding:'6px 10px', borderRadius:8, marginTop:6, display:'flex', alignItems:'flex-start', gap:4 }}>
+                            <MessageSquare size={12} style={{ flexShrink:0, marginTop:1 }} />
+                            {item.catatan}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div style={{ fontSize:11, color:'#94a3b8', marginTop:10, display:'flex', gap:14, flexWrap:'wrap' }}>
+                      <span style={{ display:'flex', alignItems:'center', gap:4 }}><Clipboard size={12} />Kode: <strong style={{ color:BLUE }}>{item.kodeTracking}</strong></span>
+                      <span style={{ display:'flex', alignItems:'center', gap:4 }}><Calendar size={12} />Submit: {item.tglSubmit}</span>
                     </div>
                   </div>
+
+                  {bisaAksi && (
+                    <div style={{ display:'flex', gap:8, padding:'12px 1.3rem 1rem', marginTop:12, borderTop:'1px solid rgba(29,78,216,0.06)' }}>
+                      <button onClick={() => openAcc(item)} style={{ ...btnSm, flex:1, background:'#DBEAFE', color:BLUE_DARK, borderColor:'#93C5FD', fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', gap:5 }} className="btn-hover">
+                        <Check size={14} />
+                        Acc
+                      </button>
+                      <button onClick={() => { openDetail(item); setShowTolak(true); }} style={{ ...btnSm, flex:1, background:'#FEE2E2', color:'#991B1B', borderColor:'#FCA5A5', display:'flex', alignItems:'center', justifyContent:'center', gap:5 }} className="btn-hover">
+                        <X size={14} />
+                        Tolak
+                      </button>
+                    </div>
+                  )}
+                  {!bisaAksi && <div style={{ paddingBottom: 4 }} />}
                 </div>
               );
             })}
@@ -561,7 +581,6 @@ export default function PengajuanPage() {
         )}
       </div>
 
-      {/* ════ MODAL ACC LENGKAP ════ */}
       {showAcc && accItem && (
         <div style={overlay} onClick={() => { if (!generating) { setShowAcc(false); setAccItem(null); setHasilGenerate(null); setError(''); setPreviewMitra(false); setShowPlaneAnimation(false); } }}>
           <div style={{ ...modalBox, maxWidth:600, animation: 'scaleIn 0.3s ease-out' }} onClick={e => e.stopPropagation()}>
@@ -571,19 +590,19 @@ export default function PengajuanPage() {
                   <div style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:64, height:64, borderRadius:'50%', background:`linear-gradient(135deg, #2563EB, ${BLUE_DARK})`, marginBottom:12, boxShadow:`0 4px 20px ${BLUE}40` }}>
                     <CheckCircle size={32} style={{ color:'#fff' }} />
                   </div>
-                  <div style={{ fontSize:18, fontWeight:700, color:BLUE }}>Kode Dokumen Berhasil Dibuat!</div>
+                  <div style={{ fontSize:18, fontWeight:800, color:BLUE }}>Kode Dokumen Berhasil Dibuat!</div>
                   <div style={{ fontSize:12, color:'#64748b', marginTop:4 }}>{accItem.namaInstitusi} · {accItem.jenis}</div>
                 </div>
 
-                <div style={{ background:'linear-gradient(135deg, #EFF6FF, #DBEAFE)', border:'2px solid #93C5FD', borderRadius:12, padding:'1.5rem', marginBottom:16, textAlign:'center', boxShadow:`0 2px 12px ${BLUE}20` }}>
-                  <div style={{ fontSize:10, color:BLUE_DARK, marginBottom:6, textTransform:'uppercase', letterSpacing:1.5, fontWeight:600, display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
+                <div style={{ background:'linear-gradient(135deg, #EFF6FF, #DBEAFE)', border:'2px solid #93C5FD', borderRadius:16, padding:'1.5rem', marginBottom:16, textAlign:'center', boxShadow:`0 2px 12px ${BLUE}20` }}>
+                  <div style={{ fontSize:10, color:BLUE_DARK, marginBottom:6, textTransform:'uppercase', letterSpacing:1.5, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
                     <Key size={14} />
                     Kode Akses Dokumen
                   </div>
-                  <div style={{ fontSize:28, fontWeight:800, letterSpacing:4, color:BLUE_DARK, marginBottom:12, fontFamily:'monospace', background:'rgba(255,255,255,.6)', padding:'8px 16px', borderRadius:8, display:'inline-block' }}>
+                  <div style={{ fontSize:28, fontWeight:800, letterSpacing:4, color:BLUE_DARK, marginBottom:12, fontFamily:'monospace', background:'rgba(255,255,255,.6)', padding:'8px 16px', borderRadius:10, display:'inline-block' }}>
                     {hasilGenerate.kodeAkses}
                   </div>
-                  <button onClick={() => navigator.clipboard.writeText(hasilGenerate.kodeAkses)} style={{ ...btnPrimary, display:'inline-flex', alignItems:'center', gap:6, padding:'8px 20px' }} className="btn-hover">
+                  <button onClick={() => navigator.clipboard.writeText(hasilGenerate.kodeAkses)} style={{ ...btnPrimary, display:'inline-flex', alignItems:'center', gap:6, padding:'9px 22px' }} className="btn-hover">
                     <Copy size={14} />
                     Salin Kode
                   </button>
@@ -605,12 +624,12 @@ export default function PengajuanPage() {
 
                 {accItem.email ? (
                   emailTerkirim ? (
-                    <div style={{ background:'#DBEAFE', borderRadius:8, padding:'12px 16px', fontSize:13, color:BLUE_DARK, marginBottom:14, textAlign:'center', fontWeight:600, display:'flex', alignItems:'center', justifyContent:'center', gap:8, animation: 'fadeInUp 0.4s ease-out' }}>
+                    <div style={{ background:'#DBEAFE', borderRadius:10, padding:'12px 16px', fontSize:13, color:BLUE_DARK, marginBottom:14, textAlign:'center', fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', gap:8, animation: 'fadeInUp 0.4s ease-out' }}>
                       <CheckCircle size={18} />
                       Email kode akses terkirim ke {accItem.email}
                     </div>
                   ) : (
-                    <button onClick={handleKirimEmail} disabled={kirimEmailLoading} style={{ ...btnPrimary, width:'100%', marginBottom:12, background:GOLD, height:48, display:'flex', alignItems:'center', justifyContent:'center', gap:8, fontSize:13, opacity: kirimEmailLoading ? 0.7 : 1, position:'relative', overflow:'hidden' }} className="btn-hover">
+                    <button onClick={handleKirimEmail} disabled={kirimEmailLoading} style={{ ...btnPrimary, width:'100%', marginBottom:12, background:`linear-gradient(135deg,${GOLD},#B45309)`, height:48, display:'flex', alignItems:'center', justifyContent:'center', gap:8, fontSize:13, opacity: kirimEmailLoading ? 0.7 : 1, position:'relative', overflow:'hidden' }} className="btn-hover">
                       {kirimEmailLoading ? (
                         <>
                           <div style={{ width:18, height:18, border:'2px solid rgba(255,255,255,.3)', borderTop:'2px solid #fff', borderRadius:'50%', animation: 'spin 0.8s linear infinite' }} />
@@ -630,14 +649,14 @@ export default function PengajuanPage() {
                     </button>
                   )
                 ) : (
-                  <div style={{ background:'#FFFBEB', borderRadius:8, padding:'10px 14px', fontSize:11, color:'#78350F', marginBottom:14, display:'flex', alignItems:'center', gap:8 }}>
+                  <div style={{ background:'#FFFBEB', borderRadius:10, padding:'10px 14px', fontSize:11, color:'#78350F', marginBottom:14, display:'flex', alignItems:'center', gap:8 }}>
                     <AlertCircle size={14} />
                     <span>Mitra tidak mencantumkan email. Sampaikan kode <strong>{hasilGenerate.kodeAkses}</strong> secara manual{accItem.noWa ? ` (WA: ${accItem.noWa})` : ''}.</span>
                   </div>
                 )}
 
                 {accItem.email && (
-                  <div style={{ background:'#EFF6FF', borderRadius:8, padding:'8px 12px', fontSize:11, color:BLUE_DARK, marginBottom:14, textAlign:'center' }}>
+                  <div style={{ background:'#EFF6FF', borderRadius:10, padding:'8px 12px', fontSize:11, color:BLUE_DARK, marginBottom:14, textAlign:'center' }}>
                     <Mail size={14} style={{ marginRight:6 }} />
                     Tujuan: {accItem.email}
                   </div>
@@ -651,7 +670,7 @@ export default function PengajuanPage() {
               <div>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:16 }}>
                   <div>
-                    <div style={{ fontSize:16, fontWeight:700, color:'#0f1f3d' }}>Setujui & Generate Kode</div>
+                    <div style={{ fontSize:16, fontWeight:800, color:'#0f1f3d' }}>Setujui & Generate Kode</div>
                     <div style={{ fontSize:12, color:'#64748b', marginTop:2 }}>{accItem.namaInstitusi} · {accItem.jenis}</div>
                   </div>
                   <button onClick={() => { setShowAcc(false); setAccItem(null); setError(''); setShowPlaneAnimation(false); }} style={{ ...btnSm, padding:'4px 8px' }} className="btn-hover">
@@ -666,13 +685,13 @@ export default function PengajuanPage() {
                   </div>
                 )}
 
-                <div style={{ background:'#f8fafc', borderRadius:10, padding:'12px 16px', marginBottom:16, border:'1px solid #e2e8f0' }}>
-                  <div style={{ fontSize:11, fontWeight:600, color:'#64748b', marginBottom:8, textTransform:'uppercase', letterSpacing:0.5, display:'flex', alignItems:'center', gap:6 }}>
+                <div style={{ background:'#f8fafc', borderRadius:12, padding:'12px 16px', marginBottom:16, border:'1px solid rgba(29,78,216,0.08)' }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:'#64748b', marginBottom:8, textTransform:'uppercase', letterSpacing:0.5, display:'flex', alignItems:'center', gap:6 }}>
                     <FileText size={14} />
                     Data Pengajuan
                   </div>
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6, fontSize:12 }}>
-                    <div style={dField}><span style={dLabel}>Nama Institusi</span><span style={{ fontWeight:500 }}>{accItem.namaInstitusi}</span></div>
+                    <div style={dField}><span style={dLabel}>Nama Institusi</span><span style={{ fontWeight:600 }}>{accItem.namaInstitusi}</span></div>
                     <div style={dField}><span style={dLabel}>Jenis</span><span>{accItem.jenis}</span></div>
                     {(accItem.divisi || []).length > 0 && <div style={dField}><span style={dLabel}>Divisi</span><span>{(accItem.divisi || []).map(divisiLabel).join(', ')}</span></div>}
                     {accItem.jurusan && <div style={dField}><span style={dLabel}>Jurusan/Prodi</span><span>{accItem.jurusan}</span></div>}
@@ -696,14 +715,14 @@ export default function PengajuanPage() {
                       return (
                         <button key={dv.key} type="button" disabled={disabled} onClick={() => toggleDivisi(accItem, dv.key)}
                           style={{
-                            padding:'9px 10px', borderRadius:9, cursor: disabled ? 'not-allowed' : 'pointer',
-                            fontFamily:'sans-serif', fontSize:12, textAlign:'left',
-                            border:`2px solid ${checked ? dv.color : '#e2e8f0'}`,
+                            padding:'9px 10px', borderRadius:10, cursor: disabled ? 'not-allowed' : 'pointer',
+                            fontFamily:FONT, fontSize:12, textAlign:'left',
+                            border:`1.5px solid ${checked ? dv.color : 'rgba(29,78,216,0.10)'}`,
                             background: checked ? dv.bg : '#fff',
                             color: checked ? dv.color : '#334155',
-                            fontWeight: checked ? 600 : 400,
+                            fontWeight: checked ? 700 : 500,
                             opacity: disabled ? 0.4 : 1,
-                          }}>
+                          }} className="btn-hover">
                           {dv.label}
                         </button>
                       );
@@ -735,25 +754,25 @@ export default function PengajuanPage() {
                   </label>
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
                     <button type="button" onClick={() => setPilihanTemplate('bnn')} style={{
-                      padding:'12px', borderRadius:10, cursor:'pointer', fontFamily:'sans-serif', textAlign:'left',
-                      border:`2px solid ${pilihanTemplate==='bnn'?BLUE:'#e2e8f0'}`,
+                      padding:'12px', borderRadius:12, cursor:'pointer', fontFamily:FONT, textAlign:'left',
+                      border:`1.5px solid ${pilihanTemplate==='bnn'?BLUE:'rgba(29,78,216,0.10)'}`,
                       background: pilihanTemplate==='bnn' ? '#EFF6FF' : '#fff',
-                    }}>
+                    }} className="btn-hover">
                       <Landmark size={20} style={{ color: BLUE, marginBottom:4 }} />
-                      <div style={{ fontSize:12, fontWeight:600, color:pilihanTemplate==='bnn'?BLUE_DARK:'#334155' }}>Template Resmi BNN</div>
+                      <div style={{ fontSize:12, fontWeight:700, color:pilihanTemplate==='bnn'?BLUE_DARK:'#334155' }}>Template Resmi BNN</div>
                       <div style={{ fontSize:10, color:'#64748b', marginTop:2, lineHeight:1.4 }}>Gunakan template standar BNN Provinsi</div>
                     </button>
                     <button type="button"
                       onClick={() => accItem.fileDokumenId && setPilihanTemplate('mitra')}
                       disabled={!accItem.fileDokumenId}
                       style={{
-                        padding:'12px', borderRadius:10, cursor:accItem.fileDokumenId?'pointer':'not-allowed', fontFamily:'sans-serif', textAlign:'left',
-                        border:`2px solid ${pilihanTemplate==='mitra'?GOLD:'#e2e8f0'}`,
+                        padding:'12px', borderRadius:12, cursor:accItem.fileDokumenId?'pointer':'not-allowed', fontFamily:FONT, textAlign:'left',
+                        border:`1.5px solid ${pilihanTemplate==='mitra'?GOLD:'rgba(29,78,216,0.10)'}`,
                         background: pilihanTemplate==='mitra' ? '#FFFBEB' : '#fff',
                         opacity: accItem.fileDokumenId ? 1 : 0.5,
-                      }}>
+                      }} className="btn-hover">
                       <FileText size={20} style={{ color: GOLD, marginBottom:4 }} />
-                      <div style={{ fontSize:12, fontWeight:600, color:pilihanTemplate==='mitra'?'#92400E':'#334155' }}>Dokumen Mitra</div>
+                      <div style={{ fontSize:12, fontWeight:700, color:pilihanTemplate==='mitra'?'#92400E':'#334155' }}>Dokumen Mitra</div>
                       {accItem.fileDokumenId ? (
                         <div style={{ fontSize:10, color:'#64748b', marginTop:2 }}>{accItem.fileDokumenNama || 'File terlampir'}</div>
                       ) : (
@@ -763,9 +782,9 @@ export default function PengajuanPage() {
                   </div>
 
                   {accItem.fileDokumenId && (
-                    <div style={{ marginTop:10, border:'1px solid #e2e8f0', borderRadius:10, overflow:'hidden', background:'#fff' }}>
-                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 12px', background:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
-                        <span style={{ fontSize:11, fontWeight:600, color:BLUE_DARK, display:'flex', alignItems:'center', gap:6 }}>
+                    <div style={{ marginTop:10, border:'1px solid rgba(29,78,216,0.10)', borderRadius:12, overflow:'hidden', background:'#fff' }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 12px', background:'#f8fafc', borderBottom:'1px solid rgba(29,78,216,0.08)' }}>
+                        <span style={{ fontSize:11, fontWeight:700, color:BLUE_DARK, display:'flex', alignItems:'center', gap:6 }}>
                           <Eye size={14} />
                           Preview Dokumen Mitra
                         </span>
@@ -817,13 +836,12 @@ export default function PengajuanPage() {
         </div>
       )}
 
-      {/* ════ MODAL PREVIEW PENUH DOKUMEN MITRA ════ */}
       {previewMitra && accItem?.fileDokumenId && (
         <div style={{ ...overlay, zIndex:300 }} onClick={() => setPreviewMitra(false)}>
-          <div style={{ background:'#fff', borderRadius:14, padding:0, width:'100%', maxWidth:840, height:'90vh', display:'flex', flexDirection:'column', overflow:'hidden', animation: 'scaleIn 0.3s ease-out' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'14px 20px', borderBottom:'1px solid #e2e8f0', flexShrink:0, background:'#f8fafc' }}>
+          <div style={{ background:'#fff', borderRadius:18, padding:0, width:'100%', maxWidth:840, height:'90vh', display:'flex', flexDirection:'column', overflow:'hidden', animation: 'scaleIn 0.3s ease-out', boxShadow:'0 30px 70px -20px rgba(15,23,42,0.35)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'14px 20px', borderBottom:'1px solid rgba(29,78,216,0.08)', flexShrink:0, background:'#f8fafc' }}>
               <div>
-                <div style={{ fontSize:14, fontWeight:700, display:'flex', alignItems:'center', gap:8 }}>
+                <div style={{ fontSize:14, fontWeight:800, display:'flex', alignItems:'center', gap:8 }}>
                   <FileText size={18} />
                   Dokumen Mitra — {accItem.namaInstitusi}
                 </div>
@@ -847,7 +865,6 @@ export default function PengajuanPage() {
         </div>
       )}
 
-      {/* Modal detail */}
       {detail && (
         <div style={overlay} onClick={() => { setDetail(null); setShowTolak(false); setShowUbah(false); }}>
           <div style={{ ...modalBox, maxWidth:540, animation: 'scaleIn 0.3s ease-out' }} onClick={e => e.stopPropagation()}>
@@ -861,22 +878,21 @@ export default function PengajuanPage() {
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:16 }}>
               <div>
                 <div style={{ display:'flex', gap:6, marginBottom:4, flexWrap:'wrap' }}>
-                  <span style={{ fontSize:10, fontWeight:600, padding:'3px 10px', borderRadius:100, background:detail.jenis==='MOU'?'#DBEAFE':'#FEF3C7', color:detail.jenis==='MOU'?BLUE_DARK:'#92400E', display:'flex', alignItems:'center', gap:4 }}>
+                  <span style={{ fontSize:10, fontWeight:700, padding:'3px 10px', borderRadius:100, background:detail.jenis==='MOU'?'#DBEAFE':'#FEF3C7', color:detail.jenis==='MOU'?BLUE_DARK:'#92400E', display:'flex', alignItems:'center', gap:4 }}>
                     <FileText size={11} />
                     {detail.jenis}
                   </span>
-                  <span style={{ fontSize:10, fontWeight:500, padding:'3px 10px', borderRadius:100, ...getStatusColor(detail.status), display:'flex', alignItems:'center', gap:4 }}>
+                  <span style={{ fontSize:10, fontWeight:600, padding:'3px 10px', borderRadius:100, ...getStatusColor(detail.status), display:'flex', alignItems:'center', gap:4 }}>
                     {detail.status}
                   </span>
                 </div>
-                <div style={{ fontSize:16, fontWeight:700, color:'#0f1f3d' }}>{detail.namaInstitusi}</div>
+                <div style={{ fontSize:16, fontWeight:800, color:'#0f1f3d' }}>{detail.namaInstitusi}</div>
               </div>
               <button onClick={() => { setDetail(null); setShowTolak(false); setShowUbah(false); }} style={{ ...btnSm, padding:'4px 8px' }} className="btn-hover">
                 <X size={16} />
               </button>
             </div>
 
-            {/* Assign divisi di modal — multi-pilih maks 4 */}
             <div style={{ marginBottom:14 }}>
               <label style={labelSt}>
                 <Building size={14} style={{ marginRight:4 }} />
@@ -890,14 +906,14 @@ export default function PengajuanPage() {
                   return (
                     <button key={d.key} type="button" disabled={disabled} onClick={() => toggleDivisi(detail, d.key)}
                       style={{
-                        padding:'9px 10px', borderRadius:9, cursor: disabled ? 'not-allowed' : 'pointer',
-                        fontFamily:'sans-serif', fontSize:12, textAlign:'left',
-                        border:`2px solid ${checked ? d.color : '#e2e8f0'}`,
+                        padding:'9px 10px', borderRadius:10, cursor: disabled ? 'not-allowed' : 'pointer',
+                        fontFamily:FONT, fontSize:12, textAlign:'left',
+                        border:`1.5px solid ${checked ? d.color : 'rgba(29,78,216,0.10)'}`,
                         background: checked ? d.bg : '#fff',
                         color: checked ? d.color : '#334155',
-                        fontWeight: checked ? 600 : 400,
+                        fontWeight: checked ? 700 : 500,
                         opacity: disabled ? 0.4 : 1,
-                      }}>
+                      }} className="btn-hover">
                       {d.label}
                     </button>
                   );
@@ -911,17 +927,17 @@ export default function PengajuanPage() {
               {detail.email && <div style={dField}><span style={dLabel}>Email</span><span>{detail.email}</span></div>}
               {detail.noWa && <div style={dField}><span style={dLabel}>WhatsApp</span><span>{detail.noWa}</span></div>}
               <div style={dField}><span style={dLabel}>Submit</span><span>{detail.tglSubmit}</span></div>
-              <div style={dField}><span style={dLabel}>Kode</span><span style={{ color:BLUE, fontWeight:600 }}>{detail.kodeTracking}</span></div>
+              <div style={dField}><span style={dLabel}>Kode</span><span style={{ color:BLUE, fontWeight:700 }}>{detail.kodeTracking}</span></div>
             </div>
 
             {detail.fileDokumenId && (
-              <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:10, padding:'12px 14px', marginBottom:14, fontSize:12 }}>
-                <div style={{ fontWeight:600, color:BLUE_DARK, marginBottom:4, display:'flex', alignItems:'center', gap:6 }}>
+              <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:12, padding:'12px 14px', marginBottom:14, fontSize:12 }}>
+                <div style={{ fontWeight:700, color:BLUE_DARK, marginBottom:4, display:'flex', alignItems:'center', gap:6 }}>
                   <Paperclip size={14} />
                   Dokumen {detail.jenis} dari Mitra
                 </div>
                 <div style={{ color:'#64748b', marginBottom:8 }}>{detail.fileDokumenNama || 'File terlampir'}</div>
-                <iframe src={`https://docs.google.com/document/d/${detail.fileDokumenId}/preview`} style={{ width:'100%', height:220, border:'1px solid #BFDBFE', borderRadius:8, background:'#fff', display:'block', marginBottom:6 }} title="Preview dokumen mitra" />
+                <iframe src={`https://docs.google.com/document/d/${detail.fileDokumenId}/preview`} style={{ width:'100%', height:220, border:'1px solid #BFDBFE', borderRadius:10, background:'#fff', display:'block', marginBottom:6 }} title="Preview dokumen mitra" />
                 {detail.fileDokumenUrl && (
                   <a href={detail.fileDokumenUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize:11, color:BLUE_DARK, textDecoration:'none', display:'flex', alignItems:'center', gap:4 }}>
                     <ExternalLink size={12} />
@@ -932,26 +948,26 @@ export default function PengajuanPage() {
             )}
 
             {detail.catatan && (
-              <div style={{ fontSize:12, padding:'8px 12px', background:'#FFFBEB', borderRadius:8, marginBottom:14, color:'#78350F', display:'flex', alignItems:'flex-start', gap:6 }}>
+              <div style={{ fontSize:12, padding:'8px 12px', background:'#FFFBEB', borderRadius:10, marginBottom:14, color:'#78350F', display:'flex', alignItems:'flex-start', gap:6 }}>
                 <MessageSquare size={14} style={{ flexShrink:0, marginTop:1 }} />
                 {detail.catatan}
               </div>
             )}
 
             {showTolak && (
-              <div style={{ background:'#FEF2F2', border:'1px solid #FCA5A5', borderRadius:10, padding:'14px 16px', marginBottom:14, animation: 'fadeInUp 0.3s ease-out' }}>
-                <div style={{ fontSize:12, fontWeight:600, color:'#991B1B', marginBottom:8, display:'flex', alignItems:'center', gap:6 }}>
+              <div style={{ background:'#FEF2F2', border:'1px solid #FCA5A5', borderRadius:12, padding:'14px 16px', marginBottom:14, animation: 'fadeInUp 0.3s ease-out' }}>
+                <div style={{ fontSize:12, fontWeight:700, color:'#991B1B', marginBottom:8, display:'flex', alignItems:'center', gap:6 }}>
                   <AlertCircle size={14} />
                   Alasan Penolakan
                 </div>
-                <textarea style={{ width:'100%', padding:'8px 12px', borderRadius:8, border:'1px solid #FCA5A5', fontSize:12, fontFamily:'sans-serif', height:70, resize:'none', boxSizing:'border-box', background:'#fff' }}
+                <textarea style={{ width:'100%', padding:'8px 12px', borderRadius:10, border:'1px solid #FCA5A5', fontSize:12, fontFamily:FONT, height:70, resize:'none', boxSizing:'border-box', background:'#fff' }}
                   value={alasanTolak} onChange={e => setAlasanTolak(e.target.value)} placeholder="Jelaskan alasan penolakan dengan jelas..." autoFocus />
               </div>
             )}
 
             {showUbah && (
-              <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:10, padding:'14px 16px', marginBottom:14, animation: 'fadeInUp 0.3s ease-out' }}>
-                <div style={{ fontSize:12, fontWeight:600, marginBottom:8 }}>Ubah Status</div>
+              <div style={{ background:'#f8fafc', border:'1px solid rgba(29,78,216,0.08)', borderRadius:12, padding:'14px 16px', marginBottom:14, animation: 'fadeInUp 0.3s ease-out' }}>
+                <div style={{ fontSize:12, fontWeight:700, marginBottom:8 }}>Ubah Status</div>
                 <select style={{ ...inputFull, marginBottom:8 }} value={newStatus} onChange={e => setNewStatus(e.target.value)}>
                   {STATUS_LIST.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
@@ -1016,37 +1032,48 @@ export default function PengajuanPage() {
           </div>
         </div>
       )}
-
-      <style>{`
-        @keyframes fadeInUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes fadeInDown { from{opacity:0;transform:translateY(-12px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes scaleIn { from{opacity:0;transform:scale(0.95)} to{opacity:1;transform:scale(1)} }
-        @keyframes spin { to{transform:rotate(360deg)} }
-        @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
-        @keyframes planeFly { 0%{left:-10%;opacity:0;transform:translateY(-50%) scale(0.5)} 20%{opacity:1;transform:translateY(-50%) scale(1)} 80%{opacity:1;transform:translateY(-50%) scale(1)} 100%{left:110%;opacity:0;transform:translateY(-50%) scale(0.5)} }
-        .btn-hover { transition: all .25s ease; }
-        .btn-hover:hover:not(:disabled) { filter:brightness(1.05); transform:translateY(-1px); }
-      `}</style>
     </div>
   );
 }
 
-const navStyle: React.CSSProperties = { display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0.85rem 1.5rem', background:'#fff', borderBottom:'1px solid #e2e8f0', position:'sticky', top:0, zIndex:100, flexWrap:'wrap', gap:8, boxShadow:'0 1px 3px rgba(15,23,42,.04)' };
-const backLink: React.CSSProperties = { fontSize:12, color:'#64748b', textDecoration:'none', display:'flex', alignItems:'center', gap:4, padding:'4px 8px', borderRadius:6 };
-const card: React.CSSProperties = { background:'#fff', borderRadius:14, padding:'1rem 1.25rem', border:'1px solid #e2e8f0', boxShadow:'0 1px 4px rgba(15,23,42,.04)' };
-const labelSt: React.CSSProperties = { display:'flex', alignItems:'center', fontSize:11, fontWeight:600, color:'#334155', marginBottom:5 };
-const inputFull: React.CSSProperties = { width:'100%', padding:'9px 12px', borderRadius:9, borderWidth:2, borderStyle:'solid', borderColor:'#e2e8f0', fontSize:12, fontFamily:'sans-serif', boxSizing:'border-box', background:'#f8fafc' };
-const btnPrimary: React.CSSProperties = { padding:'8px 16px', borderRadius:9, border:'none', background:`linear-gradient(135deg,#2563EB,${BLUE_DARK})`, color:'#fff', fontSize:12, fontWeight:500, cursor:'pointer', fontFamily:'sans-serif', boxShadow:`0 2px 8px ${BLUE}30` };
-const btnSm: React.CSSProperties = { padding:'6px 12px', borderRadius:9, borderWidth:1, borderStyle:'solid', borderColor:'#e2e8f0', background:'#fff', color:'#334155', fontSize:12, cursor:'pointer', fontFamily:'sans-serif', whiteSpace:'nowrap' };
-const btnOutline: React.CSSProperties = { fontSize:12, padding:'6px 14px', borderRadius:9, border:'1px solid #e2e8f0', textDecoration:'none', color:'#334155', background:'#fff', display:'flex', alignItems:'center', gap:4 };
+function GlobalStyle() {
+  return (
+    <style>{`
+      @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+      @keyframes fadeInUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+      @keyframes fadeInDown { from{opacity:0;transform:translateY(-12px)} to{opacity:1;transform:translateY(0)} }
+      @keyframes scaleIn { from{opacity:0;transform:scale(0.95)} to{opacity:1;transform:scale(1)} }
+      @keyframes spin { to{transform:rotate(360deg)} }
+      @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
+      @keyframes planeFly { 0%{left:-10%;opacity:0;transform:translateY(-50%) scale(0.5)} 20%{opacity:1;transform:translateY(-50%) scale(1)} 80%{opacity:1;transform:translateY(-50%) scale(1)} 100%{left:110%;opacity:0;transform:translateY(-50%) scale(0.5)} }
+      .fld { animation: fadeInUp 0.5s cubic-bezier(0.32,0.72,0,1) both; }
+      .btn-hover { transition: all .3s cubic-bezier(0.32,0.72,0,1); }
+      .btn-hover:hover:not(:disabled) { filter:brightness(1.05); transform:translateY(-1px); }
+    `}</style>
+  );
+}
+
+const navStyle: React.CSSProperties = { display:'flex', alignItems:'center', justifyContent:'space-between', background:'rgba(255,255,255,0.72)', backdropFilter:'blur(12px)', WebkitBackdropFilter:'blur(12px)', border:'1px solid rgba(29,78,216,0.08)', borderRadius:100, padding:'9px 10px 9px 18px', boxShadow:'0 10px 26px -18px rgba(15,23,42,0.25)' };
+const backLink: React.CSSProperties = { fontSize:12.5, color:'#64748b', textDecoration:'none', fontWeight:600, display:'flex', alignItems:'center', gap:6, padding:'6px 10px', borderRadius:100 };
+const shellStyle: React.CSSProperties = { background:'rgba(255,255,255,0.65)', borderWidth:1, borderStyle:'solid', borderColor:'rgba(29,78,216,0.08)', borderRadius:20, padding:6, boxShadow:'0 1px 2px rgba(15,23,42,0.03), 0 20px 40px -30px rgba(15,23,42,0.18)' };
+const coreStyle: React.CSSProperties = { background:'#fff', borderRadius:15, boxShadow:'inset 0 1px 1px rgba(255,255,255,0.9)' };
+const searchInput: React.CSSProperties = { width:'100%', padding:'10px 12px 10px 36px', borderRadius:11, border:'1.5px solid rgba(29,78,216,0.10)', fontSize:12, fontFamily:FONT, boxSizing:'border-box', background:'#f8fafc', outline:'none' };
+const card: React.CSSProperties = { background:'#fff', borderRadius:14, padding:'1rem 1.25rem', border:'1px solid rgba(29,78,216,0.08)', boxShadow:'0 1px 4px rgba(15,23,42,.04)' };
+const labelSt: React.CSSProperties = { display:'flex', alignItems:'center', fontSize:11, fontWeight:700, color:'#334155', marginBottom:5 };
+const inputFull: React.CSSProperties = { width:'100%', padding:'9px 12px', borderRadius:10, borderWidth:1.5, borderStyle:'solid', borderColor:'rgba(29,78,216,0.10)', fontSize:12, fontFamily:FONT, boxSizing:'border-box', background:'#f8fafc', outline:'none' };
+const btnPrimary: React.CSSProperties = { padding:'9px 18px', borderRadius:11, border:'none', background:`linear-gradient(135deg,${BLUE_LIGHT},${BLUE_DARK})`, color:'#fff', fontSize:12, fontWeight:700, cursor:'pointer', fontFamily:FONT, boxShadow:`0 6px 16px -6px ${BLUE}60` };
+const btnSm: React.CSSProperties = { padding:'8px 14px', borderRadius:10, borderWidth:1.5, borderStyle:'solid', borderColor:'rgba(29,78,216,0.10)', background:'#fff', color:'#334155', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:FONT, whiteSpace:'nowrap' };
+const btnOutline: React.CSSProperties = { fontSize:12, padding:'8px 15px', borderRadius:100, border:'1.5px solid rgba(29,78,216,0.10)', textDecoration:'none', color:'#334155', background:'#fff', display:'flex', alignItems:'center', gap:5, fontWeight:600 };
 const overlay: React.CSSProperties = { position:'fixed', inset:0, background:'rgba(15,23,42,.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200, padding:'1rem', backdropFilter:'blur(4px)' };
-const modalBox: React.CSSProperties = { background:'#fff', borderRadius:14, padding:'1.75rem', width:'100%', maxWidth:480, maxHeight:'92vh', overflowY:'auto', boxShadow:'0 20px 60px rgba(15,23,42,.2)' };
-const dField: React.CSSProperties = { display:'flex', flexDirection:'column', gap:2, background:'#f8fafc', borderRadius:8, padding:'8px 10px' };
-const dLabel: React.CSSProperties = { fontSize:10, color:'#94a3b8', textTransform:'uppercase', letterSpacing:0.3, fontWeight:500 };
-const msgBox = (color: string, bg: string): React.CSSProperties => ({ fontSize:12, color, background:bg, padding:'10px 14px', borderRadius:10, marginBottom:12 });
+const modalBox: React.CSSProperties = { background:'#fff', borderRadius:20, padding:'1.75rem', width:'100%', maxWidth:480, maxHeight:'92vh', overflowY:'auto', boxShadow:'0 30px 70px -20px rgba(15,23,42,0.3)' };
+const dField: React.CSSProperties = { display:'flex', flexDirection:'column', gap:2, background:'#f8fafc', borderRadius:10, padding:'8px 10px' };
+const dLabel: React.CSSProperties = { fontSize:10, color:'#94a3b8', textTransform:'uppercase', letterSpacing:0.3, fontWeight:600 };
+const msgBox = (color: string, bg: string): React.CSSProperties => ({ fontSize:12, color, background:bg, padding:'10px 14px', borderRadius:12, marginBottom:12 });
 const chipDivisi = (active: boolean, color: string): React.CSSProperties => ({
-  padding: '5px 14px', borderRadius: 100, borderWidth:1, borderStyle:'solid', fontSize: 11, cursor: 'pointer', fontFamily: 'sans-serif',
-  fontWeight: active ? 600 : 400, background: active ? color : '#fff', color: active ? '#fff' : '#334155',
-  borderColor: active ? 'transparent' : '#e2e8f0',
+  padding: '6px 14px', borderRadius: 100, borderWidth:1.5, borderStyle:'solid', fontSize: 11, cursor: 'pointer', fontFamily: FONT,
+  fontWeight: active ? 700 : 500, background: active ? color : '#fff', color: active ? '#fff' : '#334155',
+  borderColor: active ? 'transparent' : 'rgba(29,78,216,0.10)',
 });
-const divisiPopover: React.CSSProperties = { position:'absolute', top:'100%', right:0, marginTop:4, background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, padding:'8px 10px', boxShadow:'0 12px 30px -10px rgba(15,23,42,.25)', zIndex:50, minWidth:150 };
+const divisiPopover: React.CSSProperties = { position:'absolute', top:'100%', right:0, marginTop:6, background:'#fff', border:'1px solid rgba(29,78,216,0.08)', borderRadius:12, padding:'10px 12px', boxShadow:'0 12px 30px -10px rgba(15,23,42,.25)', zIndex:50, display:'flex', flexDirection:'row', flexWrap:'wrap', gap:6, minWidth:260, maxWidth:300 };
+const iconToolBtn: React.CSSProperties = { position:'relative', width:32, height:32, borderRadius:10, border:'1.5px solid rgba(29,78,216,0.10)', background:'#fff', color:'#334155', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 };
+const iconToolBadge: React.CSSProperties = { position:'absolute', top:-4, right:-4, minWidth:14, height:14, padding:'0 3px', borderRadius:100, background:BLUE, color:'#fff', fontSize:8.5, fontWeight:800, display:'flex', alignItems:'center', justifyContent:'center', border:'1.5px solid #fff' };
