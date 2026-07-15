@@ -2,6 +2,59 @@
 
 import { useEffect, useState, useCallback } from 'react';
 
+const MAKS_UKURAN = 10 * 1024 * 1024; // 10 MB
+
+// Kompres PDF di browser: render tiap halaman jadi gambar JPEG kualitas sedang,
+// susun ulang jadi PDF baru pakai pdf-lib. Trade-off: hasil jadi PDF berbasis
+// gambar (teks tidak lagi bisa di-select/cari), tapi ukuran turun drastis.
+// Wajib install dulu: npm install pdfjs-dist pdf-lib
+async function kompresPdf(file: File, onProgress?: (pesan: string) => void): Promise<File> {
+  const pdfjsLib = await import('pdfjs-dist');
+  const { PDFDocument } = await import('pdf-lib');
+
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const newPdf = await PDFDocument.create();
+
+  // Dua tahap kualitas — coba yang lebih halus dulu, turunkan lagi kalau masih kebesaran
+  const presets = [
+    { scale: 1.3, quality: 0.6 },
+    { scale: 1.0, quality: 0.45 },
+    { scale: 0.8, quality: 0.35 },
+  ];
+
+  for (const preset of presets) {
+    const doc = await PDFDocument.create();
+    for (let i = 1; i <= pdf.numPages; i++) {
+      onProgress?.(`Mengompres halaman ${i} dari ${pdf.numPages}...`);
+      const page = await pdf.getPage(i);
+      const viewport = page.getViewport({ scale: preset.scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d')!;
+      await page.render({ canvas, canvasContext: ctx, viewport }).promise;
+
+      const jpegDataUrl = canvas.toDataURL('image/jpeg', preset.quality);
+      const jpegBytes = await fetch(jpegDataUrl).then(r => r.arrayBuffer());
+      const jpegImage = await doc.embedJpg(jpegBytes);
+
+      const newPage = doc.addPage([viewport.width, viewport.height]);
+      newPage.drawImage(jpegImage, { x: 0, y: 0, width: viewport.width, height: viewport.height });
+    }
+    const bytes = await doc.save();
+    const arrBuf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    if (bytes.byteLength <= MAKS_UKURAN || preset === presets[presets.length - 1]) {
+      return new File([arrBuf], file.name.replace(/\.pdf$/i, '') + '-kompres.pdf', { type: 'application/pdf' });
+    }
+  }
+  // fallback (harusnya tidak pernah sampai sini)
+  return file;
+}
+
 interface Arsip {
   id: string; namaInstitusi: string; jenis: string; judul: string;
   tglBerlaku: string; tglBerakhir: string; fileId: string; fileUrl: string; namaFile: string;
@@ -10,7 +63,6 @@ interface Arsip {
   sumber: 'manual' | 'sistem';
   ttdTipe?: string; ttdTglFinal?: string; divisi?: string[];
 }
-
 const DIVISI_LABEL: Record<string, { label: string; color: string; bg: string }> = {
   pencegahan:    { label: 'Pencegahan',    color: '#1E3A8A', bg: '#DBEAFE' },
   pemberantasan: { label: 'Pemberantasan', color: '#A32D2D', bg: '#FEE2E2' },
@@ -18,6 +70,7 @@ const DIVISI_LABEL: Record<string, { label: string; color: string; bg: string }>
   pemberdayaan:  { label: 'Pemberdayaan',  color: '#92400E', bg: '#FEF3C7' },
 };
 const MAKS_DIVISI = 4;
+
 const FONT = "'Plus Jakarta Sans', -apple-system, sans-serif";
 
 export default function ArsipDokumenPage() {
@@ -49,6 +102,8 @@ export default function ArsipDokumenPage() {
   const [fCatatan, setFCatatan] = useState('');
   const [fFile, setFFile] = useState<File | null>(null);
   const [fFileError, setFFileError] = useState('');
+  const [compressing, setCompressing] = useState(false);
+  const [compressInfo, setCompressInfo] = useState('');
 
   const load = useCallback(() => {
     setLoading(true);
@@ -74,86 +129,82 @@ export default function ArsipDokumenPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    setFFileError('');
+    setFFileError(''); setCompressInfo('');
     if (!f) { setFFile(null); return; }
     const allowed = [
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'application/msword', 'application/pdf', 'image/jpeg', 'image/jpg', 'image/png',
     ];
-    if (!allowed.includes(f.type)) { 
-      setFFileError('Format tidak didukung. Gunakan Word, PDF, atau gambar (JPG/PNG).'); 
-      setFFile(null); 
-      return; 
+    if (!allowed.includes(f.type)) { setFFileError('Format tidak didukung. Gunakan Word, PDF, atau gambar (JPG/PNG).'); setFFile(null); return; }
+
+    if (f.size <= MAKS_UKURAN) { setFFile(f); return; }
+
+    // Lebih dari 10MB — kalau PDF, coba kompres otomatis. Selain PDF, tidak bisa dikompres, tolak.
+    if (f.type !== 'application/pdf') {
+      setFFileError(`File terlalu besar (${(f.size/1024/1024).toFixed(2)}MB). Maksimal 10MB.`);
+      setFFile(null);
+      return;
     }
-    if (f.size > 10 * 1024 * 1024) { 
-      setFFileError(`File terlalu besar (${(f.size/1024/1024).toFixed(2)}MB). Maksimal 10 MB.`); 
-      setFFile(null); 
-      return; 
+
+    setCompressing(true);
+    setCompressInfo(`Ukuran asli ${(f.size/1024/1024).toFixed(2)}MB, melebihi 10MB — mengompres otomatis...`);
+    try {
+      const compressed = await kompresPdf(f, (pesan) => setCompressInfo(pesan));
+      if (compressed.size > MAKS_UKURAN) {
+        setFFileError(`Sudah dikompres tapi masih ${(compressed.size/1024/1024).toFixed(2)}MB (maksimal 10MB). Coba PDF dengan halaman lebih sedikit atau kualitas gambar lebih rendah.`);
+        setFFile(null);
+      } else {
+        setFFile(compressed);
+        setCompressInfo(`Berhasil dikompres: ${(f.size/1024/1024).toFixed(2)}MB → ${(compressed.size/1024/1024).toFixed(2)}MB.`);
+      }
+    } catch {
+      setFFileError('Gagal mengompres PDF. Coba unggah file yang lebih kecil secara manual.');
+      setFFile(null);
+    } finally {
+      setCompressing(false);
     }
-    setFFile(f);
   };
 
   const resetForm = () => {
     setFNama(''); setFJenis('MOU'); setFJudul(''); setFBerlaku(''); setFBerakhir('');
     setFStatusKS('Sudah Berakhir'); setFDivisi([]);
     setFPIC(''); setFEmail(''); setFWa(''); setFCatatan(''); setFFile(null); setFFileError('');
+    setCompressInfo(''); setCompressing(false);
   };
 
- const submitArsip = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setError(''); setMsg('');
-  if (!fFile) { 
-    setError('Berkas dokumen wajib diunggah.'); 
-    return; 
-  }
+  const submitArsip = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(''); setMsg('');
+    if (!fFile) { setError('Berkas dokumen wajib diunggah.'); return; }
+    setSaving(true);
+    try {
+      const fd = new FormData();
+      fd.append('namaInstitusi', fNama);
+      fd.append('jenis', fJenis);
+      fd.append('judul', fJudul);
+      fd.append('tglBerlaku', fBerlaku);
+      fd.append('tglBerakhir', fBerakhir);
+      fd.append('statusKerjaSama', fStatusKS);
+      fd.append('divisi', JSON.stringify(fDivisi));
+      fd.append('namaPIC', fPIC);
+      fd.append('emailPIC', fEmail);
+      fd.append('waPIC', fWa);
+      fd.append('catatan', fCatatan);
+      fd.append('diarsipkanOleh', namaAdmin);
+      fd.append('file', fFile, fFile.name);
 
-  setSaving(true);
-
-  try {
-    const formData = new FormData();
-    formData.append('namaInstitusi', fNama);
-    formData.append('jenis', fJenis);
-    formData.append('judul', fJudul);
-    formData.append('tglBerlaku', fBerlaku);
-    formData.append('tglBerakhir', fBerakhir);
-    formData.append('statusKerjaSama', fStatusKS);
-    formData.append('namaPIC', fPIC);
-    formData.append('emailPIC', fEmail || '');
-    formData.append('waPIC', fWa || '');
-    formData.append('catatan', fCatatan || '');
-    formData.append('diarsipkanOleh', namaAdmin);
-    
-    if (fDivisi.length > 0) {
-      formData.append('divisi', JSON.stringify(fDivisi));
-    }
-
-    formData.append('file', fFile);   // ← File asli, bukan base64
-
-    const r = await fetch('/api/arsip-dokumen', {
-      method: 'POST',
-      body: formData,   // ← JANGAN pakai JSON.stringify
-    });
-
-    const d = await r.json();
-
-    if (!r.ok) {
-      setError(d.message || 'Gagal mengarsipkan.');
-      return;
-    }
-
-    setMsg('Dokumen berhasil diarsipkan.');
-    resetForm();
-    setShowForm(false);
-    load();
-  } catch (err) {
-    console.error(err);
-    setError('Terjadi kesalahan saat mengunggah file.');
-  } finally {
-    setSaving(false);
-  }
-};
+      const r = await fetch('/api/arsip-dokumen', { method: 'POST', body: fd });
+      const d = await r.json();
+      if (!r.ok) { setError(d.message || 'Gagal mengarsipkan.'); return; }
+      setMsg('Dokumen berhasil diarsipkan.');
+      resetForm();
+      setShowForm(false);
+      load();
+    } catch { setError('Terjadi kesalahan.'); }
+    finally { setSaving(false); }
+  };
 
   const hapusArsip = async (id: string) => {
     setDeleting(id); setError(''); setMsg('');
@@ -175,11 +226,12 @@ export default function ArsipDokumenPage() {
         ? { bg: '#DBEAFE', color: '#1D4ED8', label: 'Masih Berlaku' }
         : { bg: '#f1f3f2', color: '#5b6b66', label: 'Sudah Berakhir' };
     }
+    // sumber sistem — tampilkan status asli dokumen
     const k = a.statusKerjaSama;
     if (['Draft'].includes(k)) return { bg: '#eef2f6', color: '#475569', label: k };
     if (['Dalam Proses'].includes(k)) return { bg: '#EDE9FE', color: '#5B21B6', label: k };
     if (['Kedaluwarsa'].includes(k)) return { bg: '#FCEBEB', color: '#A32D2D', label: k };
-    return { bg: '#FEF3C7', color: '#D97706', label: k };
+    return { bg: '#FEF3C7', color: '#D97706', label: k }; // Selesai/Berlangsung/Berlaku dkk
   };
 
   return (
@@ -194,12 +246,13 @@ export default function ArsipDokumenPage() {
       </nav>
 
       <div style={{ maxWidth:1000, margin:'0 auto', padding:'1.5rem 1.25rem 3rem' }}>
+
         {msg   && <div style={{ ...msgBox('#1D4ED8','#DBEAFE'), marginBottom:14 }} className="fld">{msg}</div>}
         {error && <div style={{ ...msgBox('#A32D2D','#FCEBEB'), marginBottom:14 }} className="fld">{error}</div>}
 
         <div style={{ ...eyebrow, marginBottom:6 }}>Riwayat Lengkap Kerja Sama</div>
         <p style={{ fontSize:12, color:'#64748b', marginTop:0, marginBottom:18, lineHeight:1.6 }}>
-          Menggabungkan dokumen yang sedang berjalan di sistem dengan kerja sama lama yang diarsipkan manual.
+          Menggabungkan dokumen yang sedang berjalan di sistem (Draft, Aktif, Selesai, dst) dengan kerja sama lama yang diarsipkan manual oleh admin — internal, tidak tampil di publik maupun sisi mitra.
         </p>
 
         {showForm && (
@@ -306,16 +359,24 @@ export default function ArsipDokumenPage() {
                 </div>
 
                 <div style={{ marginBottom:16 }}>
-                  <label style={labelSt}>Berkas Dokumen * <span style={{ fontWeight:400, color:'#94a3b8' }}>(Word / PDF / Scan JPG-PNG, maks 10 MB)</span></label>
+                  <label style={labelSt}>Berkas Dokumen * <span style={{ fontWeight:400, color:'#94a3b8' }}>(Word / PDF / Scan JPG-PNG, maks 10MB — PDF di atas 10MB otomatis dikompres)</span></label>
                   <input type="file" accept=".doc,.docx,.pdf,.jpg,.jpeg,.png,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf,image/jpeg,image/png"
-                    onChange={handleFile} style={inputFull} />
-                  {fFile && <div style={{ fontSize:11, color:'#1D4ED8', marginTop:6 }}>✓ {fFile.name} ({(fFile.size/1024).toFixed(0)} KB)</div>}
+                    onChange={handleFile} disabled={compressing} style={inputFull} />
+                  {compressing && (
+                    <div style={{ fontSize:11, color:'#92400E', marginTop:6, display:'flex', alignItems:'center', gap:6 }}>
+                      <span style={{ width:12, height:12, border:'2px solid #FDE68A', borderTop:'2px solid #D97706', borderRadius:'50%', display:'inline-block', animation:'spin 0.8s linear infinite' }} />
+                      {compressInfo || 'Mengompres PDF...'}
+                    </div>
+                  )}
+                  {!compressing && compressInfo && <div style={{ fontSize:11, color:'#0F6E56', marginTop:6 }}>{compressInfo}</div>}
+                  {fFile && !compressing && <div style={{ fontSize:11, color:'#1D4ED8', marginTop:6 }}>✓ {fFile.name} ({(fFile.size/1024).toFixed(0)} KB)</div>}
                   {fFileError && <div style={{ fontSize:11, color:'#A32D2D', marginTop:6 }}>{fFileError}</div>}
                 </div>
 
-                <button type="submit" disabled={saving} style={{ ...btnPrimary, width:'100%' }} className="btn-hover">
-                  {saving ? 'Mengarsipkan…' : 'Simpan ke Arsip'}
+                <button type="submit" disabled={saving || compressing} style={{ ...btnPrimary, width:'100%' }} className="btn-hover">
+                  {compressing ? 'Menunggu kompresi selesai…' : saving ? 'Mengarsipkan…' : 'Simpan ke Arsip'}
                 </button>
+                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
               </form>
             </div>
           </div>
