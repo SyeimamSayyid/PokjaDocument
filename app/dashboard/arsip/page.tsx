@@ -101,52 +101,59 @@ export default function ArsipDokumenPage() {
     setFPIC(''); setFEmail(''); setFWa(''); setFCatatan(''); setFFile(null); setFFileError('');
   };
 
-  const submitArsip = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(''); setMsg('');
-    if (!fFile) { setError('Berkas dokumen wajib diunggah.'); return; }
+ const submitArsip = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setError(''); setMsg('');
+  if (!fFile) { 
+    setError('Berkas dokumen wajib diunggah.'); 
+    return; 
+  }
 
-    setSaving(true);
+  setSaving(true);
 
-    try {
-      const formData = new FormData();
-      formData.append('namaInstitusi', fNama);
-      formData.append('jenis', fJenis);
-      formData.append('judul', fJudul);
-      formData.append('tglBerlaku', fBerlaku);
-      formData.append('tglBerakhir', fBerakhir);
-      formData.append('statusKerjaSama', fStatusKS);
-      formData.append('namaPIC', fPIC);
-      formData.append('emailPIC', fEmail || '');
-      formData.append('waPIC', fWa || '');
-      formData.append('catatan', fCatatan || '');
-      formData.append('diarsipkanOleh', namaAdmin);
-      if (fDivisi.length > 0) formData.append('divisi', JSON.stringify(fDivisi));
-      formData.append('file', fFile);
-
-      const r = await fetch('/api/arsip-dokumen', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const d = await r.json();
-
-      if (!r.ok) {
-        setError(d.message || 'Gagal mengarsipkan.');
-        return;
-      }
-
-      setMsg('Dokumen berhasil diarsipkan.');
-      resetForm();
-      setShowForm(false);
-      load();
-    } catch (err) {
-      console.error(err);
-      setError('Terjadi kesalahan saat mengunggah file.');
-    } finally {
-      setSaving(false);
+  try {
+    const formData = new FormData();
+    formData.append('namaInstitusi', fNama);
+    formData.append('jenis', fJenis);
+    formData.append('judul', fJudul);
+    formData.append('tglBerlaku', fBerlaku);
+    formData.append('tglBerakhir', fBerakhir);
+    formData.append('statusKerjaSama', fStatusKS);
+    formData.append('namaPIC', fPIC);
+    formData.append('emailPIC', fEmail || '');
+    formData.append('waPIC', fWa || '');
+    formData.append('catatan', fCatatan || '');
+    formData.append('diarsipkanOleh', namaAdmin);
+    
+    if (fDivisi.length > 0) {
+      formData.append('divisi', JSON.stringify(fDivisi));
     }
-  };
+
+    formData.append('file', fFile);   // ← File asli, bukan base64
+
+    const r = await fetch('/api/arsip-dokumen', {
+      method: 'POST',
+      body: formData,   // ← JANGAN pakai JSON.stringify
+    });
+
+    const d = await r.json();
+
+    if (!r.ok) {
+      setError(d.message || 'Gagal mengarsipkan.');
+      return;
+    }
+
+    setMsg('Dokumen berhasil diarsipkan.');
+    resetForm();
+    setShowForm(false);
+    load();
+  } catch (err) {
+    console.error(err);
+    setError('Terjadi kesalahan saat mengunggah file.');
+  } finally {
+    setSaving(false);
+  }
+};
 
   const hapusArsip = async (id: string) => {
     setDeleting(id); setError(''); setMsg('');
