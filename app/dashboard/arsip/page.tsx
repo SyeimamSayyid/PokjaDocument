@@ -180,22 +180,41 @@ export default function ArsipDokumenPage() {
     if (!fFile) { setError('Berkas dokumen wajib diunggah.'); return; }
     setSaving(true);
     try {
-      const fd = new FormData();
-      fd.append('namaInstitusi', fNama);
-      fd.append('jenis', fJenis);
-      fd.append('judul', fJudul);
-      fd.append('tglBerlaku', fBerlaku);
-      fd.append('tglBerakhir', fBerakhir);
-      fd.append('statusKerjaSama', fStatusKS);
-      fd.append('divisi', JSON.stringify(fDivisi));
-      fd.append('namaPIC', fPIC);
-      fd.append('emailPIC', fEmail);
-      fd.append('waPIC', fWa);
-      fd.append('catatan', fCatatan);
-      fd.append('diarsipkanOleh', namaAdmin);
-      fd.append('file', fFile, fFile.name);
+      // Upload file LANGSUNG dari browser ke Google Apps Script — TIDAK lewat
+      // Vercel sama sekali. Vercel Serverless Function punya limit body request
+      // ~4.5MB yang tidak bisa dinaikkan lewat kode apa pun (batasan platform),
+      // jadi file besar wajib dikirim langsung ke Apps Script yang limitnya jauh
+      // lebih longgar. Vercel cuma kebagian metadata kecil di langkah berikutnya.
+      const appsScriptUrl = process.env.NEXT_PUBLIC_APPS_SCRIPT_WEBAPP_URL;
+      if (!appsScriptUrl) { setError('URL Apps Script belum dikonfigurasi (NEXT_PUBLIC_APPS_SCRIPT_WEBAPP_URL).'); return; }
 
-      const r = await fetch('/api/arsip-dokumen', { method: 'POST', body: fd });
+      const base64 = await new Promise<string>((res, rej) => {
+        const reader = new FileReader();
+        reader.onload  = () => res((reader.result as string).split(',')[1]);
+        reader.onerror = () => rej(new Error('Gagal baca file'));
+        reader.readAsDataURL(fFile);
+      });
+
+      const uploadRes = await fetch(appsScriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'uploadArsipDokumen', namaFile: fFile.name, base64Data: base64, mimeType: fFile.type }),
+        redirect: 'follow',
+      });
+      const uploaded = await uploadRes.json();
+      if (!uploaded.success) { setError(uploaded.message || 'Gagal mengunggah berkas ke Drive.'); return; }
+
+      // Metadata doang — kecil, aman lewat Vercel.
+      const r = await fetch('/api/arsip-dokumen', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          namaInstitusi: fNama, jenis: fJenis, judul: fJudul,
+          tglBerlaku: fBerlaku, tglBerakhir: fBerakhir, statusKerjaSama: fStatusKS, divisi: fDivisi,
+          namaPIC: fPIC, emailPIC: fEmail, waPIC: fWa, catatan: fCatatan,
+          diarsipkanOleh: namaAdmin,
+          fileId: uploaded.fileId, fileUrl: uploaded.fileUrl, namaFile: uploaded.namaFile,
+        }),
+      });
       const d = await r.json();
       if (!r.ok) { setError(d.message || 'Gagal mengarsipkan.'); return; }
       setMsg('Dokumen berhasil diarsipkan.');

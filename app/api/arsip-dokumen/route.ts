@@ -3,7 +3,6 @@ import { appendRow, getSheetData } from '@/lib/sheet';
 import { generateId, formatTanggalWaktu } from '@/lib/utils';
 import { google } from 'googleapis';
 
-const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_WEBAPP_URL!;
 const SHEET = 'Arsip Dokumen';
 
 // Kolom Arsip Dokumen (0-based, 17 kolom)
@@ -33,16 +32,6 @@ interface ArsipItem {
   diarsipkanOleh: string; tglDiarsipkan: string; statusKerjaSama: string;
   sumber: 'manual' | 'sistem';
   ttdTipe?: string; ttdTglFinal?: string; divisi?: string[];
-}
-
-async function uploadFileArsip(params: { namaFile: string; base64Data: string; mimeType: string }) {
-  const res = await fetch(APPS_SCRIPT_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'uploadArsipDokumen', ...params }),
-    redirect: 'follow',
-  });
-  return res.json();
 }
 
 // Resolve kontak PIC dari Pengajuan Mitra utk dokumen sistem (idMitra dulu, fallback nama)
@@ -157,53 +146,33 @@ export async function GET(req: NextRequest) {
 }
 
 // ── POST: tambah arsip manual baru ──────────────────────────
+// Catatan: upload berkas ke Drive sekarang dilakukan LANGSUNG dari browser ke
+// Apps Script (lihat arsip-page.tsx) — bukan lewat route ini lagi. Ini supaya
+// file besar (sampai puluhan MB) tidak kena limit body request Vercel Serverless
+// Function (~4.5MB, hard limit platform, tidak bisa dinaikkan lewat kode).
+// Route ini cuma terima metadata + hasil upload (fileId/fileUrl/namaFile) yang
+// sudah jadi, lalu simpan barisnya ke sheet.
 export async function POST(req: NextRequest) {
   try {
-    // FormData, bukan JSON+base64 — payload dari browser jauh lebih kecil (tidak ada
-    // overhead ~33% dari encoding base64 di sisi client), dan tidak gampang kena
-    // limit ukuran body yang sering diterapkan proxy/hosting untuk request JSON besar.
-    const form = await req.formData();
-    const namaInstitusi   = String(form.get('namaInstitusi') || '');
-    const jenis           = String(form.get('jenis') || '');
-    const judul            = String(form.get('judul') || '');
-    const tglBerlaku      = String(form.get('tglBerlaku') || '');
-    const tglBerakhir     = String(form.get('tglBerakhir') || '');
-    const namaPIC          = String(form.get('namaPIC') || '');
-    const emailPIC         = String(form.get('emailPIC') || '');
-    const waPIC             = String(form.get('waPIC') || '');
-    const catatan          = String(form.get('catatan') || '');
-    const diarsipkanOleh   = String(form.get('diarsipkanOleh') || '');
-    const statusKerjaSama = String(form.get('statusKerjaSama') || '');
-    let divisi: string[] = [];
-    try { divisi = JSON.parse(String(form.get('divisi') || '[]')); } catch { divisi = []; }
+    const body = await req.json();
+    const {
+      namaInstitusi, jenis, judul, tglBerlaku, tglBerakhir,
+      namaPIC, emailPIC, waPIC, catatan, diarsipkanOleh, statusKerjaSama, divisi,
+      fileId, fileUrl, namaFile,
+    } = body;
 
-    const file = form.get('file') as File | null;
-
-    if (!namaInstitusi.trim()) return NextResponse.json({ message: 'Nama institusi wajib diisi.' }, { status: 400 });
+    if (!namaInstitusi?.trim()) return NextResponse.json({ message: 'Nama institusi wajib diisi.' }, { status: 400 });
     if (!jenis || !['MOU', 'PKS'].includes(jenis)) return NextResponse.json({ message: 'Jenis wajib dipilih.' }, { status: 400 });
-    if (!judul.trim()) return NextResponse.json({ message: 'Judul wajib diisi.' }, { status: 400 });
+    if (!judul?.trim()) return NextResponse.json({ message: 'Judul wajib diisi.' }, { status: 400 });
     if (!tglBerlaku) return NextResponse.json({ message: 'Tanggal berlaku wajib diisi.' }, { status: 400 });
     if (!tglBerakhir) return NextResponse.json({ message: 'Tanggal berakhir wajib diisi.' }, { status: 400 });
-    if (!namaPIC.trim()) return NextResponse.json({ message: 'Nama PIC wajib diisi.' }, { status: 400 });
-    if (!emailPIC.trim() && !waPIC.trim()) return NextResponse.json({ message: 'Email atau No. WA PIC wajib diisi.' }, { status: 400 });
+    if (!namaPIC?.trim()) return NextResponse.json({ message: 'Nama PIC wajib diisi.' }, { status: 400 });
+    if (!emailPIC?.trim() && !waPIC?.trim()) return NextResponse.json({ message: 'Email atau No. WA PIC wajib diisi.' }, { status: 400 });
     if (!['Masih Berlaku', 'Sudah Berakhir'].includes(statusKerjaSama)) {
       return NextResponse.json({ message: 'Status kerja sama wajib dipilih.' }, { status: 400 });
     }
-    if (!file) return NextResponse.json({ message: 'Berkas dokumen wajib diunggah.' }, { status: 400 });
-
-    const MAKS_UKURAN = 10 * 1024 * 1024; // 10 MB
-    if (file.size > MAKS_UKURAN) {
-      return NextResponse.json({ message: `File terlalu besar (${(file.size/1024/1024).toFixed(2)}MB). Maksimal 10MB.` }, { status: 400 });
-    }
-
-    // Base64-kan di server (bukan di browser) — cuma dipakai buat kirim ke Apps
-    // Script Web App, yang memang menerima JSON+base64 untuk simpan ke Drive.
-    const arrayBuffer = await file.arrayBuffer();
-    const base64Data = Buffer.from(arrayBuffer).toString('base64');
-
-    const uploaded = await uploadFileArsip({ namaFile: file.name, base64Data, mimeType: file.type });
-    if (!uploaded.success) {
-      return NextResponse.json({ message: uploaded.message || 'Gagal mengunggah berkas.' }, { status: 400 });
+    if (!fileId || !fileUrl || !namaFile) {
+      return NextResponse.json({ message: 'Berkas dokumen wajib diunggah terlebih dahulu.' }, { status: 400 });
     }
 
     const id = generateId('ARS');
@@ -213,19 +182,19 @@ export async function POST(req: NextRequest) {
 
     await appendRow(SHEET, [
       id, namaInstitusi.trim(), jenis, judul.trim(), tglBerlaku, tglBerakhir,
-      uploaded.fileId, uploaded.fileUrl, uploaded.namaFile,
-      namaPIC.trim(), emailPIC.trim(), waPIC.trim(),
-      catatan.trim(), diarsipkanOleh, now, statusKerjaSama, divisiStr,
+      fileId, fileUrl, namaFile,
+      namaPIC.trim(), emailPIC?.trim() || '', waPIC?.trim() || '',
+      catatan?.trim() || '', diarsipkanOleh || '', now, statusKerjaSama, divisiStr,
     ]);
 
     return NextResponse.json({
       message: 'Dokumen berhasil diarsipkan.',
       data: {
         id, namaInstitusi: namaInstitusi.trim(), jenis, judul: judul.trim(),
-        tglBerlaku, tglBerakhir, fileId: uploaded.fileId, fileUrl: uploaded.fileUrl,
-        namaFile: uploaded.namaFile, namaPIC: namaPIC.trim(),
-        emailPIC: emailPIC.trim(), waPIC: waPIC.trim(),
-        catatan: catatan.trim(), diarsipkanOleh,
+        tglBerlaku, tglBerakhir, fileId, fileUrl, namaFile,
+        namaPIC: namaPIC.trim(),
+        emailPIC: emailPIC?.trim() || '', waPIC: waPIC?.trim() || '',
+        catatan: catatan?.trim() || '', diarsipkanOleh: diarsipkanOleh || '',
         tglDiarsipkan: now, statusKerjaSama, sumber: 'manual', divisi: divisiArr,
       },
     });
