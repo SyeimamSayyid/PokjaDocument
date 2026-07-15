@@ -23,6 +23,12 @@ const DOK_COL = {
 };
 const PJ_COL = { ID_MITRA: 1, NAMA: 2, EMAIL: 7, WA: 8, PIC: 18 };
 
+export const config = {
+  api: {
+    bodyParser: false,   // ← PENTING untuk FormData
+  },
+};
+
 function normNama(s: string): string {
   return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -46,7 +52,7 @@ async function uploadFileArsip(params: { namaFile: string; base64Data: string; m
   return res.json();
 }
 
-// Resolve kontak PIC dari Pengajuan Mitra utk dokumen sistem (idMitra dulu, fallback nama)
+// Resolve kontak PIC dari Pengajuan Mitra utk dokumen sistem
 async function resolveKontak(idMitra: string, namaInstitusi: string, pjRows: string[][]) {
   let matches = idMitra ? pjRows.filter(r => String(r[PJ_COL.ID_MITRA] || '').trim() === idMitra) : [];
   if (matches.length === 0 && namaInstitusi) {
@@ -65,7 +71,7 @@ async function resolveKontak(idMitra: string, namaInstitusi: string, pjRows: str
   return { namaPIC, email, waPIC };
 }
 
-// ── GET: daftar arsip GABUNGAN — manual (Arsip Dokumen) + sistem (Dokumen Kerja sama) ──
+// ── GET: daftar arsip GABUNGAN ──
 export async function GET(req: NextRequest) {
   const session = await requireSession(req, ['admin', 'superadmin']);
   if (!session) {
@@ -76,9 +82,9 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const jenis  = searchParams.get('jenis')?.trim();
     const cari   = searchParams.get('cari')?.trim().toLowerCase();
-    const sumber = searchParams.get('sumber')?.trim(); // 'manual' | 'sistem' | kosong=semua
+    const sumber = searchParams.get('sumber')?.trim();
 
-    // 1) Arsip manual (kerja sama lama, diinput admin)
+    // 1) Arsip manual
     let dataManual: ArsipItem[] = [];
     try {
       const rows = await getSheetData(SHEET);
@@ -106,7 +112,7 @@ export async function GET(req: NextRequest) {
         }));
     } catch { dataManual = []; }
 
-    // 2) Dokumen sistem — SEMUA dokumen apa pun statusnya (Draft, Aktif, Selesai, dst)
+    // 2) Dokumen sistem
     let dataSistem: ArsipItem[] = [];
     try {
       const dokRows = await getSheetData('Dokumen Kerja sama');
@@ -162,7 +168,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// ── POST: tambah arsip manual baru ──────────────────────────
+// ── POST: tambah arsip manual baru (MULTIPART) ──────────────────────────
 export async function POST(req: NextRequest) {
   const session = await requireSession(req, ['admin', 'superadmin']);
   if (!session) {
@@ -170,33 +176,50 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = await req.json();
-    const {
-      namaInstitusi, jenis, judul, tglBerlaku, tglBerakhir,
-      namaPIC, emailPIC, waPIC, catatan, diarsipkanOleh, statusKerjaSama, divisi,
-      fileBase64, fileName, fileMime,
-    } = body;
+    const formData = await req.formData();
+
+    const namaInstitusi = formData.get('namaInstitusi') as string;
+    const jenis = formData.get('jenis') as string;
+    const judul = formData.get('judul') as string;
+    const tglBerlaku = formData.get('tglBerlaku') as string;
+    const tglBerakhir = formData.get('tglBerakhir') as string;
+    const statusKerjaSama = formData.get('statusKerjaSama') as string;
+    const namaPIC = formData.get('namaPIC') as string;
+    const emailPIC = formData.get('emailPIC') as string;
+    const waPIC = formData.get('waPIC') as string;
+    const catatan = formData.get('catatan') as string;
+    const diarsipkanOleh = formData.get('diarsipkanOleh') as string;
+    const divisiJson = formData.get('divisi') as string | null;
+    const file = formData.get('file') as File | null;
 
     if (!namaInstitusi?.trim()) return NextResponse.json({ message: 'Nama institusi wajib diisi.' }, { status: 400 });
     if (!jenis || !['MOU', 'PKS'].includes(jenis)) return NextResponse.json({ message: 'Jenis wajib dipilih.' }, { status: 400 });
     if (!judul?.trim()) return NextResponse.json({ message: 'Judul wajib diisi.' }, { status: 400 });
-    if (!tglBerlaku) return NextResponse.json({ message: 'Tanggal berlaku wajib diisi.' }, { status: 400 });
-    if (!tglBerakhir) return NextResponse.json({ message: 'Tanggal berakhir wajib diisi.' }, { status: 400 });
+    if (!tglBerlaku || !tglBerakhir) return NextResponse.json({ message: 'Tanggal berlaku & berakhir wajib diisi.' }, { status: 400 });
     if (!namaPIC?.trim()) return NextResponse.json({ message: 'Nama PIC wajib diisi.' }, { status: 400 });
     if (!emailPIC?.trim() && !waPIC?.trim()) return NextResponse.json({ message: 'Email atau No. WA PIC wajib diisi.' }, { status: 400 });
     if (!['Masih Berlaku', 'Sudah Berakhir'].includes(statusKerjaSama)) {
       return NextResponse.json({ message: 'Status kerja sama wajib dipilih.' }, { status: 400 });
     }
-    if (!fileBase64 || !fileName || !fileMime) return NextResponse.json({ message: 'Berkas dokumen wajib diunggah.' }, { status: 400 });
+    if (!file) return NextResponse.json({ message: 'Berkas dokumen wajib diunggah.' }, { status: 400 });
 
-    const uploaded = await uploadFileArsip({ namaFile: fileName, base64Data: fileBase64, mimeType: fileMime });
+    // Konversi file ke base64 untuk Apps Script
+    const bytes = await file.arrayBuffer();
+    const base64 = Buffer.from(bytes).toString('base64');
+
+    const uploaded = await uploadFileArsip({
+      namaFile: file.name,
+      base64Data: base64,
+      mimeType: file.type,
+    });
+
     if (!uploaded.success) {
       return NextResponse.json({ message: uploaded.message || 'Gagal mengunggah berkas.' }, { status: 400 });
     }
 
     const id = generateId('ARS');
     const now = formatTanggalWaktu(new Date());
-    const divisiArr: string[] = Array.isArray(divisi) ? divisi.filter(Boolean) : [];
+    const divisiArr: string[] = divisiJson ? JSON.parse(divisiJson) : [];
     const divisiStr = divisiArr.join(',');
 
     await appendRow(SHEET, [
@@ -218,13 +241,12 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error('Upload error:', err);
+    return NextResponse.json({ message: 'Terjadi kesalahan saat memproses upload.' }, { status: 500 });
   }
 }
 
-// ── DELETE: hapus arsip MANUAL berdasarkan ID ───────────────
-// Hanya berlaku utk entri manual — entri sistem tidak bisa dihapus dari sini
-// karena itu representasi live dari dokumen asli, bukan data milik sheet Arsip.
+// ── DELETE: hapus arsip MANUAL ───────────────
 export async function DELETE(req: NextRequest) {
   const session = await requireSession(req, ['admin', 'superadmin']);
   if (!session) {
@@ -238,14 +260,14 @@ export async function DELETE(req: NextRequest) {
 
     const rows = await getSheetData(SHEET);
     const idx = rows.findIndex(r => String(r[C.ID] || '').trim() === id);
-    if (idx === -1) return NextResponse.json({ message: 'Data arsip tidak ditemukan (mungkin ini entri sistem, bukan arsip manual).' }, { status: 404 });
+    if (idx === -1) return NextResponse.json({ message: 'Data arsip tidak ditemukan.' }, { status: 404 });
 
     const rowNumber = idx + 2;
 
-    const auth   = new google.auth.GoogleAuth({
+    const auth = new google.auth.GoogleAuth({
       credentials: {
         client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-        private_key:  process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+        private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
       },
       scopes: ['https://www.googleapis.com/auth/spreadsheets'],
     });

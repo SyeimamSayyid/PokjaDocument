@@ -10,6 +10,7 @@ interface Arsip {
   sumber: 'manual' | 'sistem';
   ttdTipe?: string; ttdTglFinal?: string; divisi?: string[];
 }
+
 const DIVISI_LABEL: Record<string, { label: string; color: string; bg: string }> = {
   pencegahan:    { label: 'Pencegahan',    color: '#1E3A8A', bg: '#DBEAFE' },
   pemberantasan: { label: 'Pemberantasan', color: '#A32D2D', bg: '#FEE2E2' },
@@ -17,7 +18,6 @@ const DIVISI_LABEL: Record<string, { label: string; color: string; bg: string }>
   pemberdayaan:  { label: 'Pemberdayaan',  color: '#92400E', bg: '#FEF3C7' },
 };
 const MAKS_DIVISI = 4;
-
 const FONT = "'Plus Jakarta Sans', -apple-system, sans-serif";
 
 export default function ArsipDokumenPage() {
@@ -82,8 +82,16 @@ export default function ArsipDokumenPage() {
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'application/msword', 'application/pdf', 'image/jpeg', 'image/jpg', 'image/png',
     ];
-    if (!allowed.includes(f.type)) { setFFileError('Format tidak didukung. Gunakan Word, PDF, atau gambar (JPG/PNG).'); setFFile(null); return; }
-    if (f.size > 10 * 1024 * 1024) { setFFileError(`File terlalu besar (${(f.size/1024/1024).toFixed(2)}MB). Maksimal 10 MB.`); setFFile(null); return; }
+    if (!allowed.includes(f.type)) { 
+      setFFileError('Format tidak didukung. Gunakan Word, PDF, atau gambar (JPG/PNG).'); 
+      setFFile(null); 
+      return; 
+    }
+    if (f.size > 10 * 1024 * 1024) { 
+      setFFileError(`File terlalu besar (${(f.size/1024/1024).toFixed(2)}MB). Maksimal 10 MB.`); 
+      setFFile(null); 
+      return; 
+    }
     setFFile(f);
   };
 
@@ -97,32 +105,47 @@ export default function ArsipDokumenPage() {
     e.preventDefault();
     setError(''); setMsg('');
     if (!fFile) { setError('Berkas dokumen wajib diunggah.'); return; }
+
     setSaving(true);
+
     try {
-      const base64 = await new Promise<string>((res, rej) => {
-        const reader = new FileReader();
-        reader.onload  = () => res((reader.result as string).split(',')[1]);
-        reader.onerror = () => rej(new Error('Gagal baca file'));
-        reader.readAsDataURL(fFile);
-      });
+      const formData = new FormData();
+      formData.append('namaInstitusi', fNama);
+      formData.append('jenis', fJenis);
+      formData.append('judul', fJudul);
+      formData.append('tglBerlaku', fBerlaku);
+      formData.append('tglBerakhir', fBerakhir);
+      formData.append('statusKerjaSama', fStatusKS);
+      formData.append('namaPIC', fPIC);
+      formData.append('emailPIC', fEmail || '');
+      formData.append('waPIC', fWa || '');
+      formData.append('catatan', fCatatan || '');
+      formData.append('diarsipkanOleh', namaAdmin);
+      if (fDivisi.length > 0) formData.append('divisi', JSON.stringify(fDivisi));
+      formData.append('file', fFile);
+
       const r = await fetch('/api/arsip-dokumen', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          namaInstitusi: fNama, jenis: fJenis, judul: fJudul,
-          tglBerlaku: fBerlaku, tglBerakhir: fBerakhir, statusKerjaSama: fStatusKS, divisi: fDivisi,
-          namaPIC: fPIC, emailPIC: fEmail, waPIC: fWa, catatan: fCatatan,
-          diarsipkanOleh: namaAdmin,
-          fileBase64: base64, fileName: fFile.name, fileMime: fFile.type,
-        }),
+        method: 'POST',
+        body: formData,
       });
+
       const d = await r.json();
-      if (!r.ok) { setError(d.message || 'Gagal mengarsipkan.'); return; }
+
+      if (!r.ok) {
+        setError(d.message || 'Gagal mengarsipkan.');
+        return;
+      }
+
       setMsg('Dokumen berhasil diarsipkan.');
       resetForm();
       setShowForm(false);
       load();
-    } catch { setError('Terjadi kesalahan.'); }
-    finally { setSaving(false); }
+    } catch (err) {
+      console.error(err);
+      setError('Terjadi kesalahan saat mengunggah file.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const hapusArsip = async (id: string) => {
@@ -145,12 +168,11 @@ export default function ArsipDokumenPage() {
         ? { bg: '#DBEAFE', color: '#1D4ED8', label: 'Masih Berlaku' }
         : { bg: '#f1f3f2', color: '#5b6b66', label: 'Sudah Berakhir' };
     }
-    // sumber sistem — tampilkan status asli dokumen
     const k = a.statusKerjaSama;
     if (['Draft'].includes(k)) return { bg: '#eef2f6', color: '#475569', label: k };
     if (['Dalam Proses'].includes(k)) return { bg: '#EDE9FE', color: '#5B21B6', label: k };
     if (['Kedaluwarsa'].includes(k)) return { bg: '#FCEBEB', color: '#A32D2D', label: k };
-    return { bg: '#FEF3C7', color: '#D97706', label: k }; // Selesai/Berlangsung/Berlaku dkk
+    return { bg: '#FEF3C7', color: '#D97706', label: k };
   };
 
   return (
@@ -165,13 +187,12 @@ export default function ArsipDokumenPage() {
       </nav>
 
       <div style={{ maxWidth:1000, margin:'0 auto', padding:'1.5rem 1.25rem 3rem' }}>
-
         {msg   && <div style={{ ...msgBox('#1D4ED8','#DBEAFE'), marginBottom:14 }} className="fld">{msg}</div>}
         {error && <div style={{ ...msgBox('#A32D2D','#FCEBEB'), marginBottom:14 }} className="fld">{error}</div>}
 
         <div style={{ ...eyebrow, marginBottom:6 }}>Riwayat Lengkap Kerja Sama</div>
         <p style={{ fontSize:12, color:'#64748b', marginTop:0, marginBottom:18, lineHeight:1.6 }}>
-          Menggabungkan dokumen yang sedang berjalan di sistem (Draft, Aktif, Selesai, dst) dengan kerja sama lama yang diarsipkan manual oleh admin — internal, tidak tampil di publik maupun sisi mitra.
+          Menggabungkan dokumen yang sedang berjalan di sistem dengan kerja sama lama yang diarsipkan manual.
         </p>
 
         {showForm && (
