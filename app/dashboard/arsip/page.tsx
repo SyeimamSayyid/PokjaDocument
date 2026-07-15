@@ -278,7 +278,7 @@ export default function ArsipDokumenPage() {
                 </div>
 
                 <div style={{ marginBottom:16 }}>
-                  <label style={labelSt}>Berkas Dokumen * <span style={{ fontWeight:400, color:'#94a3b8' }}>(Word / PDF / Scan JPG-PNG, maks 5MB)</span></label>
+                  <label style={labelSt}>Berkas Dokumen * <span style={{ fontWeight:400, color:'#94a3b8' }}>(Word / PDF / Scan JPG-PNG, maks 10 MB)</span></label>
                   <input type="file" accept=".doc,.docx,.pdf,.jpg,.jpeg,.png,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf,image/jpeg,image/png"
                     onChange={handleFile} style={inputFull} />
                   {fFile && <div style={{ fontSize:11, color:'#1D4ED8', marginTop:6 }}>✓ {fFile.name} ({(fFile.size/1024).toFixed(0)} KB)</div>}
