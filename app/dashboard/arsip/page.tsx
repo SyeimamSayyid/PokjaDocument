@@ -197,7 +197,13 @@ export default function ArsipDokumenPage() {
 
       const uploadRes = await fetch(appsScriptUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        // Content-Type text/plain SENGAJA, bukan application/json — Apps Script Web App
+        // tidak punya handler untuk preflight OPTIONS, jadi kalau pakai application/json
+        // browser bakal kirim preflight duluan dan langsung diblokir CORS sebelum request
+        // sungguhan terkirim. Dengan text/plain, browser anggap ini "simple request" dan
+        // preflight dilewati sama sekali. Isi body tetap JSON, Apps Script tetap baca normal
+        // lewat e.postData.contents.
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ action: 'uploadArsipDokumen', namaFile: fFile.name, base64Data: base64, mimeType: fFile.type }),
         redirect: 'follow',
       });
