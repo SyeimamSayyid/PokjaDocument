@@ -52,6 +52,7 @@ function initials(name: string) {
 }
 
 export default function KomentarRevisi({ idDokumen, pengirim, senderId, namaPengirim, pollMs = 0 }: Props) {
+  const [tab, setTab] = useState<'diskusi' | 'aktivitas'>('diskusi');
   const [list, setList]       = useState<Komentar[]>([]);
   const [pesan, setPesan]     = useState('');
   const [loading, setLoading] = useState(true);
@@ -132,9 +133,15 @@ export default function KomentarRevisi({ idDokumen, pengirim, senderId, namaPeng
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); kirim(); }
   };
 
+  // Diskusi = pesan asli admin/mitra. Log Aktivitas = catatan otomatis sistem
+  // (perubahan status, divisi, TTD, edit Docs langsung, dst) — idPengirim 'sistem'.
+  const listDiskusi   = list.filter(k => k.idPengirim !== 'sistem');
+  const listAktivitas = list.filter(k => k.idPengirim === 'sistem');
+  const listAktif = tab === 'diskusi' ? listDiskusi : listAktivitas;
+
   // Kelompokkan bubble berurutan dari pengirim yang sama (rapatkan, sembunyikan label berulang)
-  const grouped = list.map((k, i) => {
-    const prev = list[i - 1];
+  const grouped = listAktif.map((k, i) => {
+    const prev = listAktif[i - 1];
     const sameAsPrev = prev && prev.idPengirim === k.idPengirim;
     return { ...k, showHeader: !sameAsPrev };
   });
@@ -153,12 +160,22 @@ export default function KomentarRevisi({ idDokumen, pengirim, senderId, namaPeng
           <span style={{ fontSize: 13, fontWeight: 700, color: '#0a2e24', letterSpacing: '-0.01em' }}>
             Komentar Revisi
           </span>
-          {list.length > 0 && <span style={countPill}>{list.length}</span>}
+          {listDiskusi.length > 0 && tab === 'diskusi' && <span style={countPill}>{listDiskusi.length}</span>}
+          {listAktivitas.length > 0 && tab === 'aktivitas' && <span style={countPill}>{listAktivitas.length}</span>}
         </div>
         <button onClick={() => load()} style={refreshBtn} title="Muat ulang" className="krv-refresh">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
             <path d="M21 12a9 9 0 1 1-2.64-6.36M21 4v5h-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', gap: 6, padding: '0 14px 10px' }}>
+        <button onClick={() => setTab('diskusi')} style={{ ...tabBtn, ...(tab === 'diskusi' ? tabBtnActive : {}) }}>
+          Diskusi{listDiskusi.length > 0 ? ` (${listDiskusi.length})` : ''}
+        </button>
+        <button onClick={() => setTab('aktivitas')} style={{ ...tabBtn, ...(tab === 'aktivitas' ? tabBtnActive : {}) }}>
+          Log Aktivitas{listAktivitas.length > 0 ? ` (${listAktivitas.length})` : ''}
         </button>
       </div>
 
@@ -176,9 +193,27 @@ export default function KomentarRevisi({ idDokumen, pengirim, senderId, namaPeng
                   stroke="#0F6E56" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
-            <div style={{ fontWeight: 600, color: '#3a4742', fontSize: 12.5 }}>Belum ada komentar</div>
-            <div style={{ fontSize: 11.5, color: '#9aa5a1', marginTop: 2 }}>Mulai diskusi revisi dokumen ini.</div>
+            <div style={{ fontWeight: 600, color: '#3a4742', fontSize: 12.5 }}>
+              {tab === 'diskusi' ? 'Belum ada komentar' : 'Belum ada aktivitas tercatat'}
+            </div>
+            <div style={{ fontSize: 11.5, color: '#9aa5a1', marginTop: 2 }}>
+              {tab === 'diskusi' ? 'Mulai diskusi revisi dokumen ini.' : 'Perubahan status, divisi, TTD, atau edit langsung di Docs akan muncul di sini.'}
+            </div>
           </div>
+        ) : tab === 'aktivitas' ? (
+          grouped.map(k => (
+            <div key={k.id} className="krv-row" style={{ display: 'flex', gap: 10, padding: '9px 2px', borderBottom: '1px solid rgba(10,46,36,0.05)' }}>
+              <div style={{ width: 26, height: 26, borderRadius: '50%', background: '#eef1f0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                  <path d="M12 8v4l3 3M12 3a9 9 0 1 0 9 9" stroke="#5b6b66" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, color: '#283330', lineHeight: 1.6 }}>{k.pesan}</div>
+                <div style={{ fontSize: 9.5, color: '#b7bfbb', marginTop: 2 }}>{k.tglDibuat}</div>
+              </div>
+            </div>
+          ))
         ) : (
           grouped.map((k, idx) => {
             const mine = k.idPengirim === myId;
@@ -237,7 +272,7 @@ export default function KomentarRevisi({ idDokumen, pengirim, senderId, namaPeng
         )}
       </div>
 
-      {error && (
+      {tab === 'diskusi' && error && (
         <div style={errBox}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
             <circle cx="12" cy="12" r="9" stroke="#A32D2D" strokeWidth="1.8" />
@@ -247,6 +282,8 @@ export default function KomentarRevisi({ idDokumen, pengirim, senderId, namaPeng
         </div>
       )}
 
+      {tab === 'diskusi' && (
+      <>
       <div style={composeRow}>
         <textarea
           value={pesan}
@@ -283,6 +320,8 @@ export default function KomentarRevisi({ idDokumen, pengirim, senderId, namaPeng
       <div style={{ fontSize: 10, color: '#b7bfbb', marginTop: 6, paddingLeft: 2 }}>
         Enter untuk kirim · Shift+Enter baris baru
       </div>
+      </>
+      )}
     </div>
   );
 }
@@ -311,6 +350,8 @@ const card: React.CSSProperties = {
 const headerRow: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 };
 const titleIcon: React.CSSProperties = { width: 24, height: 24, borderRadius: 8, background: '#eef9f4', color: '#0F6E56', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
 const countPill: React.CSSProperties = { fontSize: 10.5, fontWeight: 700, color: '#0F6E56', background: '#eef9f4', borderRadius: 100, padding: '1px 7px' };
+const tabBtn: React.CSSProperties = { fontSize: 11, fontWeight: 600, padding: '6px 12px', borderRadius: 100, borderWidth: 1, borderStyle: 'solid', borderColor: 'rgba(10,46,36,0.08)', background: '#fff', color: '#5b6b66', cursor: 'pointer', fontFamily: FONT, transition: 'all 0.25s ease' };
+const tabBtnActive: React.CSSProperties = { background: '#0a2e24', color: '#fff', borderColor: '#0a2e24' };
 const refreshBtn: React.CSSProperties = { width: 26, height: 26, borderRadius: 8, border: '1px solid rgba(10,46,36,0.08)', background: '#fff', color: '#9aa5a1', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' };
 
 const threadBox: React.CSSProperties = { display: 'flex', flexDirection: 'column', maxHeight: 340, minHeight: 90, overflowY: 'auto', padding: '2px 2px 4px' };

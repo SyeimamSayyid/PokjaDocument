@@ -1,15 +1,15 @@
 'use client';
 
-import { useEffect, useState, useRef, use } from 'react';
+import { useEffect, useState, use } from 'react';
 import KomentarRevisi from '@/components/KomentarRevisi';
+import EditPencilIndicator from '@/components/EditPencilIndicator';
 import KomentarDocs from '@/components/KomentarDocs';
 import NotifikasiAdminBell from '@/components/NotifikasiAdminBell';
-import EditPencilIndicator from '@/components/EditPencilIndicator';
 import {
   FiArrowLeft, FiExternalLink, FiEyeOff, FiEye, FiCheckCircle, FiCornerUpLeft,
   FiClock, FiInfo, FiHome, FiCalendar, FiDownload, FiCheck,
   FiX as FiClose, FiBriefcase, FiFileText, FiLoader, FiMail, FiPhone, FiUser, FiCopy,
-  FiEdit3, FiSend, FiPenTool, FiEdit2, FiZap,
+  FiEdit3, FiSend, FiPenTool, FiEdit2, FiZap, FiUpload, FiTrash2,
 } from 'react-icons/fi';
 
 interface Dokumen {
@@ -21,6 +21,9 @@ interface Dokumen {
   tglKegiatanMulai: string; tglKegiatanSelesai: string; pdfId: string;
   sisaHari: number | null;
   divisi: string[];
+  manualLog?: string;
+  scanTtdId?: string;
+  scanTtdUrl?: string;
   ttdTipe: string; ttdTglDiajukan: string; ttdStatus: string; ttdTglFinal: string; ttdCatatan: string;
 }
 
@@ -63,6 +66,55 @@ const BLUE_LIGHT = '#2563EB';
 const BLUE_DARK = '#1E3A8A';
 const GOLD = '#D97706';
 
+// Pertajam scan buram: unsharp mask + naikkan kontras via canvas. Ini BUKAN
+// AI upscaling (tidak nambah detail yang beneran hilang) — cuma bikin scan
+// dokumen yang blur/pudar jadi lebih gampang dibaca. Sekaligus dikompres ulang
+// (JPEG q=0.82) biar ukuran file tidak ikut membengkak walau "kualitasnya" naik.
+async function pertajamScan(file: File): Promise<File> {
+  if (file.type === 'application/pdf') return file; // PDF dilewati, tidak diproses canvas
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error('Gagal memuat gambar'));
+    im.src = URL.createObjectURL(file);
+  });
+
+  const canvas = document.createElement('canvas');
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext('2d')!;
+
+  // Naikkan kontras + saturasi dikit dulu — bikin teks scan lebih tegas
+  ctx.filter = 'contrast(1.18) brightness(1.04) saturate(0.95)';
+  ctx.drawImage(img, 0, 0);
+  ctx.filter = 'none';
+
+  // Unsharp mask manual: blur ringan lalu campur balik sebagai "high-pass"
+  const asli = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const blurCanvas = document.createElement('canvas');
+  blurCanvas.width = canvas.width; blurCanvas.height = canvas.height;
+  const bctx = blurCanvas.getContext('2d')!;
+  bctx.filter = 'blur(1.6px)';
+  bctx.drawImage(canvas, 0, 0);
+  const blurData = bctx.getImageData(0, 0, canvas.width, canvas.height);
+
+  const out = ctx.createImageData(canvas.width, canvas.height);
+  const amount = 0.6; // kekuatan penajaman
+  for (let i = 0; i < asli.data.length; i += 4) {
+    for (let c = 0; c < 3; c++) {
+      const diff = asli.data[i + c] - blurData.data[i + c];
+      out.data[i + c] = Math.max(0, Math.min(255, asli.data[i + c] + diff * amount));
+    }
+    out.data[i + 3] = asli.data[i + 3];
+  }
+  ctx.putImageData(out, 0, 0);
+
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(b => b ? resolve(b) : reject(new Error('Gagal proses gambar')), 'image/jpeg', 0.82);
+  });
+  return new File([blob], file.name.replace(/\.(png|jpe?g)$/i, '') + '-HD.jpg', { type: 'image/jpeg' });
+}
+
 export default function AdminDokumenDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [role, setRole]           = useState('');
@@ -79,10 +131,6 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
 
   const [namaAdmin, setNamaAdmin] = useState('Admin Pokja');
   const [idAdmin, setIdAdmin]     = useState('');
-  const [manualLog, setManualLog] = useState<string | null>(null);
-  const lastModRef = useRef<string | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastInteractionRef = useRef<number>(Date.now());
 
   const [templateKandidat, setTemplateKandidat]   = useState<Kandidat[]>([]);
   const [templateChecked, setTemplateChecked]     = useState(false);
@@ -93,7 +141,6 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
 
   const [showKembaliBox, setShowKembaliBox] = useState(false);
   const [alasanKembali, setAlasanKembali] = useState('');
-  const [needTglBerakhir, setNeedTglBerakhir] = useState(false);
 
   const [divisiDraft, setDivisiDraft] = useState<string[]>([]);
   const [divisiSaving, setDivisiSaving] = useState(false);
@@ -110,6 +157,19 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
   const [alasanTolakTtd, setAlasanTolakTtd] = useState('');
   const [showInputBasah, setShowInputBasah] = useState(false);
   const [tglBasah, setTglBasah] = useState('');
+  const [scanFile, setScanFile] = useState<File | null>(null);
+  const [scanUploading, setScanUploading] = useState(false);
+  const [scanInfo, setScanInfo] = useState('');
+  const [scanError, setScanError] = useState('');
+  const [scanUrl, setScanUrl] = useState('');
+  const [showBatalkanTtd, setShowBatalkanTtd] = useState(false);
+  const [deletingScan, setDeletingScan] = useState(false);
+  const [docFile, setDocFile] = useState<File | null>(null);
+  const [docUploading, setDocUploading] = useState(false);
+  const [docUploadInfo, setDocUploadInfo] = useState('');
+  const [docUploadError, setDocUploadError] = useState('');
+  const [docUploadedId, setDocUploadedId] = useState('');
+  const [terapkanLoading, setTerapkanLoading] = useState(false);
 
   const loadDok = () => {
     fetch(`/api/dokumen/${id}`)
@@ -137,10 +197,6 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
     setNamaAdmin(u.nama || u.email || 'Admin Pokja');
     setIdAdmin(u.id || u.email || '');
     loadDok();
-    fetch(`/api/dokumen/aktivitas?idDokumen=${id}`)
-      .then(r => r.json())
-      .then(d => setManualLog(d.manualLog || null))
-      .catch(() => {});
   }, [id]);
 
   useEffect(() => {
@@ -160,75 +216,6 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
       .catch(() => {});
   }, [dok, id]);
 
-  const catatPerubahanAdmin = () => {
-    fetch('/api/dokumen/aktivitas', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idDokumen: id, aktor: namaAdmin, peran: 'admin' }),
-    })
-      .then(() => fetch(`/api/dokumen/aktivitas?idDokumen=${id}`))
-      .then(r => r.json())
-      .then(d => setManualLog(d.manualLog || null))
-      .catch(() => {});
-  };
-
-  // Catat kapan terakhir kali admin benar-benar berinteraksi dengan halaman ini
-  // (bukan sekadar tab/jendela terbuka) — dipakai sebagai syarat sebelum
-  // mengklaim aktivitas edit, supaya sesi yang dibiarkan idle di browser lain
-  // tidak ikut berebut atribusi saat dokumen berubah.
-  useEffect(() => {
-    const tandaiAktif = () => { lastInteractionRef.current = Date.now(); };
-    window.addEventListener('mousemove', tandaiAktif);
-    window.addEventListener('keydown', tandaiAktif);
-    window.addEventListener('click', tandaiAktif);
-    window.addEventListener('scroll', tandaiAktif);
-    return () => {
-      window.removeEventListener('mousemove', tandaiAktif);
-      window.removeEventListener('keydown', tandaiAktif);
-      window.removeEventListener('click', tandaiAktif);
-      window.removeEventListener('scroll', tandaiAktif);
-    };
-  }, []);
-
-  // Polling ringan tiap 10 detik untuk deteksi editan Google Docs.
-  // Kalau modifiedTime berubah, mulai hitung mundur 30 detik "hening" —
-  // kalau tidak berubah lagi selama itu, DAN jendela ini masih fokus +
-  // ada interaksi nyata dalam 2 menit terakhir, baru dicatat sebagai
-  // editan Admin. Ini mencegah sesi yang cuma dibiarkan terbuka di
-  // browser/profil lain ikut berebut klaim aktivitas.
-  useEffect(() => {
-    if (!dok?.docsId) return;
-
-    const interval = setInterval(() => {
-      fetch(`/api/dokumen/docs-status?idDokumen=${id}`)
-        .then(r => r.json())
-        .then(d => {
-          const mt = d.modifiedTime;
-          if (!mt) return;
-          if (lastModRef.current === null) {
-            lastModRef.current = mt;
-            return;
-          }
-          if (mt !== lastModRef.current) {
-            lastModRef.current = mt;
-            if (debounceRef.current) clearTimeout(debounceRef.current);
-            debounceRef.current = setTimeout(() => {
-              const idleMs = Date.now() - lastInteractionRef.current;
-              const aktifDanFokus = document.visibilityState === 'visible' && document.hasFocus();
-              if (aktifDanFokus && idleMs < 120000) {
-                catatPerubahanAdmin();
-              }
-            }, 30000);
-          }
-        })
-        .catch(() => {});
-    }, 10000);
-
-    return () => {
-      clearInterval(interval);
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [dok?.docsId, id]);
-
   const salinTeks = (teks: string, label: string) => {
     navigator.clipboard.writeText(teks);
     setCopied(label);
@@ -240,37 +227,13 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
     try {
       const res = await fetch(`/api/dokumen/${id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transisi: statusBaru, alasanKembali: alasan }),
+        body: JSON.stringify({ transisi: statusBaru, alasanKembali: alasan, pelaku: 'admin', namaPelaku: namaAdmin }),
       });
       const d = await res.json();
       if (!res.ok) { setError(d.message); return; }
       setDok(prev => prev ? { ...prev, status: statusBaru } : prev);
       setEditStatus(statusBaru);
       setMsg(`Status berhasil diubah ke "${statusBaru}".`);
-    } catch { setError('Terjadi kesalahan.'); }
-    finally { setSaving(false); }
-  };
-
-  const handleAcc = async () => {
-    setSaving(true); setError(''); setMsg(''); setNeedTglBerakhir(false);
-    try {
-      const res = await fetch(`/api/dokumen/${id}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transisi: 'Selesai' }),
-      });
-      const d = await res.json();
-      if (!res.ok) {
-        if (d.code === 'NEED_TGL_BERAKHIR') {
-          setNeedTglBerakhir(true);
-          setEditTglBerakhir(true);
-          return;
-        }
-        setError(d.message);
-        return;
-      }
-      setDok(prev => prev ? { ...prev, status: d.statusBaru } : prev);
-      setEditStatus(d.statusBaru);
-      setMsg(d.message);
     } catch { setError('Terjadi kesalahan.'); }
     finally { setSaving(false); }
   };
@@ -297,7 +260,7 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
     try {
       const res = await fetch('/api/superadmin/generate-kode', {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: dok.id, fields: { divisi: divisiDraft } }),
+        body: JSON.stringify({ id: dok.id, fields: { divisi: divisiDraft }, pelaku: 'admin', namaPelaku: namaAdmin }),
       });
       const d = await res.json();
       if (!res.ok) { setError(d.message || 'Gagal ubah divisi.'); return; }
@@ -315,14 +278,13 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
     try {
       const res = await fetch('/api/superadmin/generate-kode', {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: dok.id, fields: { tglBerakhir: tglBerakhirDraft } }),
+        body: JSON.stringify({ id: dok.id, fields: { tglBerakhir: tglBerakhirDraft }, pelaku: 'admin', namaPelaku: namaAdmin }),
       });
       const d = await res.json();
       if (!res.ok) { setError(d.message || 'Gagal menyimpan tanggal berakhir.'); return; }
       setDok(prev => prev ? { ...prev, tglBerakhir: tglBerakhirDraft } : prev);
       setMsg('Tanggal berakhir kesepakatan berhasil disimpan.');
       setEditTglBerakhir(false);
-      setNeedTglBerakhir(false);
     } catch { setError('Gagal menyimpan tanggal berakhir.'); }
     finally { setSavingTglBerakhir(false); }
   };
@@ -332,7 +294,7 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
     try {
       const res = await fetch(`/api/dokumen/${id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, pelaku: 'admin', namaPelaku: namaAdmin }),
       });
       const d = await res.json();
       if (!res.ok) { setError(d.message); return false; }
@@ -357,12 +319,160 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
     if (ok) { setShowInputBasah(false); setTglBasah(''); }
   };
 
+  // (2) Admin batalkan pemilihan TTD basah/online kalau salah klik
+  const batalkanTtd = async () => {
+    const ok = await ttdRequest({ ttdAction: 'batalkan' });
+    if (ok) setShowBatalkanTtd(false);
+  };
+
+  // (1) Admin hapus scan yang salah upload — hapus file fisik dulu di Drive,
+  // baru hapus referensinya di sheet.
+  const hapusScan = async () => {
+    if (!dok?.scanTtdId) return;
+    if (!confirm('Hapus scan TTD Basah ini? Tindakan tidak bisa dibatalkan.')) return;
+    setDeletingScan(true); setError(''); setMsg('');
+    try {
+      const appsScriptUrl = process.env.NEXT_PUBLIC_APPS_SCRIPT_WEBAPP_URL;
+      if (appsScriptUrl) {
+        await fetch(appsScriptUrl, {
+          method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'hapusScanTtdBasah', fileId: dok.scanTtdId }),
+          redirect: 'follow',
+        }).catch(() => {});
+      }
+      const ok = await ttdRequest({ ttdAction: 'hapusScan' });
+      if (ok) setScanUrl('');
+    } finally { setDeletingScan(false); }
+  };
+
+  // (3) Admin upload dokumen MOU/PKS langsung, sama seperti mitra
+  const pilihDocAdmin = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    setDocUploadError(''); setDocUploadInfo(''); setDocUploadedId('');
+    if (!f) { setDocFile(null); return; }
+    const allowed = ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword'];
+    if (!allowed.includes(f.type)) { setDocUploadError('Format harus Word (.doc/.docx).'); return; }
+    if (f.size > 1024 * 1024) { setDocUploadError(`File terlalu besar (${(f.size/1024/1024).toFixed(2)}MB). Maksimal 1MB.`); return; }
+    setDocFile(f);
+  };
+
+  const uploadDocAdmin = async () => {
+    if (!docFile) return;
+    setDocUploading(true); setDocUploadError(''); setDocUploadInfo('');
+    try {
+      const base64 = await new Promise<string>((res, rej) => {
+        const reader = new FileReader();
+        reader.onload  = () => res((reader.result as string).split(',')[1]);
+        reader.onerror = () => rej(new Error('Gagal baca file'));
+        reader.readAsDataURL(docFile);
+      });
+      const r = await fetch('/api/dokumen/upload-template', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idDokumen: id, fileBase64: base64, fileName: docFile.name, fileMime: docFile.type }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setDocUploadError(d.message || 'Gagal mengunggah dokumen.'); return; }
+      setDocUploadedId(d.data.fileId);
+      setDocUploadInfo(`Diunggah: ${d.data.namaFile}. Klik "Terapkan" buat jadiin ini dokumen aktif.`);
+    } catch { setDocUploadError('Terjadi kesalahan saat mengunggah.'); }
+    finally { setDocUploading(false); }
+  };
+
+  const terapkanDocAdmin = async () => {
+    if (!docUploadedId) return;
+    setTerapkanLoading(true); setDocUploadError(''); setMsg('');
+    try {
+      const r = await fetch('/api/dokumen/ganti-template', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idDokumen: id, templateFileId: docUploadedId }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setDocUploadError(d.message || 'Gagal menerapkan dokumen.'); return; }
+      setMsg('Dokumen berhasil diganti. Dokumen lama otomatis diarsipkan (tidak dihapus).');
+      setDocFile(null); setDocUploadedId(''); setDocUploadInfo('');
+      loadDok();
+    } catch { setDocUploadError('Terjadi kesalahan saat menerapkan.'); }
+    finally { setTerapkanLoading(false); }
+  };
+
+  // (4) Admin tandai "selesai mengisi" atas nama mitra, tanpa perlu nunggu mitra klik
+  const tandaiSelesaiMengisi = async () => {
+    setSaving(true); setError(''); setMsg('');
+    try {
+      const res = await fetch(`/api/dokumen/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transisi: 'Dalam Proses', pelaku: 'admin', namaPelaku: namaAdmin }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setError(d.message); return; }
+      setMsg('Ditandai selesai mengisi (atas nama mitra).');
+      loadDok();
+    } catch { setError('Terjadi kesalahan.'); }
+    finally { setSaving(false); }
+  };
+
+  const pilihScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    setScanError(''); setScanInfo('');
+    if (!f) { setScanFile(null); return; }
+    const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
+    if (!allowed.includes(f.type)) { setScanError('Format harus JPG, PNG, atau PDF.'); return; }
+    if (f.size > 10 * 1024 * 1024) { setScanError('File maksimal 10MB.'); return; }
+
+    if (f.type === 'application/pdf') { setScanFile(f); return; }
+
+    setScanUploading(true); setScanInfo('Mempertajam scan…');
+    try {
+      const hasil = await pertajamScan(f);
+      setScanFile(hasil);
+      setScanInfo(`Scan dipertajam: ${(f.size/1024).toFixed(0)}KB → ${(hasil.size/1024).toFixed(0)}KB.`);
+    } catch {
+      setScanFile(f);
+      setScanInfo('Gagal mempertajam, memakai file asli.');
+    } finally {
+      setScanUploading(false);
+    }
+  };
+
+  const uploadScan = async () => {
+    if (!scanFile) return;
+    setScanUploading(true); setScanError(''); setScanInfo('Mengunggah…');
+    try {
+      const appsScriptUrl = process.env.NEXT_PUBLIC_APPS_SCRIPT_WEBAPP_URL;
+      if (!appsScriptUrl) { setScanError('URL Apps Script belum dikonfigurasi.'); return; }
+
+      const base64 = await new Promise<string>((res, rej) => {
+        const reader = new FileReader();
+        reader.onload  = () => res((reader.result as string).split(',')[1]);
+        reader.onerror = () => rej(new Error('Gagal baca file'));
+        reader.readAsDataURL(scanFile);
+      });
+
+      const r = await fetch(appsScriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // hindari preflight CORS
+        body: JSON.stringify({ action: 'uploadScanTtdBasah', idDokumen: id, namaFile: scanFile.name, base64Data: base64, mimeType: scanFile.type }),
+        redirect: 'follow',
+      });
+      const d = await r.json();
+      if (!d.success) { setScanError(d.message || 'Gagal mengunggah scan.'); return; }
+      setScanUrl(d.fileUrl || '');
+      setScanInfo('Scan TTD Basah berhasil diunggah dan diarsipkan.');
+      setMsg('Scan TTD Basah berhasil diunggah dan diarsipkan (dokumen kerja asli tidak berubah).');
+      setScanFile(null);
+    } catch {
+      setScanError('Terjadi kesalahan saat mengunggah.');
+    } finally {
+      setScanUploading(false);
+    }
+  };
+
   const saveStatusManual = async () => {
     setSaving(true); setError(''); setMsg('');
     try {
       const res = await fetch(`/api/dokumen/${id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: editStatus }),
+        body: JSON.stringify({ status: editStatus, pelaku: 'admin', namaPelaku: namaAdmin }),
       });
       const d = await res.json();
       if (!res.ok) { setError(d.message); return; }
@@ -377,7 +487,7 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
     try {
       const res = await fetch(`/api/dokumen/${id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tglKegiatanMulai: tglMulai, tglKegiatanSelesai: tglSelesai }),
+        body: JSON.stringify({ tglKegiatanMulai: tglMulai, tglKegiatanSelesai: tglSelesai, pelaku: 'admin', namaPelaku: namaAdmin }),
       });
       const d = await res.json();
       if (!res.ok) { setError(d.message); return; }
@@ -460,7 +570,6 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
               <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:10, flexWrap:'wrap' }}>
                 <span style={{ ...pill, background:dok.jenis==='MOU'?'#DBEAFE':'#FEF3C7', color:dok.jenis==='MOU'?BLUE_DARK:'#92400E' }}>{dok.jenis}</span>
                 <span style={{ ...pill, ...sc }}>{dok.status}</span>
-                <EditPencilIndicator manualLog={manualLog} />
                 {dok.status === 'MOU/PKS Berlaku' && dok.sisaHari !== null && (
                   <span style={{ ...pill, background: dok.sisaHari <= 30 ? '#FCEBEB' : '#FEF3C7', color: dok.sisaHari <= 30 ? '#A32D2D' : GOLD }}>
                     <FiClock size={10} style={{ marginRight:4, verticalAlign:'middle' }} />
@@ -472,7 +581,10 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
                   return <span key={dv} style={{ ...pill, background: info.bg, color: info.color }}>{info.label}</span>;
                 })}
               </div>
-              <div style={{ fontSize:19, fontWeight:800, marginBottom:4, color:'#0f1f3d', letterSpacing:'-0.02em' }}>{dok.judul}</div>
+              <div style={{ fontSize:19, fontWeight:800, marginBottom:4, color:'#0f1f3d', letterSpacing:'-0.02em', display:'flex', alignItems:'center', gap:10 }}>
+                {dok.judul}
+                <EditPencilIndicator manualLog={dok.manualLog} size={24} ttdBasahPending={dok.ttdStatus === 'Menunggu Basah'} />
+              </div>
               <div style={{ fontSize:13.5, color:BLUE, fontWeight:600, display:'flex', alignItems:'center', gap:6 }}><FiHome size={13} />{dok.namaMitra}</div>
               <div style={{ fontSize:11.5, color:'#64748b', marginTop:8, lineHeight:1.7 }}>
                 <strong>Masa berlaku:</strong> {dok.tglBerlaku} s.d. {dok.tglBerakhir} ({dok.durasi} th)<br/>
@@ -501,6 +613,33 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
                 <iframe src={dok.embedUrl} style={{ width:'100%', height:520, border:'1px solid rgba(29,78,216,0.08)', borderRadius:16 }} title={dok.judul} />
               ) : !showIframe ? null : (
                 <div style={emptyBox}>Preview tidak tersedia.</div>
+              )}
+            </div>
+          </div>
+
+          <div style={shellStyle} className="fld">
+            <div style={coreStyle}>
+              <div style={cardTitle}><FiUpload size={13} style={{ marginRight:6, verticalAlign:'middle', color: GOLD }} />Upload Dokumen MOU/PKS (Admin)</div>
+              <div style={{ ...hintText, marginBottom:10 }}>
+                Admin bisa unggah dokumen Word langsung, sama seperti mitra. Dokumen lama otomatis diarsipkan (bukan dihapus) begitu diterapkan.
+              </div>
+              <input type="file" accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                onChange={pilihDocAdmin} disabled={docUploading} style={inputFull} />
+              {docUploading && (
+                <div style={{ fontSize:11, color:'#92400E', marginTop:6, display:'flex', alignItems:'center', gap:6 }}>
+                  <span style={{ width:12, height:12, border:'2px solid #FDE68A', borderTop:'2px solid #D97706', borderRadius:'50%', display:'inline-block', animation:'spin 0.8s linear infinite' }} />
+                  Mengunggah…
+                </div>
+              )}
+              {!docUploading && docUploadInfo && <div style={{ fontSize:11, color:'#0F6E56', marginTop:6 }}>{docUploadInfo}</div>}
+              {docUploadError && <div style={{ fontSize:11, color:'#A32D2D', marginTop:6 }}>{docUploadError}</div>}
+              {docFile && !docUploading && !docUploadedId && (
+                <button onClick={uploadDocAdmin} style={{ ...btnPrimary, width:'100%', marginTop:8 }} className="btn-hover">Unggah</button>
+              )}
+              {docUploadedId && (
+                <button onClick={terapkanDocAdmin} disabled={terapkanLoading} style={{ ...btnPrimary, width:'100%', marginTop:8, background:GOLD }} className="btn-hover">
+                  {terapkanLoading ? 'Menerapkan…' : 'Terapkan sebagai Dokumen Aktif'}
+                </button>
               )}
             </div>
           </div>
@@ -627,6 +766,14 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
                 ) : dok.ttdStatus === 'Menunggu Basah' ? (
                   <div>
                     <div style={hintText}>Mitra memilih TTD Basah. Menunggu dokumen fisik diterima.</div>
+
+                    {dok.docsId && (
+                      <a href={`https://docs.google.com/document/d/${dok.docsId}/export?format=pdf`} target="_blank" rel="noopener noreferrer"
+                        style={{ ...btnSm, width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:6, textDecoration:'none', marginBottom:10, boxSizing:'border-box' }} className="btn-hover">
+                        <FiDownload size={13} />Cetak Dokumen (PDF siap print)
+                      </a>
+                    )}
+
                     {!showInputBasah ? (
                       <button onClick={() => setShowInputBasah(true)} style={{ ...btnPrimary, width:'100%' }} className="btn-hover">
                         <FiEdit3 size={13} style={{ marginRight:6, verticalAlign:'middle' }} />Input Tanggal TTD
@@ -643,8 +790,61 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
                         </div>
                       </div>
                     )}
+
+                    <div style={{ marginTop:14, paddingTop:14, borderTop:'1px solid rgba(15,23,42,0.06)' }}>
+                      <label style={{ ...labelSt, display:'flex', alignItems:'center', gap:6, marginBottom:6 }}>
+                        <FiUpload size={12} />Upload Dokumen Hasil TTD Basah
+                      </label>
+                      <div style={{ ...hintText, marginBottom:8 }}>
+                        Scan/foto dokumen yang sudah ditandatangani fisik. Otomatis dipertajam & diarsipkan — dokumen kerja yang sedang aktif tidak akan diganti.
+                      </div>
+                      <input type="file" accept="image/jpeg,image/jpg,image/png,application/pdf" onChange={pilihScan} disabled={scanUploading} style={inputFull} />
+                      {scanUploading && (
+                        <div style={{ fontSize:11, color:'#92400E', marginTop:6, display:'flex', alignItems:'center', gap:6 }}>
+                          <span style={{ width:12, height:12, border:'2px solid #FDE68A', borderTop:'2px solid #D97706', borderRadius:'50%', display:'inline-block', animation:'spin 0.8s linear infinite' }} />
+                          {scanInfo || 'Memproses…'}
+                        </div>
+                      )}
+                      {!scanUploading && scanInfo && <div style={{ fontSize:11, color:'#0F6E56', marginTop:6 }}>{scanInfo}</div>}
+                      {scanError && <div style={{ fontSize:11, color:'#A32D2D', marginTop:6 }}>{scanError}</div>}
+                      {scanFile && !scanUploading && (
+                        <button onClick={uploadScan} style={{ ...btnPrimary, width:'100%', marginTop:8 }} className="btn-hover">
+                          Unggah &amp; Arsipkan Scan
+                        </button>
+                      )}
+                      {(scanUrl || dok.scanTtdUrl) && (
+                        <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:8 }}>
+                          <a href={scanUrl || dok.scanTtdUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize:11, color: BLUE, flex:1 }}>Lihat scan yang diunggah →</a>
+                          <button onClick={hapusScan} disabled={deletingScan} style={{ ...btnSm, fontSize:10, color:'#A32D2D', borderColor:'#FCEBEB', display:'flex', alignItems:'center', gap:4 }} className="btn-hover">
+                            <FiTrash2 size={11} />{deletingScan ? 'Menghapus…' : 'Hapus (salah upload)'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ) : null}
+
+                {(dok.ttdStatus === 'Disetujui' || dok.ttdStatus === 'Menunggu Review' || dok.ttdStatus === 'Menunggu Basah') && (
+                  <div style={{ marginTop:14, paddingTop:14, borderTop:'1px solid rgba(15,23,42,0.06)' }}>
+                    {!showBatalkanTtd ? (
+                      <button onClick={() => setShowBatalkanTtd(true)} style={{ ...btnSm, width:'100%', color:'#A32D2D', borderColor:'#FCEBEB', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }} className="btn-hover">
+                        <FiEdit2 size={12} />Batalkan Pemilihan TTD (salah klik)
+                      </button>
+                    ) : (
+                      <div style={kembaliBox}>
+                        <div style={{ fontSize:11.5, color:'#92400E', marginBottom:8 }}>
+                          Ini akan reset pemilihan TTD {dok.ttdTipe === 'basah' ? 'Basah' : 'Online'} — mitra bisa pilih ulang dari awal. Yakin?
+                        </div>
+                        <div style={{ display:'flex', gap:6 }}>
+                          <button onClick={() => setShowBatalkanTtd(false)} disabled={ttdSaving} style={{ ...btnSm, flex:1 }} className="btn-hover">Batal</button>
+                          <button onClick={batalkanTtd} disabled={ttdSaving} style={{ ...btnSm, flex:1, background:'#FCEBEB', color:'#A32D2D', borderColor:'#FCA5A5' }} className="btn-hover">
+                            {ttdSaving ? 'Memproses…' : 'Ya, Batalkan'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -655,12 +855,7 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
                 <div style={cardTitle}>Tindakan</div>
                 {dok.status === 'Dalam Proses' && (
                   <>
-                    {needTglBerakhir && (
-                      <div style={{ ...msgBox('#92400E', '#FFFBEB'), marginBottom: 10, border: '1px solid #FDE68A' }} className="fld">
-                        Yang Terhormat Admin ({namaAdmin}), silahkan mengisi masa berlaku MOU/PKS untuk menyelesaikan dokumen {dok.jenis} ini.
-                      </div>
-                    )}
-                    <button onClick={handleAcc} disabled={saving} style={{ ...btnPrimary, width:'100%', marginBottom:8 }} className="btn-hover">
+                    <button onClick={() => transisi('Selesai')} disabled={saving} style={{ ...btnPrimary, width:'100%', marginBottom:8 }} className="btn-hover">
                       <FiCheck size={14} style={{ marginRight:6, verticalAlign:'middle' }} />Setujui Dokumen (Acc)
                     </button>
                     {!showKembaliBox ? (
@@ -688,12 +883,18 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
                         </div>
                       </div>
                     )}
-                    <div style={hintText}>Acc wajib mengisi masa berlaku dulu. Kalau tanggal kegiatan sudah diisi → status &quot;Selesai&quot; (lanjut ke Kegiatan Berlangsung otomatis). Kalau belum → langsung &quot;MOU/PKS Berlaku&quot;.</div>
+                    <div style={hintText}>Acc → status &quot;Selesai&quot;. Saat tanggal kegiatan tiba, otomatis jadi &quot;Kegiatan Berlangsung&quot;.</div>
                   </>
                 )}
                 {dok.status === 'Draft' && (
-                  <div style={{ fontSize:11.5, color:'#64748b', lineHeight:1.6 }}>
-                    Dokumen masih Draft. Mitra perlu klik &quot;Selesai Mengisi&quot; dari halaman mereka untuk lanjut ke review.
+                  <div>
+                    <div style={{ fontSize:11.5, color:'#64748b', lineHeight:1.6, marginBottom:10 }}>
+                      Dokumen masih Draft. Normalnya mitra klik &quot;Selesai Mengisi&quot; dari halaman mereka, tapi admin juga bisa menandainya langsung.
+                    </div>
+                    <button onClick={tandaiSelesaiMengisi} disabled={saving} style={{ ...btnPrimary, width:'100%' }} className="btn-hover">
+                      <FiCheck size={13} style={{ marginRight:6, verticalAlign:'middle' }} />
+                      {saving ? 'Memproses…' : 'Tandai Selesai Mengisi (atas nama Mitra)'}
+                    </button>
                   </div>
                 )}
               </div>

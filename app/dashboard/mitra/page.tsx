@@ -18,12 +18,10 @@ interface MitraUser {
   folderId: string; fotoFolderId: string; tglBerlaku: string;
   tglBerakhir: string; kodeExpire: string;
 }
-
 interface FotoItem {
   fileId: string; nama: string; ukuran: number;
   url: string; thumbnailUrl: string; tanggalUpload: string; caption?: string;
 }
-
 interface Notif { id: string; tipe: string; judul: string; pesan: string; dibaca: boolean; tglDibuat: string; }
 
 const FONT = "'Plus Jakarta Sans', -apple-system, sans-serif";
@@ -56,22 +54,22 @@ export default function DashboardMitraPage() {
   const [error, setError]         = useState('');
   const [msg, setMsg]             = useState('');
   const fileInputRef              = useRef<HTMLInputElement>(null);
-  const lastModRef                = useRef<string | null>(null);
-  const debounceRef               = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastInteractionRef        = useRef<number>(Date.now());
+
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [pendingCaption, setPendingCaption] = useState('');
   const [editingCaption, setEditingCaption] = useState<string | null>(null);
   const [captionDraft, setCaptionDraft] = useState('');
   const [savingCaption, setSavingCaption] = useState(false);
+
   const [notif, setNotif] = useState<Notif[]>([]);
   const [showNotif, setShowNotif] = useState(false);
   const [labelMitra, setLabelMitra] = useState('');
+
   const [sudahDipublikasi, setSudahDipublikasi] = useState(false);
   const [tglKegiatanSelesai, setTglKegiatanSelesai] = useState('');
+  const [manualLog, setManualLog] = useState('');
   const [tglBerlakuFresh, setTglBerlakuFresh] = useState('');
   const [tglBerakhirFresh, setTglBerakhirFresh] = useState('');
-  const [manualLog, setManualLog] = useState<string | null>(null);
 
   const loadFoto = useCallback((idDokumen: string) => {
     fetch(`/api/dokumen/foto?idDokumen=${idDokumen}`)
@@ -100,105 +98,31 @@ export default function DashboardMitraPage() {
       setUser(u);
       loadFoto(u.idDokumen);
       loadNotif(u.idDokumen);
-
       fetch(`/api/dokumen/pic?idDokumen=${u.idDokumen}`)
         .then(r => r.json())
         .then(d => setLabelMitra(d.label || u.namaMitra))
         .catch(() => setLabelMitra(u.namaMitra));
-
+      // Data user di localStorage cuma snapshot saat login — status publikasi
+      // & tanggal kegiatan bisa berubah belakangan, jadi ambil yang terbaru.
       fetch(`/api/dokumen/${u.idDokumen}`)
         .then(r => r.json())
         .then(d => {
           if (d.dokumen) {
             setSudahDipublikasi(!!d.dokumen.sudahDipublikasi);
             setTglKegiatanSelesai(d.dokumen.tglKegiatanSelesai || '');
+            setManualLog(d.dokumen.manualLog || '');
             setTglBerlakuFresh(d.dokumen.tglBerlaku || '');
             setTglBerakhirFresh(d.dokumen.tglBerakhir || '');
           }
         })
         .catch(() => {});
-
       fetch('/api/dokumen/aktivitas', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idDokumen: u.idDokumen, aktor: u.namaMitra, peran: 'mitra' }),
       }).catch(() => {});
-
-      fetch(`/api/dokumen/aktivitas?idDokumen=${u.idDokumen}`)
-        .then(r => r.json())
-        .then(d => setManualLog(d.manualLog || null))
-        .catch(() => {});
-
       setLoading(false);
     } catch { window.location.href = '/login-mitra'; }
   }, [loadFoto, loadNotif]);
-
-  // Catat kapan terakhir kali mitra benar-benar berinteraksi dengan halaman
-  // ini (bukan sekadar jendela terbuka) — dipakai sebagai syarat sebelum
-  // mengklaim aktivitas edit, supaya sesi yang dibiarkan idle di browser/
-  // profil lain tidak ikut berebut atribusi saat dokumen berubah.
-  useEffect(() => {
-    const tandaiAktif = () => { lastInteractionRef.current = Date.now(); };
-    window.addEventListener('mousemove', tandaiAktif);
-    window.addEventListener('keydown', tandaiAktif);
-    window.addEventListener('click', tandaiAktif);
-    window.addEventListener('scroll', tandaiAktif);
-    return () => {
-      window.removeEventListener('mousemove', tandaiAktif);
-      window.removeEventListener('keydown', tandaiAktif);
-      window.removeEventListener('click', tandaiAktif);
-      window.removeEventListener('scroll', tandaiAktif);
-    };
-  }, []);
-
-  // Polling ringan tiap 10 detik untuk deteksi editan Google Docs.
-  // Kalau modifiedTime berubah, mulai hitung mundur 30 detik "hening" —
-  // kalau tidak berubah lagi selama itu, DAN jendela ini masih fokus +
-  // ada interaksi nyata dalam 2 menit terakhir, baru dicatat sebagai
-  // editan Mitra.
-  useEffect(() => {
-    if (!user?.docsId) return;
-
-    const catatPerubahanMitra = () => {
-      fetch('/api/dokumen/aktivitas', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idDokumen: user.idDokumen, aktor: user.namaMitra, peran: 'mitra' }),
-      })
-        .then(() => fetch(`/api/dokumen/aktivitas?idDokumen=${user.idDokumen}`))
-        .then(r => r.json())
-        .then(d => setManualLog(d.manualLog || null))
-        .catch(() => {});
-    };
-
-    const interval = setInterval(() => {
-      fetch(`/api/dokumen/docs-status?idDokumen=${user.idDokumen}`)
-        .then(r => r.json())
-        .then(d => {
-          const mt = d.modifiedTime;
-          if (!mt) return;
-          if (lastModRef.current === null) {
-            lastModRef.current = mt;
-            return;
-          }
-          if (mt !== lastModRef.current) {
-            lastModRef.current = mt;
-            if (debounceRef.current) clearTimeout(debounceRef.current);
-            debounceRef.current = setTimeout(() => {
-              const idleMs = Date.now() - lastInteractionRef.current;
-              const aktifDanFokus = document.visibilityState === 'visible' && document.hasFocus();
-              if (aktifDanFokus && idleMs < 120000) {
-                catatPerubahanMitra();
-              }
-            }, 30000);
-          }
-        })
-        .catch(() => {});
-    }, 10000);
-
-    return () => {
-      clearInterval(interval);
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [user?.docsId, user?.idDokumen, user?.namaMitra]);
 
   const belumDibaca = notif.filter(n => !n.dibaca).length;
 
@@ -271,12 +195,11 @@ export default function DashboardMitraPage() {
   const mulaiEditCaption = (f: FotoItem) => { setEditingCaption(f.fileId); setCaptionDraft(f.caption || ''); };
 
   const simpanCaption = async (fileId: string) => {
-    if (!user) return;
     setSavingCaption(true);
     try {
       const r = await fetch('/api/dokumen/foto/caption', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileId, caption: captionDraft, idDokumen: user.idDokumen }),
+        body: JSON.stringify({ fileId, caption: captionDraft }),
       });
       const d = await r.json();
       if (!r.ok) { setError(d.message || 'Gagal menyimpan deskripsi.'); return; }
@@ -299,7 +222,6 @@ export default function DashboardMitraPage() {
     'selesai':      { bg: '#DBEAFE', color: BLUE_DARK, icon: <FiCheckCircle size={12} /> },
     'kedaluwarsa':  { bg: '#FCEBEB', color: '#A32D2D', icon: <FiAlertCircle size={12} /> },
   };
-
   const sc = statusColor[user.status.toLowerCase()] || statusColor['draft'];
   const inisial = user.namaMitra.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 
@@ -380,7 +302,6 @@ export default function DashboardMitraPage() {
                 {user.jenis}
               </span>
               <span style={{ ...pill, background: sc.bg, color: sc.color }}>{sc.icon}{user.status}</span>
-              <EditPencilIndicator manualLog={manualLog} />
               <span style={{ ...pill, background: '#f1f3f2', color: '#7d8985', marginLeft: 'auto' }}>
                 <FiHome size={10} /> ID {user.idDokumen.slice(0, 8)}
               </span>
@@ -388,6 +309,7 @@ export default function DashboardMitraPage() {
             <div style={{ fontSize: 20, fontWeight: 800, color: '#0f1f3d', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: 10 }}>
               <FiFileText size={22} style={{ color: BLUE, flexShrink: 0 }} />
               {user.judul}
+              <EditPencilIndicator manualLog={manualLog} size={22} />
             </div>
             <div style={{ fontSize: 12.5, color: '#64748b', marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><FiCalendar size={13} /> Berlaku: {user.tglBerlaku}</span>
@@ -440,7 +362,7 @@ export default function DashboardMitraPage() {
               <div style={cardTitle}><FiImage size={13} style={{ marginRight: 6, verticalAlign: 'middle', color: BLUE }} />Foto Kegiatan</div>
               <div style={{ background: '#f8fafc', border: '1px solid rgba(29,78,216,0.08)', borderRadius: 12, padding: '13px 15px', fontSize: 12, color: '#64748b', lineHeight: 1.6, display: 'flex', gap: 10 }}>
                 <FiInfo size={16} style={{ color: BLUE, flexShrink: 0, marginTop: 1 }} />
-                <span>Fitur unggah foto akan terbuka otomatis setelah Admin Pokja mempublikasikan kerja sama ini ke halaman kegiatan publik. Sementara ini, silakan lengkapi dokumen lewat menu "Lihat Dokumen" di atas.</span>
+                <span>Fitur unggah foto akan terbuka otomatis setelah Admin Pokja mempublikasikan kerja sama ini ke halaman kegiatan publik. Sementara ini, silakan lengkapi dokumen lewat menu &quot;Lihat Dokumen&quot; di atas.</span>
               </div>
             </div>
           </div>
@@ -469,99 +391,103 @@ export default function DashboardMitraPage() {
           </div>
         ) : (
           <>
-            {/* Kuota + upload */}
-            <div style={{ ...shellStyle, marginBottom: 16 }} className="fld">
-              <div style={coreStyle}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                  <div style={cardTitle}><FiDatabase size={13} style={{ marginRight: 6, verticalAlign: 'middle', color: GOLD }} />Penyimpanan Foto Kegiatan</div>
-                  <div style={{ fontSize: 11.5, color: barColor(persen), fontWeight: 700, background: `${barColor(persen)}15`, padding: '4px 12px', borderRadius: 100 }}>
-                    {formatBytes(terpakai)} / {formatBytes(maksimal)}
+        {/* Kuota + upload */}
+        <div style={{ ...shellStyle, marginBottom: 16 }} className="fld">
+          <div style={coreStyle}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={cardTitle}><FiDatabase size={13} style={{ marginRight: 6, verticalAlign: 'middle', color: GOLD }} />Penyimpanan Foto Kegiatan</div>
+              <div style={{ fontSize: 11.5, color: barColor(persen), fontWeight: 700, background: `${barColor(persen)}15`, padding: '4px 12px', borderRadius: 100 }}>
+                {formatBytes(terpakai)} / {formatBytes(maksimal)}
+              </div>
+            </div>
+            <div style={{ height: 10, background: '#eef2f6', borderRadius: 100, overflow: 'hidden', boxShadow: 'inset 0 1px 2px rgba(15,23,42,0.06)' }}>
+              <div style={{ height: '100%', borderRadius: 100, width: `${Math.min(100, persen)}%`, background: `linear-gradient(90deg, ${barColor(persen)}, ${barColor(persen)}cc)`, transition: `width 0.7s ${EASE}` }} />
+            </div>
+            <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 8, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+              <FiInfo size={12} />{persen}% terpakai · {files.length} foto
+              {persen >= 100 && <span style={{ color: '#A32D2D', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}><FiAlertCircle size={12} /> Kuota penuh, hapus foto untuk upload baru</span>}
+            </div>
+
+            <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid rgba(15,23,42,0.06)' }}>
+              {!pendingFile ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <label htmlFor="file-upload" style={{ ...btnPrimary, opacity: persen >= 100 ? 0.5 : 1, cursor: persen >= 100 ? 'not-allowed' : 'pointer' }} className="btn-hover">
+                    <FiUpload size={14} style={{ marginRight: 7, verticalAlign: 'middle' }} />Pilih Foto
+                  </label>
+                  <input ref={fileInputRef} id="file-upload" type="file" accept="image/jpeg,image/png,image/webp" onChange={pilihFile} disabled={persen >= 100} style={{ display: 'none' }} />
+                  <span style={{ fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 4 }}><FiInfo size={12} /> JPG, PNG, WEBP</span>
+                </div>
+              ) : (
+                <div style={pendingBox} className="fld">
+                  <div style={{ fontSize: 11.5, fontWeight: 700, color: '#0f1f3d', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <FiImage size={13} /> {pendingFile.name}
+                  </div>
+                  <textarea value={pendingCaption} onChange={e => setPendingCaption(e.target.value)} placeholder="Tulis deskripsi foto ini (opsional)…" style={{ ...inputStyle, height: 58, resize: 'none', marginBottom: 9 }} />
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={batalPilihFile} disabled={uploading} style={{ ...btnSm, flex: 1 }} className="btn-hover">Batal</button>
+                    <button onClick={uploadFoto} disabled={uploading} style={{ ...btnPrimary, flex: 2, width: '100%' }} className="btn-hover">
+                      {uploading ? 'Mengunggah…' : 'Unggah Foto'}
+                    </button>
                   </div>
                 </div>
-                <div style={{ height: 10, background: '#eef2f6', borderRadius: 100, overflow: 'hidden', boxShadow: 'inset 0 1px 2px rgba(15,23,42,0.06)' }}>
-                  <div style={{ height: '100%', borderRadius: 100, width: `${Math.min(100, persen)}%`, background: `linear-gradient(90deg, ${barColor(persen)}, ${barColor(persen)}cc)`, transition: `width 0.7s ${EASE}` }} />
-                </div>
-                <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 8, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                  <FiInfo size={12} />{persen}% terpakai · {files.length} foto
-                  {persen >= 100 && <span style={{ color: '#A32D2D', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}><FiAlertCircle size={12} /> Kuota penuh, hapus foto untuk upload baru</span>}
-                </div>
-                <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid rgba(15,23,42,0.06)' }}>
-                  {!pendingFile ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                      <label htmlFor="file-upload" style={{ ...btnPrimary, opacity: persen >= 100 ? 0.5 : 1, cursor: persen >= 100 ? 'not-allowed' : 'pointer' }} className="btn-hover">
-                        <FiUpload size={14} style={{ marginRight: 7, verticalAlign: 'middle' }} />Pilih Foto
-                      </label>
-                      <input ref={fileInputRef} id="file-upload" type="file" accept="image/jpeg,image/png,image/webp" onChange={pilihFile} disabled={persen >= 100} style={{ display: 'none' }} />
-                      <span style={{ fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 4 }}><FiInfo size={12} /> JPG, PNG, WEBP</span>
-                    </div>
-                  ) : (
-                    <div style={pendingBox} className="fld">
-                      <div style={{ fontSize: 11.5, fontWeight: 700, color: '#0f1f3d', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <FiImage size={13} /> {pendingFile.name}
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Galeri foto */}
+        <div style={shellStyle} className="fld">
+          <div style={coreStyle}>
+            <div style={cardTitle}><FiGrid size={13} style={{ marginRight: 6, verticalAlign: 'middle', color: BLUE }} />Foto Kegiatan ({files.length})</div>
+            {files.length === 0 ? (
+              <div style={{ ...emptyBox, padding: '2.5rem 1rem', border: '2px dashed rgba(29,78,216,0.14)', background: '#f8fafc' }}>
+                <FiImage size={30} style={{ color: '#cbd5e1', marginBottom: 8 }} />
+                <p style={{ fontSize: 12.5, color: '#94a3b8', margin: 0 }}>Belum ada foto diupload. Upload bukti kegiatan di atas.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))', gap: 12 }}>
+                {files.map((f, i) => (
+                  <div key={f.fileId} style={fotoCard} className="fld" >
+                    <img src={`/api/foto/${f.fileId}`} alt={f.nama} style={{ width: '100%', height: 130, objectFit: 'cover', display: 'block', background: '#eef2f6' }} />
+                    <div style={{ padding: '9px 10px' }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#0f1f3d' }}>{f.nama}</div>
+                      <div style={{ fontSize: 9.5, color: '#94a3b8', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <FiDatabase size={9} /> {formatBytes(f.ukuran)}
                       </div>
-                      <textarea value={pendingCaption} onChange={e => setPendingCaption(e.target.value)} placeholder="Tulis deskripsi foto ini (opsional)..." style={{ ...inputStyle, height: 58, resize: 'none', marginBottom: 9 }} />
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button onClick={batalPilihFile} disabled={uploading} style={{ ...btnSm, flex: 1 }} className="btn-hover">Batal</button>
-                        <button onClick={uploadFoto} disabled={uploading} style={{ ...btnPrimary, flex: 2, width: '100%' }} className="btn-hover">
-                          {uploading ? 'Mengunggah...' : 'Unggah Foto'}
+
+                      {editingCaption === f.fileId ? (
+                        <div style={{ marginTop: 7 }}>
+                          <textarea value={captionDraft} onChange={e => setCaptionDraft(e.target.value)} style={{ ...inputStyle, height: 44, resize: 'none', fontSize: 10.5, padding: '6px 8px', marginBottom: 5 }} autoFocus />
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button onClick={() => setEditingCaption(null)} style={miniIconBtn} className="btn-hover"><FiX size={11} /></button>
+                            <button onClick={() => simpanCaption(f.fileId)} disabled={savingCaption} style={{ ...miniIconBtn, background: BLUE, color: '#fff', borderColor: BLUE }} className="btn-hover"><FiCheck size={11} /></button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div onClick={() => mulaiEditCaption(f)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'flex-start', gap: 4, marginTop: 7 }}>
+                          <span style={{ fontSize: 10.5, color: f.caption ? '#334155' : '#cbd5e1', lineHeight: 1.4, flex: 1 }}>{f.caption || 'Tambah deskripsi…'}</span>
+                          <FiEdit2 size={10} style={{ color: '#94a3b8', flexShrink: 0, marginTop: 2 }} />
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', gap: 6, marginTop: 9 }}>
+                        <a href={`/api/foto/${f.fileId}?download=1`} target="_blank" rel="noopener noreferrer" style={{ ...btnSm, flex: 1, textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }} className="btn-hover">
+                          <FiDownload size={11} /> Unduh
+                        </a>
+                        <button onClick={() => hapusFoto(f.fileId, f.nama)} style={{ ...btnSm, flex: 1, color: '#A32D2D', borderColor: '#FCEBEB', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }} className="btn-hover">
+                          <FiTrash2 size={11} /> Hapus
                         </button>
                       </div>
                     </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Galeri foto */}
-            <div style={shellStyle} className="fld">
-              <div style={coreStyle}>
-                <div style={cardTitle}><FiGrid size={13} style={{ marginRight: 6, verticalAlign: 'middle', color: BLUE }} />Foto Kegiatan ({files.length})</div>
-                {files.length === 0 ? (
-                  <div style={{ ...emptyBox, padding: '2.5rem 1rem', border: '2px dashed rgba(29,78,216,0.14)', background: '#f8fafc' }}>
-                    <FiImage size={30} style={{ color: '#cbd5e1', marginBottom: 8 }} />
-                    <p style={{ fontSize: 12.5, color: '#94a3b8', margin: 0 }}>Belum ada foto diupload. Upload bukti kegiatan di atas.</p>
                   </div>
-                ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))', gap: 12 }}>
-                    {files.map((f, i) => (
-                      <div key={f.fileId} style={fotoCard} className="fld">
-                        <img src={`/api/foto/${f.fileId}`} alt={f.nama} style={{ width: '100%', height: 130, objectFit: 'cover', display: 'block', background: '#eef2f6' }} />
-                        <div style={{ padding: '9px 10px' }}>
-                          <div style={{ fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#0f1f3d' }}>{f.nama}</div>
-                          <div style={{ fontSize: 9.5, color: '#94a3b8', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <FiDatabase size={9} /> {formatBytes(f.ukuran)}
-                          </div>
-                          {editingCaption === f.fileId ? (
-                            <div style={{ marginTop: 7 }}>
-                              <textarea value={captionDraft} onChange={e => setCaptionDraft(e.target.value)} style={{ ...inputStyle, height: 44, resize: 'none', fontSize: 10.5, padding: '6px 8px', marginBottom: 5 }} autoFocus />
-                              <div style={{ display: 'flex', gap: 4 }}>
-                                <button onClick={() => setEditingCaption(null)} style={miniIconBtn} className="btn-hover"><FiX size={11} /></button>
-                                <button onClick={() => simpanCaption(f.fileId)} disabled={savingCaption} style={{ ...miniIconBtn, background: BLUE, color: '#fff', borderColor: BLUE }} className="btn-hover"><FiCheck size={11} /></button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div onClick={() => mulaiEditCaption(f)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'flex-start', gap: 4, marginTop: 7 }}>
-                              <span style={{ fontSize: 10.5, color: f.caption ? '#334155' : '#cbd5e1', lineHeight: 1.4, flex: 1 }}>{f.caption || 'Tambah deskripsi...'}</span>
-                              <FiEdit2 size={10} style={{ color: '#94a3b8', flexShrink: 0, marginTop: 2 }} />
-                            </div>
-                          )}
-                          <div style={{ display: 'flex', gap: 6, marginTop: 9 }}>
-                            <a href={`/api/foto/${f.fileId}?download=1`} target="_blank" rel="noopener noreferrer" style={{ ...btnSm, flex: 1, textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }} className="btn-hover">
-                              <FiDownload size={11} /> Unduh
-                            </a>
-                            <button onClick={() => hapusFoto(f.fileId, f.nama)} style={{ ...btnSm, flex: 1, color: '#A32D2D', borderColor: '#FCEBEB', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }} className="btn-hover">
-                              <FiTrash2 size={11} /> Hapus
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                ))}
               </div>
-            </div>
+            )}
+          </div>
+        </div>
           </>
         )}
+
       </div>
     </div>
   );
@@ -593,6 +519,7 @@ const shellStyle: React.CSSProperties = { background: 'rgba(255,255,255,0.65)', 
 const coreStyle: React.CSSProperties = { background: '#fff', borderRadius: 17, padding: '1.15rem 1.3rem', boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.9)' };
 const cardTitle: React.CSSProperties = { fontSize: 12.5, fontWeight: 700, marginBottom: 12, color: '#0f1f3d' };
 const pill: React.CSSProperties = { fontSize: 10.5, fontWeight: 700, padding: '4px 11px', borderRadius: 100, display: 'inline-flex', alignItems: 'center', gap: 4 };
+const infoNoteBlue: React.CSSProperties = { fontSize: 10.5, color: BLUE_DARK, marginTop: 12, padding: '8px 11px', background: '#EFF6FF', borderRadius: 9, lineHeight: 1.5, display: 'flex', alignItems: 'flex-start' };
 const emptyBox: React.CSSProperties = { padding: '2rem', textAlign: 'center', color: '#94a3b8', fontSize: 11.5, background: '#f8fafc', borderRadius: 14 };
 const msgBox = (color: string, bg: string): React.CSSProperties => ({ fontSize: 12, color, background: bg, padding: '10px 14px', borderRadius: 12 });
 const notifBadge: React.CSSProperties = { position: 'absolute', top: -3, right: -3, minWidth: 15, height: 15, padding: '0 4px', borderRadius: 100, background: '#A32D2D', color: '#fff', fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' };

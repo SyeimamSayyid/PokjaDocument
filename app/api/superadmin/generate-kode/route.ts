@@ -11,15 +11,12 @@ const COL = {
   KODE_EXP:11, DOCS_ID:12, DOCS_URL:13, FOLDER_ID:14,
   DIBUAT_OLEH:15, CATATAN:16,
   DIVISI:23, // sudah ada dari desain awal sheet — dipakai utk tampilan, TIDAK ditulis appendRow di sini
+  LOG_EDIT:30, // sama seperti di dokumen-id-route.ts — siapa terakhir edit, format "role|nama|waktu"
+  // (index 29 SUDAH DIPAKAI di Kode.gs untuk "Milestone Diingatkan" — jangan pakai ulang!)
 };
 
 // ── POST: Generate kode + buat Docs + Drive via Apps Script ──
 export async function POST(req: NextRequest) {
-  const session = await requireSession(req, ['admin', 'superadmin']);
-  if (!session) {
-    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
-  }
-
   try {
     const body = await req.json();
     const {
@@ -67,7 +64,9 @@ export async function POST(req: NextRequest) {
       const tglMulaiDate = new Date(tglBerlakuInput);
       if (isNaN(tglMulaiDate.getTime())) {
         return NextResponse.json({ message: 'Format tanggal mulai tidak valid.' }, { status: 400 });
-      }     // Tanggal berakhir OPSIONAL saat generate — bisa dikosongkan dulu dan
+      }
+
+      // Tanggal berakhir OPSIONAL saat generate — bisa dikosongkan dulu dan
       // diisi admin belakangan lewat halaman detail dokumen.
       let tglAkhirDate: Date | null = null;
       if (tglBerakhirInput) {
@@ -129,6 +128,14 @@ export async function POST(req: NextRequest) {
         divisiStr,       // 23 Divisi
       ]);
 
+      // Catat siapa yang generate dokumen ini sebagai log edit pertama — biar
+      // EditPencilIndicator langsung kelihatan begitu dokumen jadi, bukan cuma
+      // muncul setelah ada PATCH edit belakangan.
+      const rowBaru = await findRow('Dokumen Kerja sama', COL.ID, idDokumen);
+      if (rowBaru) {
+        await updateCell('Dokumen Kerja sama', rowBaru.rowNumber, COL.LOG_EDIT + 1, `admin|${dibuatOleh || 'Superadmin'}|${formatTanggalWaktu(now)}`);
+      }
+
       return NextResponse.json({
         tipeKode: 'dokumen',
         idDokumen, kodeAkses,
@@ -139,7 +146,8 @@ export async function POST(req: NextRequest) {
         message: 'Dokumen berhasil dibuat di Google Docs.',
       });
     }
-  return NextResponse.json({ message: 'tipeKode tidak valid.' }, { status: 400 });
+
+    return NextResponse.json({ message: 'tipeKode tidak valid.' }, { status: 400 });
   } catch (err) {
     console.error('[GENERATE KODE]', err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
@@ -147,12 +155,7 @@ export async function POST(req: NextRequest) {
 }
 
 // ── GET: List semua dokumen ────────────────────────────────
-export async function GET(req: NextRequest) {
-  const session = await requireSession(req, ['admin', 'superadmin']);
-  if (!session) {
-    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
-  }
-
+export async function GET() {
   try {
     const rows = await getSheetData('Dokumen Kerja sama');
     const data = rows.filter(r => r[COL.ID]).map(r => ({
@@ -173,6 +176,7 @@ export async function GET(req: NextRequest) {
       dibuatOleh:  r[COL.DIBUAT_OLEH],
       catatan:     String(r[COL.CATATAN] || ''),
       divisi:      String(r[COL.DIVISI] || '').split(',').map(s => s.trim()).filter(Boolean),
+      manualLog:   String(r[COL.LOG_EDIT] || ''),
     })).reverse();
     return NextResponse.json({ data });
   } catch (err) {
@@ -182,11 +186,6 @@ export async function GET(req: NextRequest) {
 
 // ── DELETE: Hapus dokumen dari Sheets + Docs + Drive ───────
 export async function DELETE(req: NextRequest) {
-  const session = await requireSession(req, ['admin', 'superadmin']);
-  if (!session) {
-    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
-  }
-
   try {
     const { id } = await req.json();
     if (!id) return NextResponse.json({ message: 'ID wajib diisi.' }, { status: 400 });
@@ -210,19 +209,68 @@ export async function DELETE(req: NextRequest) {
   }
 }
 
+// Catat aktivitas ke Komentar Revisi (tab "Log Aktivitas") — sama polanya
+// dengan yang ada di dokumen-id-route.ts, diduplikasi di sini karena helper
+// itu bersifat lokal (tidak diexport dari file lain).
+// Resolve email PIC mitra dari Pengajuan Mitra — sama seperti di dokumen-id-route.ts
+async function resolvePicEmail(idMitra: string, namaInstitusi: string): Promise<string> {
+  try {
+    const pj = await getSheetData('Pengajuan Mitra');
+    const normNama = (s: string) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    let matches = idMitra ? pj.filter(r => String(r[1] || '').trim() === idMitra) : [];
+    if (matches.length === 0 && namaInstitusi) {
+      const target = normNama(namaInstitusi);
+      matches = pj.filter(r => normNama(String(r[2] || '')) === target);
+    }
+    let email = '';
+    for (const r of matches) {
+      const e = String(r[7] || '').trim();
+      if (e) email = e;
+    }
+    return email;
+  } catch { return ''; }
+}
+
+async function catatKomentarSistem(idDokumen: string, pesan: string) {
+  try {
+    await appendRow('Komentar Revisi', [
+      generateId('KMT'), idDokumen, 'admin', 'sistem', 'Sistem',
+      pesan, formatTanggalWaktu(new Date()), '',
+    ]);
+  } catch (e) { console.error('[KOMENTAR SISTEM]', e); }
+}
+
 // ── PATCH: Edit judul / status dokumen ────────────────────
 export async function PATCH(req: NextRequest) {
-  const session = await requireSession(req, ['admin', 'superadmin']);
-  if (!session) {
-    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
-  }
-
   try {
-    const { id, fields } = await req.json();
+    const { id, fields, pelaku: pelakuBody, namaPelaku: namaPelakuBody } = await req.json();
     if (!id || !fields) return NextResponse.json({ message: 'ID dan fields wajib.' }, { status: 400 });
 
     const found = await findRow('Dokumen Kerja sama', COL.ID, id);
     if (!found) return NextResponse.json({ message: 'Dokumen tidak ditemukan.' }, { status: 404 });
+
+    // Resolve identitas dari session (server), bukan dari body client — lihat
+    // penjelasan lengkap di dokumen-id-route.ts.
+    let pelaku = String(pelakuBody || 'admin');
+    let namaPelaku = String(namaPelakuBody || '');
+    try {
+      const session = await requireSession(req);
+      const idMitraRow = String(found.data[COL.ID_MITRA] || '');
+      const namaMitraRow = String(found.data[COL.NAMA_MITRA] || '');
+      if (session?.role === 'mitra') {
+        // Sama seperti di dokumen-id-route.ts: mitra cuma boleh PATCH dokumennya sendiri.
+        if (String(session.idDokumen || '') !== id) {
+          return NextResponse.json({ message: 'Anda tidak memiliki akses untuk mengubah dokumen ini.' }, { status: 403 });
+        }
+        pelaku = 'mitra';
+        const picEmail = await resolvePicEmail(idMitraRow, namaMitraRow);
+        namaPelaku = picEmail || namaPelakuBody || namaMitraRow || 'Mitra';
+      } else if (session && ['admin', 'superadmin'].includes(String(session.role))) {
+        pelaku = 'admin';
+        const s = session as Record<string, unknown>;
+        namaPelaku = String(s.email || s.username || s.nama || namaPelakuBody || 'Admin');
+      }
+    } catch { /* fallback ke nilai dari body */ }
 
     const map: Record<string, number> = {
       judul:       COL.JUDUL + 1,
@@ -238,6 +286,21 @@ export async function PATCH(req: NextRequest) {
       if (!col) continue;
       const v = key === 'divisi' && Array.isArray(val) ? val.join(',') : (val as string);
       await updateCell('Dokumen Kerja sama', found.rowNumber, col, v);
+    }
+
+    // Catat siapa (+role) terakhir mengubah — dipakai EditPencilIndicator di dashboard admin
+    const role = pelaku === 'mitra' ? 'mitra' : 'admin';
+    const nama = String(namaPelaku || (role === 'mitra' ? 'Mitra' : 'Admin')).trim();
+    await updateCell('Dokumen Kerja sama', found.rowNumber, COL.LOG_EDIT + 1, `${role}|${nama}|${formatTanggalWaktu(new Date())}`);
+
+    // Log Aktivitas — sebutkan field spesifik yang diubah
+    const fieldLabel: Record<string, string> = {
+      judul: 'judul dokumen', status: 'status', catatan: 'catatan',
+      tglBerlaku: 'tanggal mulai berlaku', tglBerakhir: 'tanggal berakhir', divisi: 'divisi penanganan',
+    };
+    const perubahan = Object.keys(fields).map(k => fieldLabel[k] || k).filter(Boolean);
+    if (perubahan.length > 0) {
+      await catatKomentarSistem(id, `✎ ${nama} mengubah ${perubahan.join(', ')}.`);
     }
 
     return NextResponse.json({ message: 'Dokumen berhasil diperbarui.' });

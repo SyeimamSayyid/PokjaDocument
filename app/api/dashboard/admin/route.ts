@@ -4,6 +4,13 @@ import { requireSession } from '@/lib/auth';
 
 const KEG = { ID: 0, STATUS: 11 };
 
+// Kolom "Dokumen Kerja sama" yang relevan di sini (0-based) — index 17 itu
+// TERAKHIR_DIAKSES (log kunjungan, format beda), BUKAN log edit. Siapa yang
+// terakhir MENGUBAH dokumen (dipakai EditPencilIndicator) ada di index 29,
+// ditulis dari dokumen-id-route.ts dan generate-kode-route.ts (format "role|nama|waktu").
+// index 29 SUDAH DIPAKAI di Kode.gs untuk "Milestone Diingatkan" (COL_MILESTONE) — jangan pakai ulang!
+const DOK_LOG_EDIT_COL = 30;
+
 export async function GET(req: NextRequest) {
   const session = await requireSession(req, ['admin', 'superadmin']);
   if (!session) {
@@ -57,7 +64,7 @@ export async function GET(req: NextRequest) {
       dokumenTerbaru.push({
         id: String(r[0]), jenis: String(r[1]), judul: String(r[2]),
         namaMitra: String(r[4]), tglBerakhir: String(r[7]), status: String(r[9]),
-        manualLog: String(r[17] || ''),
+        manualLog: String(r[DOK_LOG_EDIT_COL] || ''),
       });
     });
 

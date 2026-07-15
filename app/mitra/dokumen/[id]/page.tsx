@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, use } from 'react';
 import KomentarRevisi from '@/components/KomentarRevisi';
 import KomentarDocs from '@/components/KomentarDocs';
+import EditPencilIndicator from '@/components/EditPencilIndicator';
 import {
   FiArrowLeft, FiBell, FiLogOut, FiLock, FiFileText, FiClock, FiInfo,
   FiCheckCircle, FiAlertCircle, FiCalendar, FiCamera, FiUpload, FiTrash2,
@@ -20,6 +21,9 @@ interface Dokumen {
   sisaHari: number | null;
   divisi: string[];
   ttdTipe: string; ttdTglDiajukan: string; ttdStatus: string; ttdTglFinal: string; ttdCatatan: string;
+  sudahDipublikasi: boolean;
+  manualLog?: string;
+  scanTtdId?: string;
 }
 
 interface Notif { id: string; tipe: string; judul: string; pesan: string; dibaca: boolean; tglDibuat: string; }
@@ -200,7 +204,7 @@ export default function MitraDokumenDetailPage({ params }: { params: Promise<{ i
     try {
       const res = await fetch(`/api/dokumen/${id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transisi: 'Dalam Proses' }),
+        body: JSON.stringify({ transisi: 'Dalam Proses', pelaku: 'mitra', namaPelaku: dok?.namaMitra }),
       });
       const d = await res.json();
       if (!res.ok) { setError(d.message); return; }
@@ -216,7 +220,7 @@ export default function MitraDokumenDetailPage({ params }: { params: Promise<{ i
     try {
       const res = await fetch(`/api/dokumen/${id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, pelaku: 'mitra', namaPelaku: dok?.namaMitra }),
       });
       const d = await res.json();
       if (!res.ok) { setError(d.message); return false; }
@@ -243,7 +247,7 @@ export default function MitraDokumenDetailPage({ params }: { params: Promise<{ i
     try {
       const res = await fetch(`/api/dokumen/${id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tglKegiatanMulai: tglMulai, tglKegiatanSelesai: tglSelesai }),
+        body: JSON.stringify({ tglKegiatanMulai: tglMulai, tglKegiatanSelesai: tglSelesai, pelaku: 'mitra', namaPelaku: dok?.namaMitra }),
       });
       const d = await res.json();
       if (!res.ok) { setError(d.message); return; }
@@ -354,7 +358,16 @@ export default function MitraDokumenDetailPage({ params }: { params: Promise<{ i
 
   const sc = STATUS_COLOR[dok.status] || { bg:'#eef2f6', color:'#475569' };
   const bolehUnduhPdf = ['Selesai','Kegiatan Akan Berlangsung','Kegiatan Berlangsung','Kegiatan Selesai','MOU/PKS Berlaku','Kedaluwarsa'].includes(dok.status);
-  const bisaUploadFoto = dok.status === 'Kegiatan Berlangsung';
+  // Foto cuma boleh diunggah SETELAH admin publikasikan lewat Extract Poin,
+  // DAN selama kegiatan belum lewat tanggal selesainya (kalau tanggalnya diisi).
+  const kegiatanSudahLewat = (() => {
+    if (!dok.tglKegiatanSelesai) return false; // belum ditetapkan -> anggap belum lewat
+    const selesai = new Date(dok.tglKegiatanSelesai);
+    if (isNaN(selesai.getTime())) return false;
+    const now = new Date(); now.setHours(0,0,0,0); selesai.setHours(23,59,59,999);
+    return now.getTime() > selesai.getTime();
+  })();
+  const bisaUploadFoto = dok.sudahDipublikasi && !kegiatanSudahLewat;
   const persen = Math.round((terpakai / KUOTA_MAX) * 100);
 
   // Kelompokkan foto per bulan (terbaru dulu)
@@ -432,7 +445,10 @@ export default function MitraDokumenDetailPage({ params }: { params: Promise<{ i
                   </span>
                 )}
               </div>
-              <div style={{ fontSize:18, fontWeight:800, marginBottom:4, color:'#0f1f3d', letterSpacing:'-0.02em' }}>{dok.judul}</div>
+              <div style={{ fontSize:18, fontWeight:800, marginBottom:4, color:'#0f1f3d', letterSpacing:'-0.02em', display:'flex', alignItems:'center', gap:10 }}>
+                {dok.judul}
+                <EditPencilIndicator manualLog={dok.manualLog} size={22} ttdBasahPending={dok.ttdStatus === 'Menunggu Basah'} />
+              </div>
               <div style={{ fontSize:13.5, color:BLUE, fontWeight:600, display:'flex', alignItems:'center', gap:6 }}><FiHome size={13} />{dok.namaMitra}</div>
               <div style={{ fontSize:12, color:'#64748b', marginTop:8 }}>
                 Berlaku: {dok.tglBerlaku} s.d. {dok.tglBerakhir} · {dok.durasi} tahun
@@ -476,31 +492,47 @@ export default function MitraDokumenDetailPage({ params }: { params: Promise<{ i
 
         <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
 
-          {dok.status === 'Draft' && (
+          {dok.status === 'Draft' && (() => {
+            // Kalau mitra sudah pilih TTD Basah, tombol "Selesai Mengisi" dikunci
+            // sampai admin upload scan hasil TTD Basah DAN tanggal TTD-nya juga
+            // sudah tercatat (dok.ttdTglFinal). Kalau belum pilih TTD sama sekali
+            // atau pilih Online, tidak ada kuncian tambahan (perilaku lama).
+            const terkunciTtdBasah = dok.ttdTipe === 'basah' && (!dok.scanTtdId || !dok.ttdTglFinal);
+            return (
             <div style={{ ...shellStyle, borderColor:'rgba(29,78,216,0.18)' }} className="fld">
               <div style={{ ...coreStyle, background:'linear-gradient(170deg,#f8fafc,#eef4fc)' }}>
                 <div style={cardTitle}><FiFileText size={13} style={{ marginRight:6, verticalAlign:'middle' }} />Sudah selesai mengisi?</div>
-                <div style={hintText}>Jika dokumen sudah final dan siap ditinjau, klik tombol di bawah. Setelah ini, dokumen masuk tahap review admin.</div>
-                {!konfirmasi ? (
-                  <button onClick={() => setKonfirmasi(true)} style={{ ...btnPrimary, width:'100%' }} className="btn-hover">
-                    <FiCheckCircle size={14} style={{ marginRight:6, verticalAlign:'middle' }} />Selesai Mengisi Dokumen
-                  </button>
-                ) : (
-                  <div>
-                    <div style={{ fontSize:11, color:GOLD, background:'#FEF3C7', padding:'9px 11px', borderRadius:10, marginBottom:8, lineHeight:1.5 }}>
-                      <FiAlertCircle size={12} style={{ marginRight:5, verticalAlign:'middle' }} />Yakin dokumen sudah final? Pastikan semua bagian sudah terisi dengan benar.
-                    </div>
-                    <div style={{ display:'flex', gap:6 }}>
-                      <button onClick={() => setKonfirmasi(false)} style={{ ...btnSm, flex:1 }} className="btn-hover">Batal</button>
-                      <button onClick={selesaiMengisi} disabled={saving} style={{ ...btnPrimary, flex:2 }} className="btn-hover">
-                        {saving ? 'Mengirim…' : 'Ya, Kirim untuk Ditinjau'}
-                      </button>
-                    </div>
+                {terkunciTtdBasah ? (
+                  <div style={{ fontSize:11.5, color:'#92400E', background:'#FFFBEB', border:'1px solid #FDE68A', padding:'11px 13px', borderRadius:10, lineHeight:1.6 }}>
+                    <FiAlertCircle size={13} style={{ marginRight:6, verticalAlign:'middle' }} />
+                    Anda memilih TTD Basah — tombol ini terkunci sampai admin menerima &amp; mengunggah dokumen fisik yang sudah ditandatangani beserta tanggalnya. Silakan kirim dokumen fisik ke Pokja terlebih dahulu.
                   </div>
+                ) : (
+                  <>
+                    <div style={hintText}>Jika dokumen sudah final dan siap ditinjau, klik tombol di bawah. Setelah ini, dokumen masuk tahap review admin.</div>
+                    {!konfirmasi ? (
+                      <button onClick={() => setKonfirmasi(true)} style={{ ...btnPrimary, width:'100%' }} className="btn-hover">
+                        <FiCheckCircle size={14} style={{ marginRight:6, verticalAlign:'middle' }} />Selesai Mengisi Dokumen
+                      </button>
+                    ) : (
+                      <div>
+                        <div style={{ fontSize:11, color:GOLD, background:'#FEF3C7', padding:'9px 11px', borderRadius:10, marginBottom:8, lineHeight:1.5 }}>
+                          <FiAlertCircle size={12} style={{ marginRight:5, verticalAlign:'middle' }} />Yakin dokumen sudah final? Pastikan semua bagian sudah terisi dengan benar.
+                        </div>
+                        <div style={{ display:'flex', gap:6 }}>
+                          <button onClick={() => setKonfirmasi(false)} style={{ ...btnSm, flex:1 }} className="btn-hover">Batal</button>
+                          <button onClick={selesaiMengisi} disabled={saving} style={{ ...btnPrimary, flex:2 }} className="btn-hover">
+                            {saving ? 'Mengirim…' : 'Ya, Kirim untuk Ditinjau'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
-          )}
+            );
+          })()}
 
           {dok.status === 'Dalam Proses' && (
             <div style={{ ...shellStyle, borderColor:'#FDE68A' }} className="fld">
@@ -630,8 +662,50 @@ export default function MitraDokumenDetailPage({ params }: { params: Promise<{ i
             </div>
           </div>
 
-          {/* Galeri Foto Kegiatan — dikelompokkan per bulan, dengan caption */}
-          {bisaUploadFoto && (
+          {/* Galeri Foto Kegiatan — gate berdasarkan status publikasi & tanggal kegiatan */}
+          {!dok.sudahDipublikasi ? (
+            <div style={{ ...shellStyle, borderColor:'rgba(29,78,216,0.12)' }} className="fld">
+              <div style={coreStyle}>
+                <div style={cardTitle}><FiCamera size={13} style={{ marginRight:6, verticalAlign:'middle' }} />Foto Kegiatan</div>
+                <div style={{ background:'#f8fafc', border:'1px solid rgba(29,78,216,0.08)', borderRadius:11, padding:'12px 14px', fontSize:11.5, color:'#64748b', lineHeight:1.6, display:'flex', gap:9 }}>
+                  <FiInfo size={15} style={{ color: BLUE, flexShrink:0, marginTop:1 }} />
+                  <span>Fitur unggah foto akan terbuka otomatis setelah Admin Pokja mempublikasikan kerja sama ini ke halaman kegiatan publik. Sementara ini, silakan lengkapi dokumen dan cek masa berlakunya di atas.</span>
+                </div>
+              </div>
+            </div>
+          ) : kegiatanSudahLewat ? (
+            <div style={{ ...shellStyle, borderColor:'rgba(217,119,6,0.2)' }} className="fld">
+              <div style={coreStyle}>
+                <div style={cardTitle}><FiCamera size={13} style={{ marginRight:6, verticalAlign:'middle' }} />Foto Kegiatan</div>
+                <div style={{ background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:11, padding:'10px 13px', fontSize:11.5, color:'#92400E', marginBottom: grup.length > 0 ? 14 : 0, display:'flex', gap:9 }}>
+                  <FiInfo size={15} style={{ flexShrink:0, marginTop:1, color: GOLD }} />
+                  <span>Kegiatan sudah selesai (berakhir {dok.tglKegiatanSelesai}) — unggah dan edit foto baru sudah ditutup. Foto yang sudah ada tetap tersimpan di bawah ini.</span>
+                </div>
+
+                {grup.length > 0 && (
+                  <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+                    {grup.map(g => (
+                      <div key={g.label}>
+                        <div style={monthLabel}>{g.label}</div>
+                        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                          {g.items.map(f => (
+                            <div key={f.fileId} style={fotoCard}>
+                              <img src={`/api/foto/${f.fileId}`} alt={f.nama} style={{ width:'100%', height:74, objectFit:'cover', display:'block' }} />
+                              <div style={{ padding:'6px 8px' }}>
+                                <span style={{ fontSize:10.5, color: f.caption ? '#334155' : '#94a3b8', lineHeight:1.4 }}>
+                                  {f.caption || 'Tanpa deskripsi'}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
             <div style={{ ...shellStyle, borderColor:'rgba(217,119,6,0.2)' }} className="fld">
               <div style={coreStyle}>
                 <div style={cardTitle}><FiCamera size={13} style={{ marginRight:6, verticalAlign:'middle' }} />Foto Kegiatan</div>

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { appendRow, getSheetData } from '@/lib/sheet';
+import { appendRow, getSheetData, updateCell } from '@/lib/sheet';
 import { generateId, formatTanggalWaktu } from '@/lib/utils';
 import { google } from 'googleapis';
 
@@ -198,6 +198,32 @@ export async function POST(req: NextRequest) {
         tglDiarsipkan: now, statusKerjaSama, sumber: 'manual', divisi: divisiArr,
       },
     });
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
+}
+
+// ── PATCH: ubah status kerja sama (Masih Berlaku / Sudah Berakhir) ─────────
+// Cuma berlaku utk entri MANUAL — entri sistem statusnya ikut status dokumen
+// asli di "Dokumen Kerja sama", bukan field independen yang bisa diedit di sini.
+export async function PATCH(req: NextRequest) {
+  try {
+    const { id, statusKerjaSama } = await req.json();
+    if (!id) return NextResponse.json({ message: 'id wajib diisi.' }, { status: 400 });
+    if (!['Masih Berlaku', 'Sudah Berakhir'].includes(statusKerjaSama)) {
+      return NextResponse.json({ message: 'Status kerja sama tidak valid.' }, { status: 400 });
+    }
+
+    const rows = await getSheetData(SHEET);
+    const idx = rows.findIndex(r => String(r[C.ID] || '').trim() === id);
+    if (idx === -1) {
+      return NextResponse.json({ message: 'Data arsip tidak ditemukan (mungkin ini entri sistem, statusnya ikut dokumen asli).' }, { status: 404 });
+    }
+
+    const rowNumber = idx + 2; // +2 karena header di baris 1, array 0-based
+    await updateCell(SHEET, rowNumber, C.STATUS_KS + 1, statusKerjaSama);
+
+    return NextResponse.json({ message: 'Status kerja sama berhasil diperbarui.', statusKerjaSama });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }

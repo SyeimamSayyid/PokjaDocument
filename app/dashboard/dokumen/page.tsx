@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import LoaderPage from '@/components/LoaderPage';
+import EditPencilIndicator from '@/components/EditPencilIndicator';
 import {
   FiFolder, FiEdit, FiTrash2, FiSearch,
   FiEye, FiExternalLink, FiCheckCircle, FiClock, FiAlertCircle,
@@ -19,7 +20,7 @@ interface DokumenItem {
   tglDibuat: string; tglBerlaku: string; tglBerakhir: string;
   durasi: string; status: string; kode: string; kodeExpire: string;
   docsId: string; docsUrl: string; folderId: string; dibuatOleh: string;
-  catatan?: string; divisi?: string[];
+  catatan?: string; divisi?: string[]; manualLog?: string;
 }
 interface KontakInfo { namaPIC: string; jurusan: string; }
 interface NotifInfo { count: number; hasUnread: boolean; }
@@ -349,6 +350,15 @@ export default function DokumenPage() {
                         {institusiGroups.map(([namaInstitusi, docs]) => {
                           const instKey = `${g.jenis}::${namaInstitusi}`;
                           const instOpen = expandedInstitusi.has(instKey);
+                          // Pensil ringkasan di level institusi — ambil log edit paling baru
+                          // di antara semua dokumen institusi ini, biar kelihatan tanpa expand dulu.
+                          const logTerbaru = docs.reduce<string | undefined>((terbaru, d) => {
+                            if (!d.manualLog) return terbaru;
+                            if (!terbaru) return d.manualLog;
+                            const wTerbaru = terbaru.split('|')[2] || '';
+                            const wIni = d.manualLog.split('|')[2] || '';
+                            return wIni > wTerbaru ? d.manualLog : terbaru;
+                          }, undefined);
                           return (
                             <div key={instKey} style={institusiBox}>
                               <button onClick={() => toggleInstitusi(instKey)} style={{ ...folderHeaderBtn, padding:'8px 10px' }}>
@@ -358,6 +368,9 @@ export default function DokumenPage() {
                                 <FaBuilding size={13} style={{ color:'#64748b' }} />
                                 <span style={{ fontSize:12.5, fontWeight:700, color:'#334155' }}>{namaInstitusi}</span>
                                 <span style={{ fontSize:10.5, color:'#94a3b8' }}>{docs.length} dok</span>
+                                <span style={{ marginLeft:'auto', display:'flex' }} onClick={e => e.stopPropagation()}>
+                                  <EditPencilIndicator manualLog={logTerbaru} size={22} />
+                                </span>
                               </button>
                               {instOpen && (
                                 <div style={{ padding:'0 10px 10px', display:'flex', flexDirection:'column', gap:7 }}>
@@ -387,7 +400,7 @@ export default function DokumenPage() {
                 <table style={{ width:'100%', fontSize:12, borderCollapse:'collapse' }}>
                   <thead>
                     <tr style={{ background:'#f8fafc' }}>
-                      {['','Jenis','Judul','Mitra / PIC','Berlaku s.d.','Status','Kode',''].map(h => (
+                      {['','Jenis','Judul','Mitra / PIC','Berlaku s.d.','Status','Kode','Diedit',''].map(h => (
                         <th key={h} style={th}>{h}</th>
                       ))}
                     </tr>
@@ -443,12 +456,7 @@ export default function DokumenPage() {
                               </div>
                             )}
                           </td>
-                          <td style={{ ...td, color:'#64748b', whiteSpace:'nowrap' }}>
-                            {d.tglBerakhir
-                              ? d.tglBerakhir
-                              : <span style={{ color:'#A32D2D', fontWeight:700, fontSize:10.5 }}>Belum Ditentukan</span>
-                            }
-                          </td>
+                          <td style={{ ...td, color:'#64748b', whiteSpace:'nowrap' }}>{d.tglBerakhir}</td>
                           <td style={td}>
                             <span style={{ fontSize:10, fontWeight:600, padding:'3px 10px', borderRadius:100, background:sc.bg, color:sc.color, display:'inline-flex', alignItems:'center', gap:4 }}>
                               {STATUS_ICON[d.status]}
@@ -456,6 +464,7 @@ export default function DokumenPage() {
                             </span>
                           </td>
                           <td style={{ ...td, fontFamily:'monospace', color: BLUE, fontWeight:700 }}>{d.kode}</td>
+                          <td style={td}><EditPencilIndicator manualLog={d.manualLog} size={24} /></td>
                           <td style={td}>
                             <div style={{ display:'flex', gap:5, justifyContent:'flex-end', flexWrap:'nowrap' }}>
                               <a href={`/dashboard/dokumen/${d.id}`} style={iconLinkBtn} title="Detail" className="btn-hover"><FiEye size={13} /></a>
@@ -539,11 +548,7 @@ function DokFileRow({ d, kontak, notif, expanded, onToggle, onEdit, onHapus }: {
         <FiFileText size={14} style={{ color:'#94a3b8', flexShrink:0 }} />
         <span style={{ fontSize:12.5, fontWeight:600, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:'#0f1f3d' }}>{d.judul}</span>
         {notif && <NotifBadge notif={notif} />}
-        {!d.tglBerakhir && (
-          <span style={{ fontSize:9, fontWeight:700, padding:'3px 8px', borderRadius:100, background:'#FCEBEB', color:'#A32D2D', flexShrink:0, display:'inline-flex', alignItems:'center', gap:3, whiteSpace:'nowrap' }} title="Masa berlaku & berakhir belum ditentukan">
-            <FiAlertCircle size={9} /> Belum Ditentukan
-          </span>
-        )}
+        <EditPencilIndicator manualLog={d.manualLog} size={22} />
         <span style={{ fontSize:9.5, fontWeight:600, padding:'3px 9px', borderRadius:100, background:sc.bg, color:sc.color, flexShrink:0, display:'inline-flex', alignItems:'center', gap:4 }}>
           {STATUS_ICON[d.status]}
           {d.status}
@@ -552,20 +557,11 @@ function DokFileRow({ d, kontak, notif, expanded, onToggle, onEdit, onHapus }: {
 
       {expanded && (
         <div style={{ padding:'0 14px 12px 33px', display:'flex', flexDirection:'column', gap:8 }} className="fld">
-          {!d.tglBerakhir && (
-            <div style={{ fontSize:10.5, color:'#A32D2D', fontWeight:700, display:'flex', alignItems:'center', gap:5 }}>
-              <FiAlertCircle size={11} /> Masa Berlaku &amp; Berakhir Belum Ditentukan
-            </div>
-          )}
           <div style={{ fontSize:11, color:'#64748b', display:'flex', alignItems:'center', gap:5, flexWrap:'wrap' }}>
             <FaBuilding size={11} /> {d.namaMitra}
             <span style={{ opacity:0.4 }}>·</span>
-            {d.tglBerlaku && d.tglBerakhir && (
-              <>
-                <FiCalendar size={11} /> {d.tglBerlaku} s.d. {d.tglBerakhir}
-                <span style={{ opacity:0.4 }}>·</span>
-              </>
-            )}
+            <FiCalendar size={11} /> {d.tglBerlaku} s.d. {d.tglBerakhir}
+            <span style={{ opacity:0.4 }}>·</span>
             Kode: <strong style={{ color: BLUE }}>{d.kode}</strong>
           </div>
           {(kontak?.namaPIC || (d.jenis === 'PKS' && kontak?.jurusan)) && (

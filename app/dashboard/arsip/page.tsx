@@ -1,6 +1,12 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import {
+  FiFileText, FiHome, FiPenTool, FiEdit2, FiTrash2, FiZap,
+  FiUpload, FiX, FiArchive, FiCalendar, FiSearch,
+  FiFilter, FiPlus, FiCheckCircle, FiAlertCircle, FiUser,
+} from 'react-icons/fi';
+import { FaBuilding } from 'react-icons/fa';
 
 const MAKS_UKURAN = 10 * 1024 * 1024; // 10 MB
 
@@ -55,6 +61,68 @@ async function kompresPdf(file: File, onProgress?: (pesan: string) => void): Pro
   return file;
 }
 
+// Kompres gambar (JPG/PNG) — canvas re-encode ke JPEG kualitas tinggi (0.85).
+// Nyaris tidak kelihatan bedanya secara visual, tapi ukuran bisa turun signifikan
+// terutama dari PNG (lossless) ke JPEG (lossy terkontrol). PNG dgn transparansi
+// akan kehilangan transparansinya — untuk hasil scan dokumen ini tidak masalah.
+async function kompresGambar(file: File): Promise<File> {
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error('Gagal memuat gambar'));
+    im.src = URL.createObjectURL(file);
+  });
+  const canvas = document.createElement('canvas');
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext('2d')!;
+  ctx.drawImage(img, 0, 0);
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(b => b ? resolve(b) : reject(new Error('Gagal kompres gambar')), 'image/jpeg', 0.85);
+  });
+  return new File([blob], file.name.replace(/\.(png|jpe?g)$/i, '') + '-kompres.jpg', { type: 'image/jpeg' });
+}
+
+// Kompres Word (.docx) — docx itu sendiri adalah arsip ZIP berisi XML, jadi
+// "kompresi" di sini murni re-zip dengan level kompresi maksimal (LOSSLESS,
+// tidak ada konten yang berubah/hilang sama sekali, cuma dikemas ulang lebih padat).
+// Wajib install dulu: npm install jszip
+// Catatan: .doc lama (bukan .docx) TIDAK didukung, karena bukan format ZIP.
+async function kompresWord(file: File): Promise<File> {
+  if (file.type !== 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+    throw new Error('Kompresi cuma didukung untuk .docx, bukan format .doc lama.');
+  }
+  const JSZip = (await import('jszip')).default;
+  const zip = await JSZip.loadAsync(file);
+  const bytes = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 9 } });
+  const arrBuf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  return new File([arrBuf], file.name, { type: file.type });
+}
+
+function bisaDikompres(mimeType: string): boolean {
+  return mimeType === 'application/pdf'
+    || mimeType.startsWith('image/')
+    || mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+}
+
+function labelJenisFile(mimeType: string): string {
+  if (mimeType === 'application/pdf') return 'PDF';
+  if (mimeType.startsWith('image/')) return 'Gambar';
+  if (mimeType.includes('word')) return 'Word';
+  return 'File';
+}
+
+// Dispatcher — pilih fungsi kompres sesuai tipe file
+async function kompresFile(file: File, onProgress?: (pesan: string) => void): Promise<File> {
+  if (file.type === 'application/pdf') return kompresPdf(file, onProgress);
+  if (file.type.startsWith('image/')) { onProgress?.('Mengompres gambar...'); return kompresGambar(file); }
+  if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+    onProgress?.('Mengompres dokumen Word...');
+    return kompresWord(file);
+  }
+  throw new Error('Jenis file ini tidak didukung untuk kompresi otomatis.');
+}
+
 interface Arsip {
   id: string; namaInstitusi: string; jenis: string; judul: string;
   tglBerlaku: string; tglBerakhir: string; fileId: string; fileUrl: string; namaFile: string;
@@ -87,6 +155,9 @@ export default function ArsipDokumenPage() {
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [editingStatus, setEditingStatus] = useState<string | null>(null);
+  const [statusDraft, setStatusDraft] = useState<'Masih Berlaku' | 'Sudah Berakhir'>('Sudah Berakhir');
+  const [savingStatus, setSavingStatus] = useState(false);
 
   // form fields
   const [fNama, setFNama] = useState('');
@@ -104,6 +175,8 @@ export default function ArsipDokumenPage() {
   const [fFileError, setFFileError] = useState('');
   const [compressing, setCompressing] = useState(false);
   const [compressInfo, setCompressInfo] = useState('');
+  const [showKompresSaran, setShowKompresSaran] = useState(false);
+  const [showKompresCard, setShowKompresCard] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -131,7 +204,7 @@ export default function ArsipDokumenPage() {
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    setFFileError(''); setCompressInfo('');
+    setFFileError(''); setCompressInfo(''); setShowKompresSaran(false); setShowKompresCard(false);
     if (!f) { setFFile(null); return; }
     const allowed = [
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -139,10 +212,15 @@ export default function ArsipDokumenPage() {
     ];
     if (!allowed.includes(f.type)) { setFFileError('Format tidak didukung. Gunakan Word, PDF, atau gambar (JPG/PNG).'); setFFile(null); return; }
 
-    if (f.size <= MAKS_UKURAN) { setFFile(f); return; }
+    if (f.size <= MAKS_UKURAN) {
+      setFFile(f);
+      // 5-10MB — tidak dipaksa, cuma ditawarkan tombol saran kompresi
+      if (f.size > 5 * 1024 * 1024 && bisaDikompres(f.type)) setShowKompresSaran(true);
+      return;
+    }
 
-    // Lebih dari 10MB — kalau PDF, coba kompres otomatis. Selain PDF, tidak bisa dikompres, tolak.
-    if (f.type !== 'application/pdf') {
+    // Lebih dari 10MB — WAJIB dikompres kalau jenisnya didukung, kalau tidak (mis. .doc lama), tolak.
+    if (!bisaDikompres(f.type)) {
       setFFileError(`File terlalu besar (${(f.size/1024/1024).toFixed(2)}MB). Maksimal 10MB.`);
       setFFile(null);
       return;
@@ -151,17 +229,33 @@ export default function ArsipDokumenPage() {
     setCompressing(true);
     setCompressInfo(`Ukuran asli ${(f.size/1024/1024).toFixed(2)}MB, melebihi 10MB — mengompres otomatis...`);
     try {
-      const compressed = await kompresPdf(f, (pesan) => setCompressInfo(pesan));
+      const compressed = await kompresFile(f, (pesan) => setCompressInfo(pesan));
       if (compressed.size > MAKS_UKURAN) {
-        setFFileError(`Sudah dikompres tapi masih ${(compressed.size/1024/1024).toFixed(2)}MB (maksimal 10MB). Coba PDF dengan halaman lebih sedikit atau kualitas gambar lebih rendah.`);
+        setFFileError(`Sudah dikompres tapi masih ${(compressed.size/1024/1024).toFixed(2)}MB (maksimal 10MB). Coba file yang lebih kecil.`);
         setFFile(null);
       } else {
         setFFile(compressed);
         setCompressInfo(`Berhasil dikompres: ${(f.size/1024/1024).toFixed(2)}MB → ${(compressed.size/1024/1024).toFixed(2)}MB.`);
       }
     } catch {
-      setFFileError('Gagal mengompres PDF. Coba unggah file yang lebih kecil secara manual.');
+      setFFileError('Gagal mengompres file. Coba unggah file yang lebih kecil secara manual.');
       setFFile(null);
+    } finally {
+      setCompressing(false);
+    }
+  };
+
+  const jalankanKompresManual = async () => {
+    if (!fFile) return;
+    setShowKompresCard(false); setShowKompresSaran(false);
+    setCompressing(true); setCompressInfo('');
+    try {
+      const original = fFile;
+      const compressed = await kompresFile(fFile, (pesan) => setCompressInfo(pesan));
+      setFFile(compressed);
+      setCompressInfo(`Berhasil dikompres: ${(original.size/1024/1024).toFixed(2)}MB → ${(compressed.size/1024/1024).toFixed(2)}MB.`);
+    } catch {
+      setFFileError('Gagal mengompres file.');
     } finally {
       setCompressing(false);
     }
@@ -171,7 +265,7 @@ export default function ArsipDokumenPage() {
     setFNama(''); setFJenis('MOU'); setFJudul(''); setFBerlaku(''); setFBerakhir('');
     setFStatusKS('Sudah Berakhir'); setFDivisi([]);
     setFPIC(''); setFEmail(''); setFWa(''); setFCatatan(''); setFFile(null); setFFileError('');
-    setCompressInfo(''); setCompressing(false);
+    setCompressInfo(''); setCompressing(false); setShowKompresSaran(false); setShowKompresCard(false);
   };
 
   const submitArsip = async (e: React.FormEvent) => {
@@ -243,6 +337,28 @@ export default function ArsipDokumenPage() {
     finally { setDeleting(null); setConfirmDelete(null); }
   };
 
+  const mulaiEditStatus = (a: Arsip) => {
+    setEditingStatus(a.id);
+    setStatusDraft(a.statusKerjaSama === 'Masih Berlaku' ? 'Masih Berlaku' : 'Sudah Berakhir');
+    setError(''); setMsg('');
+  };
+
+  const simpanStatus = async (id: string) => {
+    setSavingStatus(true); setError(''); setMsg('');
+    try {
+      const r = await fetch('/api/arsip-dokumen', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, statusKerjaSama: statusDraft }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setError(d.message || 'Gagal memperbarui status.'); return; }
+      setList(prev => prev.map(a => a.id === id ? { ...a, statusKerjaSama: statusDraft } : a));
+      setMsg('Status kerja sama berhasil diperbarui.');
+      setEditingStatus(null);
+    } catch { setError('Terjadi kesalahan saat memperbarui status.'); }
+    finally { setSavingStatus(false); }
+  };
+
   const backUrl = role === 'superadmin' ? '/dashboard/superadmin' : '/dashboard/admin';
 
   const statusBadge = (a: Arsip) => {
@@ -263,17 +379,19 @@ export default function ArsipDokumenPage() {
     <div style={{ minHeight:'100vh', background:'linear-gradient(180deg,#f7f9fc,#eef2f8)', fontFamily: FONT }}>
       <GlobalStyle />
       <nav style={navStyle}>
-        <a href={backUrl} style={backLink}>← Dashboard</a>
-        <div style={{ fontWeight:700, fontSize:13.5, flex:1, textAlign:'center', color:'#0f1f3d' }}>Arsip Dokumen</div>
-        <button onClick={() => { setShowForm(s => !s); if (showForm) resetForm(); }} style={btnPrimary} className="btn-hover">
-          {showForm ? 'Batal' : '+ Arsipkan Dokumen'}
+        <a href={backUrl} style={{ ...backLink, display:'flex', alignItems:'center', gap:5 }}><FiHome size={13} /> Dashboard</a>
+        <div style={{ fontWeight:700, fontSize:13.5, flex:1, textAlign:'center', color:'#0f1f3d', display:'flex', alignItems:'center', justifyContent:'center', gap:7 }}>
+          <FiArchive size={15} style={{ color:'#1D4ED8' }} /> Arsip Dokumen
+        </div>
+        <button onClick={() => { setShowForm(s => !s); if (showForm) resetForm(); }} style={{ ...btnPrimary, display:'flex', alignItems:'center', gap:6 }} className="btn-hover">
+          {showForm ? (<><FiX size={13} /> Batal</>) : (<><FiPlus size={13} /> Arsipkan Dokumen</>)}
         </button>
       </nav>
 
       <div style={{ maxWidth:1000, margin:'0 auto', padding:'1.5rem 1.25rem 3rem' }}>
 
-        {msg   && <div style={{ ...msgBox('#1D4ED8','#DBEAFE'), marginBottom:14 }} className="fld">{msg}</div>}
-        {error && <div style={{ ...msgBox('#A32D2D','#FCEBEB'), marginBottom:14 }} className="fld">{error}</div>}
+        {msg   && <div style={{ ...msgBox('#1D4ED8','#DBEAFE'), marginBottom:14, display:'flex', alignItems:'center', gap:8 }} className="fld"><FiCheckCircle size={14} style={{ flexShrink:0 }} />{msg}</div>}
+        {error && <div style={{ ...msgBox('#A32D2D','#FCEBEB'), marginBottom:14, display:'flex', alignItems:'center', gap:8 }} className="fld"><FiAlertCircle size={14} style={{ flexShrink:0 }} />{error}</div>}
 
         <div style={{ ...eyebrow, marginBottom:6 }}>Riwayat Lengkap Kerja Sama</div>
         <p style={{ fontSize:12, color:'#64748b', marginTop:0, marginBottom:18, lineHeight:1.6 }}>
@@ -384,7 +502,7 @@ export default function ArsipDokumenPage() {
                 </div>
 
                 <div style={{ marginBottom:16 }}>
-                  <label style={labelSt}>Berkas Dokumen * <span style={{ fontWeight:400, color:'#94a3b8' }}>(Word / PDF / Scan JPG-PNG, maks 10MB — PDF di atas 10MB otomatis dikompres)</span></label>
+                  <label style={{ ...labelSt, display:'flex', alignItems:'center', gap:6 }}><FiUpload size={12} /> Berkas Dokumen * <span style={{ fontWeight:400, color:'#94a3b8' }}>(Word / PDF / Scan JPG-PNG, maks 10MB — PDF di atas 10MB otomatis dikompres)</span></label>
                   <input type="file" accept=".doc,.docx,.pdf,.jpg,.jpeg,.png,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf,image/jpeg,image/png"
                     onChange={handleFile} disabled={compressing} style={inputFull} />
                   {compressing && (
@@ -394,8 +512,31 @@ export default function ArsipDokumenPage() {
                     </div>
                   )}
                   {!compressing && compressInfo && <div style={{ fontSize:11, color:'#0F6E56', marginTop:6 }}>{compressInfo}</div>}
-                  {fFile && !compressing && <div style={{ fontSize:11, color:'#1D4ED8', marginTop:6 }}>✓ {fFile.name} ({(fFile.size/1024).toFixed(0)} KB)</div>}
+                  {fFile && !compressing && <div style={{ fontSize:11, color:'#1D4ED8', marginTop:6, display:'flex', alignItems:'center', gap:6 }}><FiCheckCircle size={12} /> {fFile.name} ({(fFile.size/1024).toFixed(0)} KB)</div>}
                   {fFileError && <div style={{ fontSize:11, color:'#A32D2D', marginTop:6 }}>{fFileError}</div>}
+
+                  {showKompresSaran && !showKompresCard && !compressing && (
+                    <button type="button" onClick={() => setShowKompresCard(true)}
+                      style={{ marginTop:8, fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid #FDE68A', background:'#FFFBEB', color:'#92400E', cursor:'pointer', display:'inline-flex', alignItems:'center', gap:6 }}>
+                      <FiZap size={12} style={{ flexShrink:0 }} /> Kompres {fFile ? labelJenisFile(fFile.type) : 'File'} Ini
+                    </button>
+                  )}
+
+                  {showKompresCard && fFile && !compressing && (
+                    <div style={{ marginTop:8, padding:'12px 14px', borderRadius:10, background:'#FFFBEB', border:'1px solid #FDE68A' }}>
+                      <div style={{ fontSize:11.5, color:'#92400E', lineHeight:1.6, marginBottom:8 }}>
+                        Kompres ini tidak mengurangi tampilan HD file, hanya mengurangi ukurannya saja.
+                      </div>
+                      <div style={{ display:'flex', gap:8 }}>
+                        <button type="button" onClick={() => setShowKompresCard(false)} style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'1px solid #e2e8f0', background:'#fff', color:'#334155', cursor:'pointer' }}>
+                          Nanti Saja
+                        </button>
+                        <button type="button" onClick={jalankanKompresManual} style={{ fontSize:11, padding:'6px 12px', borderRadius:8, border:'none', background:'#D97706', color:'#fff', cursor:'pointer', fontWeight:600 }}>
+                          Ya, Kompres Sekarang
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <button type="submit" disabled={saving || compressing} style={{ ...btnPrimary, width:'100%' }} className="btn-hover">
@@ -408,13 +549,17 @@ export default function ArsipDokumenPage() {
         )}
 
         <div style={{ display:'flex', gap:8, marginBottom:12, flexWrap:'wrap' }}>
-          <input
-            value={cari}
-            onChange={e => setCari(e.target.value)}
-            placeholder="Cari institusi, judul, atau PIC..."
-            style={{ ...inputFull, flex:1, minWidth:200 }}
-          />
-          <div style={{ display:'flex', gap:6 }}>
+          <div style={{ position:'relative', flex:1, minWidth:200 }}>
+            <FiSearch size={14} style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:'#94a3b8', pointerEvents:'none' }} />
+            <input
+              value={cari}
+              onChange={e => setCari(e.target.value)}
+              placeholder="Cari institusi, judul, atau PIC..."
+              style={{ ...inputFull, width:'100%', paddingLeft:34 }}
+            />
+          </div>
+          <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+            <FiFilter size={13} style={{ color:'#94a3b8', flexShrink:0 }} />
             {['', 'MOU', 'PKS'].map(j => (
               <button key={j} onClick={() => setFilterJenis(j)}
                 style={{ ...filterPill, ...(filterJenis === j ? filterPillActive : {}) }} className="btn-hover">
@@ -442,10 +587,10 @@ export default function ArsipDokumenPage() {
           <div style={emptyBox}>Belum ada dokumen yang diarsipkan.</div>
         ) : (
           <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-            {list.map(a => {
+            {list.map((a, idx) => {
               const sb = statusBadge(a);
               return (
-                <div key={a.id} style={shellStyle} className="fld">
+                <div key={a.id} style={{ ...shellStyle, animationDelay:`${Math.min(idx, 8) * 0.04}s` }} className="fld lift">
                   <div style={coreStyle}>
                     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, flexWrap:'wrap' }}>
                       <div style={{ flex:1, minWidth:200 }}>
@@ -461,14 +606,14 @@ export default function ArsipDokumenPage() {
                           })}
                         </div>
                         <div style={{ fontSize:14.5, fontWeight:700, color:'#0f1f3d' }}>{a.judul}</div>
-                        <div style={{ fontSize:12.5, color:'#1D4ED8', fontWeight:600, marginTop:2 }}>🏢 {a.namaInstitusi}</div>
-                        <div style={{ fontSize:11, color:'#64748b', marginTop:6 }}>Berlaku: {a.tglBerlaku || '—'} s.d. {a.tglBerakhir || '—'}</div>
-                        <div style={{ fontSize:11, color:'#64748b', marginTop:2 }}>
-                          PIC: {a.namaPIC || '—'}{a.emailPIC ? ` · ${a.emailPIC}` : ''}{a.waPIC ? ` · ${a.waPIC}` : ''}
+                        <div style={{ fontSize:12.5, color:'#1D4ED8', fontWeight:600, marginTop:2, display:'flex', alignItems:'center', gap:6 }}><FaBuilding size={12} /> {a.namaInstitusi}</div>
+                        <div style={{ fontSize:11, color:'#64748b', marginTop:6, display:'flex', alignItems:'center', gap:5 }}><FiCalendar size={11} /> Berlaku: {a.tglBerlaku || '—'} s.d. {a.tglBerakhir || '—'}</div>
+                        <div style={{ fontSize:11, color:'#64748b', marginTop:2, display:'flex', alignItems:'center', gap:5, flexWrap:'wrap' }}>
+                          <FiUser size={11} /> {a.namaPIC || '—'}{a.emailPIC ? ` · ${a.emailPIC}` : ''}{a.waPIC ? ` · ${a.waPIC}` : ''}
                         </div>
                         {a.ttdTglFinal && (
                           <div style={{ fontSize:11, color:'#D97706', marginTop:4, display:'flex', alignItems:'center', gap:5 }}>
-                            ✒ TTD {a.ttdTipe === 'basah' ? 'Basah' : 'Online'}: {a.ttdTglFinal}
+                            <FiPenTool size={11} /> TTD {a.ttdTipe === 'basah' ? 'Basah' : 'Online'}: {a.ttdTglFinal}
                           </div>
                         )}
                         {a.sumber === 'manual' && (
@@ -478,15 +623,32 @@ export default function ArsipDokumenPage() {
                       </div>
                       <div style={{ display:'flex', flexDirection:'column', gap:6, flexShrink:0 }}>
                         {a.fileUrl && (
-                          <a href={a.fileUrl} target="_blank" rel="noopener noreferrer" style={{ ...btnSm, textDecoration:'none', textAlign:'center' }} className="btn-hover">
-                            📄 Lihat Berkas
+                          <a href={a.fileUrl} target="_blank" rel="noopener noreferrer" style={{ ...btnSm, textDecoration:'none', textAlign:'center', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }} className="btn-hover">
+                            <FiFileText size={12} /> Lihat Berkas
                           </a>
                         )}
                         {a.sumber === 'sistem' ? (
                           <a href={`/dashboard/dokumen/${a.id}`} style={{ ...btnSm, textDecoration:'none', textAlign:'center' }} className="btn-hover">
                             Lihat di Sistem
                           </a>
-                        ) : confirmDelete === a.id ? (
+                        ) : editingStatus === a.id ? (
+                          <div style={confirmBox}>
+                            <select value={statusDraft} onChange={e => setStatusDraft(e.target.value as 'Masih Berlaku' | 'Sudah Berakhir')}
+                              style={{ fontSize:11, padding:'6px 8px', borderRadius:8, border:'1px solid #e2e8f0', width:'100%', marginBottom:6 }}>
+                              <option value="Masih Berlaku">Masih Berlaku</option>
+                              <option value="Sudah Berakhir">Sudah Berakhir</option>
+                            </select>
+                            <div style={{ display:'flex', gap:6 }}>
+                              <button onClick={() => setEditingStatus(null)} style={{ ...btnSm, flex:1, fontSize:10 }} className="btn-hover">Batal</button>
+                              <button onClick={() => simpanStatus(a.id)} disabled={savingStatus} style={{ ...btnSm, flex:1, fontSize:10, background:'#1D4ED8', color:'#fff', borderColor:'#1D4ED8' }} className="btn-hover">
+                                {savingStatus ? '…' : 'Simpan'}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button onClick={() => mulaiEditStatus(a)} style={{ ...btnSm, textAlign:'center', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }} className="btn-hover"><FiEdit2 size={11} /> Edit Status</button>
+                        )}
+                        {a.sumber === 'sistem' ? null : confirmDelete === a.id ? (
                           <div style={confirmBox}>
                             <span style={{ fontSize:10.5, color:'#A32D2D', fontWeight:600 }}>Yakin hapus?</span>
                             <div style={{ display:'flex', gap:6, marginTop:6 }}>
@@ -497,7 +659,7 @@ export default function ArsipDokumenPage() {
                             </div>
                           </div>
                         ) : (
-                          <button onClick={() => setConfirmDelete(a.id)} style={deleteLink} className="btn-hover">🗑️ Hapus</button>
+                          <button onClick={() => setConfirmDelete(a.id)} style={{ ...deleteLink, display:'flex', alignItems:'center', gap:5 }} className="btn-hover"><FiTrash2 size={11} /> Hapus</button>
                         )}
                       </div>
                     </div>
@@ -518,6 +680,8 @@ function GlobalStyle() {
       @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
       @keyframes fadeUp { from { opacity:0; transform: translateY(14px); filter: blur(3px);} to { opacity:1; transform: translateY(0); filter: blur(0);} }
       .fld { animation: fadeUp 0.5s cubic-bezier(0.32,0.72,0,1) both; }
+      .lift { transition: all 0.5s cubic-bezier(0.32,0.72,0,1); }
+      .lift:hover { transform: translateY(-3px); box-shadow: 0 1px 2px rgba(15,23,42,0.04), 0 28px 48px -28px rgba(29,78,216,0.28) !important; }
       .btn-hover { transition: all 0.35s cubic-bezier(0.32,0.72,0,1); }
       .btn-hover:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.04); }
       .btn-hover:active:not(:disabled) { transform: scale(0.98); }
