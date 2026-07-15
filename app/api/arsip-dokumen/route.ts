@@ -7,7 +7,8 @@ import { requireSession } from '@/lib/auth';
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_WEBAPP_URL!;
 const SHEET = 'Arsip Dokumen';
 
-
+// Untuk menonaktifkan bodyParser di App Router
+export const dynamic = 'force-dynamic';
 
 // Kolom Arsip Dokumen (0-based, 17 kolom)
 const C = {
@@ -16,7 +17,7 @@ const C = {
   CATATAN: 12, OLEH: 13, TGL_ARSIP: 14, STATUS_KS: 15, DIVISI: 16,
 };
 
-// Kolom Dokumen Kerja sama (0-based) — yang dipakai di sini saja
+// Kolom Dokumen Kerja sama (0-based)
 const DOK_COL = {
   ID: 0, JENIS: 1, JUDUL: 2, ID_MITRA: 3, NAMA_MITRA: 4,
   TGL_BERLAKU: 6, TGL_BERAKHIR: 7, STATUS: 9, DOCS_URL: 13, DIBUAT_OLEH: 15,
@@ -24,12 +25,6 @@ const DOK_COL = {
   TTD_TIPE: 24, TTD_STATUS: 26, TTD_TGL_FINAL: 27,
 };
 const PJ_COL = { ID_MITRA: 1, NAMA: 2, EMAIL: 7, WA: 8, PIC: 18 };
-
-export const config = {
-  api: {
-    bodyParser: false,   // ← PENTING untuk FormData
-  },
-};
 
 function normNama(s: string): string {
   return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -54,7 +49,6 @@ async function uploadFileArsip(params: { namaFile: string; base64Data: string; m
   return res.json();
 }
 
-// Resolve kontak PIC dari Pengajuan Mitra utk dokumen sistem
 async function resolveKontak(idMitra: string, namaInstitusi: string, pjRows: string[][]) {
   let matches = idMitra ? pjRows.filter(r => String(r[PJ_COL.ID_MITRA] || '').trim() === idMitra) : [];
   if (matches.length === 0 && namaInstitusi) {
@@ -73,7 +67,7 @@ async function resolveKontak(idMitra: string, namaInstitusi: string, pjRows: str
   return { namaPIC, email, waPIC };
 }
 
-// ── GET: daftar arsip GABUNGAN ──
+// GET
 export async function GET(req: NextRequest) {
   const session = await requireSession(req, ['admin', 'superadmin']);
   if (!session) {
@@ -86,7 +80,6 @@ export async function GET(req: NextRequest) {
     const cari   = searchParams.get('cari')?.trim().toLowerCase();
     const sumber = searchParams.get('sumber')?.trim();
 
-    // 1) Arsip manual
     let dataManual: ArsipItem[] = [];
     try {
       const rows = await getSheetData(SHEET);
@@ -114,7 +107,6 @@ export async function GET(req: NextRequest) {
         }));
     } catch { dataManual = []; }
 
-    // 2) Dokumen sistem
     let dataSistem: ArsipItem[] = [];
     try {
       const dokRows = await getSheetData('Dokumen Kerja sama');
@@ -170,7 +162,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// ── POST: tambah arsip manual baru (MULTIPART) ──────────────────────────
+// POST - Multipart FormData
 export async function POST(req: NextRequest) {
   const session = await requireSession(req, ['admin', 'superadmin']);
   if (!session) {
@@ -205,7 +197,6 @@ export async function POST(req: NextRequest) {
     }
     if (!file) return NextResponse.json({ message: 'Berkas dokumen wajib diunggah.' }, { status: 400 });
 
-    // Konversi file ke base64 untuk Apps Script
     const bytes = await file.arrayBuffer();
     const base64 = Buffer.from(bytes).toString('base64');
 
@@ -248,7 +239,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// ── DELETE: hapus arsip MANUAL ───────────────
+// DELETE
 export async function DELETE(req: NextRequest) {
   const session = await requireSession(req, ['admin', 'superadmin']);
   if (!session) {
