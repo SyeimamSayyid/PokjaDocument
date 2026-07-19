@@ -8,8 +8,8 @@ type Tab = 'admin' | 'pegawai_bnn';
 type ActualRole = 'admin' | 'superadmin' | 'pegawai_bnn';
 
 const TABS: { value: Tab; label: string; icon: React.ReactNode }[] = [
-  { value: 'admin',       label: 'Admin / Superadmin', icon: <FaUserTie size={16} /> },
-  { value: 'pegawai_bnn', label: 'Pegawai BNN',         icon: <FaUserShield size={16} /> },
+  { value: 'admin',       label: 'Admin', icon: <FaUserTie size={16} /> },
+  { value: 'pegawai_bnn', label: 'Pegawai BNN', icon: <FaUserShield size={16} /> },
 ];
 
 const REDIRECT: Record<ActualRole, string> = {
@@ -106,6 +106,9 @@ export default function LoginPage() {
         @keyframes footerIn {
           from { opacity: 0; transform: translateY(6px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes cubeBounce {
+          50% { transform: scale(0.9); }
         }
 
         .auth-page {
@@ -271,6 +274,72 @@ export default function LoginPage() {
         }
         .cek-nip-toggle:hover { background: rgba(37,99,235,0.1); transform: translateY(-1px); }
         .cek-nip-toggle:active { transform: scale(0.96); }
+
+        /* ── Tombol "Lupa Password?" — gaya kubus 3D, diadaptasi dari desain
+           yang diminta (aslinya styled-components, di sini disamakan ke pola
+           className plus tag style yang sudah dipakai di seluruh halaman ini) ── */
+        .lupa-pass-btn {
+          display: block;
+          position: relative;
+          padding: 0.55em 1.1em;
+          background: transparent;
+          outline: none;
+          border: 0;
+          color: #d4af37;
+          letter-spacing: 0.08em;
+          font-family: monospace;
+          font-size: 11.5px;
+          font-weight: bold;
+          cursor: pointer;
+          z-index: 1;
+          text-decoration: none;
+          margin-top: 6px;
+          transition: all 0.5s;
+          animation: footerIn 0.4s ease-out both;
+        }
+        .lupa-pass-btn .bg-top {
+          position: absolute;
+          height: 7px;
+          background: #d4af37;
+          bottom: 100%;
+          left: 4px;
+          right: -4px;
+          transform: skew(-45deg, 0);
+          margin: 0;
+          transition: all 0.4s;
+        }
+        .lupa-pass-btn .bg {
+          position: absolute;
+          left: 0; bottom: 0; top: 0; right: 0;
+          background: #d4af37;
+          transition: all 0.4s;
+        }
+        .lupa-pass-btn .bg-right {
+          position: absolute;
+          background: #d4af37;
+          top: -4px;
+          z-index: 0;
+          bottom: 4px;
+          width: 7px;
+          left: 100%;
+          transform: skew(0, -45deg);
+          transition: all 0.4s;
+        }
+        .lupa-pass-btn .bg-inner {
+          background: ${CREAM};
+          position: absolute;
+          left: 1.5px; right: 1.5px; top: 1.5px; bottom: 1.5px;
+        }
+        .lupa-pass-btn .text {
+          position: relative;
+          transition: all 0.4s;
+        }
+        .lupa-pass-btn:hover .bg-inner { background: #d4af37; }
+        .lupa-pass-btn:hover .text { color: ${CREAM}; }
+        .lupa-pass-btn:hover .bg-right,
+        .lupa-pass-btn:hover .bg,
+        .lupa-pass-btn:hover .bg-top { background: ${INK}; }
+        .lupa-pass-btn:active { z-index: 9999; animation: cubeBounce 0.1s linear; }
       `}</style>
 
       <div className="auth-glow auth-glow-1" />
@@ -291,6 +360,7 @@ export default function LoginPage() {
             <button
               key={t.value}
               type="button"
+              suppressHydrationWarning
               className={`auth-role-btn ${tab === t.value ? 'active' : ''}`}
               onClick={() => handleTabChange(t.value)}
             >
@@ -302,7 +372,7 @@ export default function LoginPage() {
 
         <div style={{ width: '100%' }}>
           <div className="auth-field" key={isPegawai ? 'nip' : 'email'}>
-            <input
+            <input suppressHydrationWarning
               type="text"
               value={identifier}
               onChange={e => setIdentifier(e.target.value)}
@@ -315,7 +385,7 @@ export default function LoginPage() {
 
           {!isPegawai && (
             <div className="auth-field">
-              <input
+              <input suppressHydrationWarning
                 type="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
@@ -329,10 +399,19 @@ export default function LoginPage() {
 
         {error && <div className="auth-error">{error}</div>}
 
-        <button className="auth-submit" type="submit" disabled={loading}>
+        <button className="auth-submit" type="submit" disabled={loading} suppressHydrationWarning>
           {loading && <span className="auth-spinner" />}
           {loading ? 'Memproses' : 'Masuk'}
         </button>
+
+        {!isPegawai && (
+          <a href="/lupa-password" className="lupa-pass-btn">
+            <div className="bg-top"><div className="bg-inner" /></div>
+            <div className="bg-right"><div className="bg-inner" /></div>
+            <div className="bg"><div className="bg-inner" /></div>
+            <div className="text">Lupa Password?</div>
+          </a>
+        )}
 
         {isPegawai ? (
           <a href="/cek-nip" className="cek-nip-toggle">

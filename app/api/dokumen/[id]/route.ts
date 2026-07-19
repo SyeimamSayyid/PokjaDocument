@@ -19,6 +19,7 @@ const COL = {
   // (index 29 SUDAH DIPAKAI di Kode.gs untuk "Milestone Diingatkan" — jangan pakai ulang!)
   DOC_SNAPSHOT:31, // BARU — cuplikan teks dokumen terakhir kali dicek, dipakai buat deteksi diff perubahan
   SCAN_TTD:32, // BARU — file ID scan hasil TTD Basah yang diupload admin (lihat Kode-tambahan-ScanTTD.gs)
+  FLAG_REVISI:33, // BARU — flag "perlu revisi" dari BNN Utama, format "ya|waktu"
 };
 
 const URUTAN_STATUS = [
@@ -209,6 +210,25 @@ async function cekEditDocsAnonim(idDokumen: string, rowNumber: number, docsId: s
   }
 }
 
+// Resolve wilayah admin (BNNP Sulsel/BNNK Toraja/dst) dari sheet Admin,
+// dicocokkan lewat email/nama yang tersimpan di "Dibuat Oleh" dokumen.
+// Kolom Admin: 0 ID, 1 Nama, 2 Email, ..., 8 Level, 9 Wilayah.
+async function resolveWilayahAdmin(dibuatOleh: string): Promise<string> {
+  if (!dibuatOleh) return '';
+  try {
+    const rows = await getSheetData('Admin');
+    const target = dibuatOleh.trim().toLowerCase();
+    const match = rows.find(r =>
+      String(r[1] || '').trim().toLowerCase() === target ||
+      String(r[2] || '').trim().toLowerCase() === target
+    );
+    if (!match) return '';
+    const level = String(match[8] || '').trim();
+    if (level === 'BNN Utama') return 'BNN Utama';
+    return String(match[9] || '').trim();
+  } catch { return ''; }
+}
+
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
@@ -254,9 +274,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       manualLog,
       scanTtdId:  String(row[COL.SCAN_TTD] || ''),
       scanTtdUrl: row[COL.SCAN_TTD] ? `https://drive.google.com/file/d/${String(row[COL.SCAN_TTD])}/view` : '',
+      flagRevisi: String(row[COL.FLAG_REVISI] || '').startsWith('ya'),
       docsId, docsUrl, embedUrl,
       folderId:     String(row[COL.FOLDER_ID] || ''),
       dibuatOleh:   String(row[COL.DIBUAT_OLEH] || ''),
+      dibuatOlehWilayah: await resolveWilayahAdmin(String(row[COL.DIBUAT_OLEH] || '')),
       catatan:      String(row[COL.CATATAN] || ''),
       fotoFolderId: String(row[COL.FOTO_FOLDER] || ''),
       tglKegiatanMulai:   String(row[COL.TGL_KEG_MULAI] || ''),
@@ -314,10 +336,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 // ── PATCH: Update poin / status / tanggal kegiatan / TTD ───
 // Catat siapa (+role) yang terakhir mengubah dokumen — dipakai EditPencilIndicator
 // di dashboard admin buat nunjukin pensil biru (admin) atau krem (mitra).
-async function catatLogEdit(rowNumber: number, pelaku: string, namaPelaku: string) {
+async function catatLogEdit(rowNumber: number, pelaku: string, namaPelaku: string, level: string = '') {
   const role = pelaku === 'mitra' ? 'mitra' : 'admin';
   const nama = String(namaPelaku || (role === 'mitra' ? 'Mitra' : 'Admin')).trim();
-  await updateCell('Dokumen Kerja sama', rowNumber, COL.LOG_EDIT + 1, `${role}|${nama}|${formatTanggalWaktu(new Date())}`);
+  const levelStr = role === 'admin' ? (level === 'utama' ? 'utama' : 'bnnp_bnnk') : '';
+  await updateCell('Dokumen Kerja sama', rowNumber, COL.LOG_EDIT + 1, `${role}|${nama}|${formatTanggalWaktu(new Date())}|${levelStr}`);
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -328,6 +351,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       poin, status, catatan, tglKegiatanMulai, tglKegiatanSelesai, transisi, alasanKembali,
       ttdAction, tglDiajukan, alasanTolak, tglFinal,
       pelaku: pelakuBody, namaPelaku: namaPelakuBody,
+      bnnUtamaAction, alasanKembaliUtama,
+      tglBerlaku: tglBerlakuUsulan, tglBerakhir: tglBerakhirUsulan,
     } = body;
 
     const rows = await getSheetData('Dokumen Kerja sama');
@@ -349,6 +374,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // cuma terikat ke dokumen), bukan nama institusi.
     let pelaku = String(pelakuBody || 'admin');
     let namaPelaku = String(namaPelakuBody || '');
+    let levelPelaku = ''; // 'utama' | 'bnnp_bnnk' | '' — cuma relevan kalau pelaku === 'admin'
     try {
       const session = await requireSession(req);
       if (session?.role === 'mitra') {
@@ -365,6 +391,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         pelaku = 'admin';
         const s = session as Record<string, unknown>;
         namaPelaku = String(s.email || s.username || s.nama || namaPelakuBody || 'Admin');
+        levelPelaku = String(s.level || '') === 'utama' ? 'utama' : 'bnnp_bnnk';
       }
     } catch { /* fallback ke nilai dari body kalau session gagal diverifikasi */ }
 
@@ -376,7 +403,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         await kirimNotifikasiAdmin(id, 'ttd-basah', 'Mitra memilih TTD Basah',
           `Mitra memilih tanda tangan basah untuk dokumen "${judulDok}". Siapkan penerimaan dokumen fisik.`);
         await catatKomentarSistem(id, `✒ ${namaPelaku || 'Mitra'} memilih metode TTD Basah. Menunggu dokumen fisik diterima admin.`);
-        await catatLogEdit(rowNumber, pelaku, namaPelaku);
+        await catatLogEdit(rowNumber, pelaku, namaPelaku, levelPelaku);
         return NextResponse.json({ message: 'TTD Basah dipilih. Admin telah diberi tahu.' });
       }
 
@@ -389,7 +416,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         await kirimNotifikasiAdmin(id, 'ttd-online', 'Mitra mengajukan tanggal TTD Online',
           `Mitra mengajukan tanggal TTD Online (${tgl}) untuk dokumen "${judulDok}". Mohon ditinjau.`);
         await catatKomentarSistem(id, `✒ ${namaPelaku || 'Mitra'} mengajukan TTD Online pada tanggal ${tgl}. Menunggu review admin.`);
-        await catatLogEdit(rowNumber, pelaku, namaPelaku);
+        await catatLogEdit(rowNumber, pelaku, namaPelaku, levelPelaku);
         return NextResponse.json({ message: 'Tanggal TTD diajukan. Menunggu review admin.' });
       }
 
@@ -401,7 +428,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         await kirimNotifikasi(id, 'ttd-disetujui', 'Tanggal TTD disetujui',
           `Tanggal TTD Online (${tglAjuan}) untuk dokumen "${judulDok}" telah disetujui admin.`);
         await catatKomentarSistem(id, `✓ Tanggal TTD Online (${tglAjuan}) disetujui oleh ${namaPelaku || 'Admin'}.`);
-        await catatLogEdit(rowNumber, pelaku, namaPelaku);
+        await catatLogEdit(rowNumber, pelaku, namaPelaku, levelPelaku);
         return NextResponse.json({ message: 'Tanggal TTD disetujui.', ttdTglFinal: tglAjuan });
       }
 
@@ -415,7 +442,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         await kirimNotifikasi(id, 'ttd-ditolak', 'Tanggal TTD ditolak',
           `Tanggal TTD Online untuk dokumen "${judulDok}" ditolak admin. Alasan: ${alasan}. Silakan ajukan ulang.`);
         await catatKomentarSistem(id, `✕ Tanggal TTD Online ditolak oleh ${namaPelaku || 'Admin'}. Alasan: ${alasan}`);
-        await catatLogEdit(rowNumber, pelaku, namaPelaku);
+        await catatLogEdit(rowNumber, pelaku, namaPelaku, levelPelaku);
         return NextResponse.json({ message: 'Tanggal TTD ditolak, mitra diminta ajukan ulang.' });
       }
 
@@ -427,7 +454,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         await kirimNotifikasi(id, 'ttd-disetujui', 'Tanggal TTD Basah tercatat',
           `Dokumen fisik "${judulDok}" diterima. Tanggal TTD tercatat: ${tgl}.`);
         await catatKomentarSistem(id, `✓ Dokumen fisik diterima oleh ${namaPelaku || 'Admin'}. Tanggal TTD Basah tercatat: ${tgl}.`);
-        await catatLogEdit(rowNumber, pelaku, namaPelaku);
+        await catatLogEdit(rowNumber, pelaku, namaPelaku, levelPelaku);
 
         // "Bekukan" isi dokumen persis di momen ini — snapshot PDF terpisah dari
         // scan hasil TTD basah, kebal dari kemungkinan Docs-nya diedit lagi nanti.
@@ -463,7 +490,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           await updateCell('Dokumen Kerja sama', rowNumber, col + 1, '');
         }
         await catatKomentarSistem(id, `↺ Pemilihan TTD ${tipeLama === 'basah' ? 'Basah' : 'Online'} dibatalkan oleh ${namaPelaku || 'Admin'}. Mitra dapat memilih ulang.`);
-        await catatLogEdit(rowNumber, pelaku, namaPelaku);
+        await catatLogEdit(rowNumber, pelaku, namaPelaku, levelPelaku);
         return NextResponse.json({ message: 'Pemilihan TTD berhasil dibatalkan.' });
       }
 
@@ -476,11 +503,88 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         }
         await updateCell('Dokumen Kerja sama', rowNumber, COL.SCAN_TTD + 1, '');
         await catatKomentarSistem(id, `🗑 Scan TTD Basah dihapus oleh ${namaPelaku || 'Admin'} (salah upload).`);
-        await catatLogEdit(rowNumber, pelaku, namaPelaku);
+        await catatLogEdit(rowNumber, pelaku, namaPelaku, levelPelaku);
         return NextResponse.json({ message: 'Scan berhasil dihapus.' });
       }
 
       return NextResponse.json({ message: 'Aksi TTD tidak dikenali.' }, { status: 400 });
+    }
+
+    // ── Aksi khusus Admin BNN Utama — QC/persetujuan akhir ──────────────
+    if (bnnUtamaAction) {
+      if (pelaku !== 'admin') {
+        return NextResponse.json({ message: 'Cuma admin yang bisa melakukan aksi ini.' }, { status: 403 });
+      }
+
+      // Bersihkan flag — boleh BNNP/BNNK ATAU BNN Utama (siapapun yang
+      // menindaklanjuti). Dicek PALING AWAL, sebelum guard level 'utama' di bawah.
+      if (bnnUtamaAction === 'bersihkanFlag') {
+        await updateCell('Dokumen Kerja sama', rowNumber, COL.FLAG_REVISI + 1, '');
+        await catatKomentarSistem(id, `✓ Flag "Perlu Revisi" dibersihkan oleh ${namaPelaku}.`);
+        await catatLogEdit(rowNumber, pelaku, namaPelaku, levelPelaku);
+        return NextResponse.json({ message: 'Flag revisi dibersihkan.' });
+      }
+
+      // Sisanya (flagRevisi, setujuiFinal, kembalikan) cuma boleh level 'utama'.
+      if (levelPelaku !== 'utama') {
+        return NextResponse.json({ message: 'Cuma Admin BNN Utama yang bisa melakukan aksi ini.' }, { status: 403 });
+      }
+
+      // Flag "Perlu Revisi" — BOLEH di status apa pun (Draft, Dalam Proses, dst),
+      // BEDA dari "kembalikan" (yang cuma di status Selesai + paksa mundur status).
+      // Ini cuma menandai + komentar, TIDAK mengubah status — BNNP/BNNK tetap
+      // pegang kendali kapan/bagaimana menindaklanjuti.
+      if (bnnUtamaAction === 'flagRevisi') {
+        const catatanFlag = String(alasanKembaliUtama || '').trim();
+        if (!catatanFlag) return NextResponse.json({ message: 'Catatan revisi wajib diisi.' }, { status: 400 });
+        await updateCell('Dokumen Kerja sama', rowNumber, COL.FLAG_REVISI + 1, `ya|${formatTanggalWaktu(new Date())}`);
+        await catatKomentarSistem(id, `🚩 ${namaPelaku} (BNN Utama) menandai dokumen ini perlu direvisi: ${catatanFlag}`);
+        await catatLogEdit(rowNumber, pelaku, namaPelaku, levelPelaku);
+        await kirimNotifikasiAdmin(id, 'flag-revisi-bnn-utama', 'Dokumen ditandai perlu revisi (BNN Utama)',
+          `Dokumen "${judulDok}" ditandai perlu revisi oleh BNN Utama: ${catatanFlag}`);
+        return NextResponse.json({ message: 'Dokumen ditandai perlu revisi.' });
+      }
+
+      if (statusSkrg !== 'Selesai') {
+        return NextResponse.json({ message: 'Aksi ini cuma berlaku untuk dokumen berstatus "Selesai".' }, { status: 400 });
+      }
+
+      if (bnnUtamaAction === 'setujuiFinal') {
+        await catatKomentarSistem(id, `✓ Dokumen disetujui final oleh ${namaPelaku} (BNN Utama).`);
+        await catatLogEdit(rowNumber, pelaku, namaPelaku, levelPelaku);
+        return NextResponse.json({ message: 'Dokumen disetujui final oleh BNN Utama.' });
+      }
+
+      if (bnnUtamaAction === 'kembalikan') {
+        const alasanBersih = String(alasanKembaliUtama || '').trim();
+        if (!alasanBersih) return NextResponse.json({ message: 'Alasan pengembalian wajib diisi.' }, { status: 400 });
+
+        await updateCell('Dokumen Kerja sama', rowNumber, COL.STATUS + 1, 'Dalam Proses');
+        await catatKomentarSistem(id, `↩ Dokumen dikembalikan oleh ${namaPelaku} (BNN Utama) ke Admin BNNP/BNNK — dianggap keliru. Alasan: ${alasanBersih}`);
+        await catatLogEdit(rowNumber, pelaku, namaPelaku, levelPelaku);
+        await kirimNotifikasiAdmin(id, 'dikembalikan-bnn-utama', 'Dokumen dikembalikan BNN Utama',
+          `Dokumen "${judulDok}" dikembalikan oleh BNN Utama ke tahap Dalam Proses. Alasan: ${alasanBersih}`);
+        return NextResponse.json({ message: 'Dokumen dikembalikan ke Admin BNNP/BNNK.' });
+      }
+
+      return NextResponse.json({ message: 'Aksi BNN Utama tidak dikenali.' }, { status: 400 });
+    }
+
+    // ── Mitra (atau admin) mengajukan/mengubah masa berlaku MOU/PKS ──
+    // Cuma boleh selama dokumen masih "Draft" — begitu mitra klik "Selesai
+    // Mengisi" (pindah ke "Dalam Proses"), tanggal ini dianggap final diajukan
+    // dan admin yang pegang kendali lewat jalur lain (generate-kode PATCH).
+    if (tglBerlakuUsulan !== undefined || tglBerakhirUsulan !== undefined) {
+      if (statusSkrg !== 'Draft') {
+        return NextResponse.json({
+          message: 'Masa berlaku cuma bisa diajukan/diubah selama dokumen masih tahap Draft.',
+        }, { status: 400 });
+      }
+      if (tglBerlakuUsulan !== undefined) await updateCell('Dokumen Kerja sama', rowNumber, COL.TGL_BERLAKU + 1, String(tglBerlakuUsulan));
+      if (tglBerakhirUsulan !== undefined) await updateCell('Dokumen Kerja sama', rowNumber, COL.TGL_BERAKHIR + 1, String(tglBerakhirUsulan));
+      await catatKomentarSistem(id, `📅 Masa berlaku diajukan: ${tglBerlakuUsulan || rows[idx][COL.TGL_BERLAKU]} s.d. ${tglBerakhirUsulan || rows[idx][COL.TGL_BERAKHIR]} (oleh ${namaPelaku || (pelaku === 'mitra' ? 'Mitra' : 'Admin')}).`);
+      await catatLogEdit(rowNumber, pelaku, namaPelaku, levelPelaku);
+      return NextResponse.json({ message: 'Masa berlaku berhasil disimpan.' });
     }
 
     // ── Transisi terkontrol (tombol mitra/admin) — validasi maju ──
@@ -491,6 +595,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const bolehMundur = transisi === 'Draft' && statusSkrg === 'Dalam Proses';
       if (!bolehMaju && !bolehMundur) {
         return NextResponse.json({ message: `Transisi dari "${statusSkrg}" ke "${transisi}" tidak diizinkan.` }, { status: 400 });
+      }
+
+      // BLOKIR total kalau mau ke "Selesai" tapi masa berlaku MOU/PKS belum
+      // diisi — dokumen tidak boleh dianggap selesai kalau belum jelas
+      // berapa lama kerja sama ini berlangsung.
+      if (transisi === 'Selesai') {
+        const tglBerlakuSkrg = String(rows[idx][COL.TGL_BERLAKU] || '').trim();
+        const tglBerakhirSkrg = String(rows[idx][COL.TGL_BERAKHIR] || '').trim();
+        if (!tglBerlakuSkrg || !tglBerakhirSkrg) {
+          return NextResponse.json({
+            message: 'Dokumen belum bisa diselesaikan — masa berlaku MOU/PKS (tanggal mulai & berakhir) belum diisi. Lengkapi dulu di bagian Masa Berlaku Kesepakatan.',
+          }, { status: 400 });
+        }
       }
 
       const alasanBersih = String(alasanKembali || '').trim();
@@ -514,7 +631,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           `Mitra telah selesai mengisi dokumen "${judulDok}" dan mengirimkannya untuk ditinjau.`);
       }
 
-      await catatLogEdit(rowNumber, pelaku, namaPelaku);
+      await catatLogEdit(rowNumber, pelaku, namaPelaku, levelPelaku);
       return NextResponse.json({ message: 'Status diperbarui.', statusBaru: transisi });
     }
 
@@ -537,7 +654,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     // Cuma catat log kalau memang ada field yang beneran diubah di blok generic ini
     if (status !== undefined || poin !== undefined || catatan !== undefined || tglKegiatanMulai !== undefined || tglKegiatanSelesai !== undefined) {
-      await catatLogEdit(rowNumber, pelaku, namaPelaku);
+      await catatLogEdit(rowNumber, pelaku, namaPelaku, levelPelaku);
       const pelakuLabel = namaPelaku || (pelaku === 'mitra' ? 'Mitra' : 'Admin');
       const perubahan: string[] = [];
       if (status !== undefined) perubahan.push(`status jadi "${status}"`);

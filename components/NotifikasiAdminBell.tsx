@@ -99,11 +99,11 @@ const badge: React.CSSProperties = {
   borderRadius: 100, background: '#A32D2D', color: '#fff', fontSize: 9.5, fontWeight: 700,
   display: 'flex', alignItems: 'center', justifyContent: 'center',
 };
-const overlay: React.CSSProperties = { position: 'fixed', inset: 0, zIndex: 199 };
+const overlay: React.CSSProperties = { position: 'fixed', inset: 0, zIndex: 999 };
 const panel: React.CSSProperties = {
   position: 'absolute', top: 42, right: 0, width: 320, background: '#fff', borderRadius: 16,
   border: '1px solid rgba(29,78,216,0.08)', boxShadow: '0 20px 50px -20px rgba(15,23,42,0.35)',
-  zIndex: 200, overflow: 'hidden',
+  zIndex: 1000, overflow: 'hidden',
 };
 const panelHeader: React.CSSProperties = {
   display: 'flex', justifyContent: 'space-between', alignItems: 'center',

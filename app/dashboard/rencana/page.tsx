@@ -1,6 +1,11 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Sidebar, { SidebarItem } from '@/components/Sidebar';
+import {
+  FiGrid, FiCalendar, FiInbox, FiKey, FiFolder, FiActivity,
+  FiUsers, FiList as FiListSidebar, FiArchive, FiShield,
+} from 'react-icons/fi';
 import {
   ArrowLeft, Plus, Edit, Trash2, Users, FileText, Tag, MapPin, Calendar,
   Globe, CheckCircle, AlertCircle, Clock, X, Save, List, Building,
@@ -39,6 +44,8 @@ const STATUS_COLOR: Record<string, { bg: string; color: string; icon: any }> = {
 
 export default function EplanningPage() {
   const [role, setRole]         = useState('');
+  const [level, setLevel]       = useState<'utama' | 'bnnp_bnnk'>('bnnp_bnnk');
+  const [namaAdmin, setNamaAdmin] = useState('Admin');
   const [divisiAktif, setDivisiAktif] = useState<string>('semua');
   const [kegiatan, setKegiatan] = useState<Kegiatan[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -71,12 +78,16 @@ export default function EplanningPage() {
   }, []);
 
   useEffect(() => {
-    const raw = localStorage.getItem('paktasign_user');
-    if (!raw) { window.location.href = '/login'; return; }
-    const u = JSON.parse(raw);
-    if (!['admin','superadmin'].includes(u.role)) { window.location.href = '/login'; return; }
-    setRole(u.role);
-    load();
+    fetch('/api/auth/me')
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(u => {
+        if (!['admin','superadmin'].includes(u.role)) { window.location.href = '/login'; return; }
+        setRole(u.role);
+        setLevel(u.level === 'utama' ? 'utama' : 'bnnp_bnnk');
+        setNamaAdmin(u.nama || u.email || 'Admin');
+        load();
+      })
+      .catch(() => { window.location.href = '/login'; });
   }, [load]);
 
   const toggleExpand = (id: string) => {
@@ -164,18 +175,51 @@ export default function EplanningPage() {
   };
 
   const backUrl = role === 'superadmin' ? '/dashboard/superadmin' : '/dashboard/admin';
+
+  const sidebarItems: SidebarItem[] = [
+    { href: '/dashboard/admin', icon: <FiGrid size={17} />, label: 'Dashboard' },
+    { href: '/dashboard/rencana', icon: <FiCalendar size={17} />, label: 'E-Planning' },
+    { href: '/dashboard/pengajuan', icon: <FiInbox size={17} />, label: 'Kelola Pengajuan' },
+    { href: '/dashboard/superadmin/generate-kode', icon: <FiKey size={17} />, label: 'Generate Kode' },
+    { href: '/dashboard/dokumen', icon: <FiFolder size={17} />, label: 'Daftar Dokumen' },
+    { href: '/dashboard/kelola-kegiatan', icon: <FiActivity size={17} />, label: 'Kelola Kegiatan' },
+    { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
+    { href: '/dashboard/dokumen/extract-poin', icon: <FiListSidebar size={17} />, label: 'Extract Poin Publik' },
+    { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
+    ...(level === 'bnnp_bnnk' ? [{ href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Kelola Admin' }] : []),
+  ];
+
+  const logout = async () => {
+    try { await fetch('/api/auth/logout', { method: 'POST' }); } catch {}
+    window.location.href = '/login';
+  };
+
   const filtered = divisiAktif === 'semua' ? kegiatan : kegiatan.filter(k => k.divisi.includes(divisiAktif));
   const divisiLabel = (key: string) => DIVISI_LIST.find(d => d.key === key)?.label || key;
 
+  if (loading) return (
+    <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background:'linear-gradient(180deg,#FCFAF4,#F5F1E8)', fontFamily:'sans-serif', color:'#64748b', gap:16 }}>
+      <div style={{ width:40, height:40, border:'3px solid #eef2f6', borderTop:`3px solid ${BLUE}`, borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
+      <div style={{ fontSize:13 }}>Memuat E-Planning...</div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+
   return (
-    <div style={{ minHeight:'100vh', background:'linear-gradient(135deg,#f8fafc,#eaf1fc)', fontFamily:'sans-serif' }}>
-      <nav style={navStyle}>
+    <div style={{ minHeight:'100vh', background:'radial-gradient(1100px 520px at 85% -8%, rgba(30,58,95,0.05) 0%, rgba(30,58,95,0) 55%), linear-gradient(180deg,#FCFAF4,#F5F1E8)', fontFamily:'sans-serif' }}>
+      <Sidebar
+        items={sidebarItems}
+        activeHref="/dashboard/rencana"
+        brandLabel="SI-POKJA HUMKER"
+        brandSub={level === 'utama' ? 'BNN Utama' : 'Admin BNNP/BNNK'}
+        userName={namaAdmin}
+        userTag={level === 'utama' ? 'Admin BNN Utama' : 'Admin BNNP/BNNK'}
+        accent={BLUE}
+        onLogout={logout}
+      />
+
+      <nav className="main-content-wrap" style={navStyle}>
         <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-          <a href={backUrl} style={backLink}>
-            <ArrowLeft size={16} />
-            Dashboard
-          </a>
-          <span style={{ color:'#e2e8f0' }}>|</span>
           <div style={{ fontWeight:600, fontSize:14, display:'flex', alignItems:'center', gap:8, color:'#0f1f3d' }}>
             <Handshake size={18} style={{ color: BLUE }} />
             E-Planning · Kerja Sama Kelembagaan
@@ -187,7 +231,7 @@ export default function EplanningPage() {
         </a>
       </nav>
 
-      <div style={{ maxWidth:1000, margin:'0 auto', padding:'1.25rem' }}>
+      <div className="main-content-wrap" style={{ maxWidth:1000, margin:'0 auto', padding:'1.25rem' }}>
         {msg && (
           <div style={{ ...msgBox(BLUE_DARK,'#DBEAFE'), display:'flex', alignItems:'center', gap:8, animation:'fadeInDown 0.4s ease-out' }}>
             <CheckCircle size={16} />
@@ -275,14 +319,14 @@ export default function EplanningPage() {
                         {isExpanded && (
                           <div style={{ marginTop:8, animation:'fadeInUp 0.3s ease-out' }}>
                             {k.deskripsi && (
-                              <div style={{ fontSize:13, color:'#64748b', marginBottom:8, lineHeight:1.7, background:'#f8fafc', padding:'8px 12px', borderRadius:8 }}>
+                              <div style={{ fontSize:13, color:'#64748b', marginBottom:8, lineHeight:1.7, background:'#F5F1E8', padding:'8px 12px', borderRadius:8 }}>
                                 {k.deskripsi}
                               </div>
                             )}
                           </div>
                         )}
 
-                        <div style={{ fontSize:11, color:'#94a3b8', display:'flex', gap:14, flexWrap:'wrap', background:'#f8fafc', padding:'4px 10px', borderRadius:8, marginTop:4 }}>
+                        <div style={{ fontSize:11, color:'#94a3b8', display:'flex', gap:14, flexWrap:'wrap', background:'#F5F1E8', padding:'4px 10px', borderRadius:8, marginTop:4 }}>
                           {k.wilayah && (
                             <span style={{ display:'flex', alignItems:'center', gap:4 }}>
                               <MapPin size={13} /> {k.wilayah}
@@ -522,6 +566,9 @@ export default function EplanningPage() {
         @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
         .btn-hover { transition: all .25s ease; }
         .btn-hover:hover:not(:disabled) { filter:brightness(1.05); transform:translateY(-1px); }
+        @media (min-width: 901px) {
+          .main-content-wrap { margin-left: 236px !important; width: calc(100% - 236px) !important; box-sizing: border-box !important; }
+        }
       `}</style>
     </div>
   );

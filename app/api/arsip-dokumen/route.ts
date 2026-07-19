@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { appendRow, getSheetData, updateCell } from '@/lib/sheet';
 import { generateId, formatTanggalWaktu } from '@/lib/utils';
 import { google } from 'googleapis';
+import { requireSession } from '@/lib/auth';
 
 const SHEET = 'Arsip Dokumen';
 
@@ -10,6 +11,7 @@ const C = {
   ID: 0, NAMA: 1, JENIS: 2, JUDUL: 3, TGL_BERLAKU: 4, TGL_BERAKHIR: 5,
   FILE_ID: 6, FILE_URL: 7, NAMA_FILE: 8, PIC: 9, EMAIL: 10, WA: 11,
   CATATAN: 12, OLEH: 13, TGL_ARSIP: 14, STATUS_KS: 15, DIVISI: 16,
+  KOMENTAR_UTAMA: 17, // BARU — komentar BNN Utama, TERPISAH dari Catatan biasa (index 12)
 };
 
 // Kolom Dokumen Kerja sama (0-based) — yang dipakai di sini saja
@@ -32,6 +34,7 @@ interface ArsipItem {
   diarsipkanOleh: string; tglDiarsipkan: string; statusKerjaSama: string;
   sumber: 'manual' | 'sistem';
   ttdTipe?: string; ttdTglFinal?: string; divisi?: string[];
+  komentarUtama?: string;
 }
 
 // Resolve kontak PIC dari Pengajuan Mitra utk dokumen sistem (idMitra dulu, fallback nama)
@@ -57,9 +60,10 @@ async function resolveKontak(idMitra: string, namaInstitusi: string, pjRows: str
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const jenis  = searchParams.get('jenis')?.trim();
-    const cari   = searchParams.get('cari')?.trim().toLowerCase();
-    const sumber = searchParams.get('sumber')?.trim(); // 'manual' | 'sistem' | kosong=semua
+    const jenis     = searchParams.get('jenis')?.trim();
+    const cari      = searchParams.get('cari')?.trim().toLowerCase();
+    const sumber    = searchParams.get('sumber')?.trim(); // 'manual' | 'sistem' | kosong=semua
+    const ttdBasah  = searchParams.get('ttdBasah')?.trim(); // 'scan' | 'snapshot' | 'semua' | kosong=tidak difilter
 
     // 1) Arsip manual (kerja sama lama, diinput admin)
     let dataManual: ArsipItem[] = [];
@@ -84,6 +88,7 @@ export async function GET(req: NextRequest) {
           diarsipkanOleh: String(r[C.OLEH] || ''),
           tglDiarsipkan:  String(r[C.TGL_ARSIP] || ''),
           statusKerjaSama: String(r[C.STATUS_KS] || 'Sudah Berakhir'),
+          komentarUtama:  String(r[C.KOMENTAR_UTAMA] || ''),
           sumber: 'manual' as const,
           divisi: String(r[C.DIVISI] || '').split(',').map(s => s.trim()).filter(Boolean),
         }));
@@ -131,6 +136,16 @@ export async function GET(req: NextRequest) {
 
     if (sumber) data = data.filter(d => d.sumber === sumber);
     if (jenis) data = data.filter(d => d.jenis === jenis);
+    if (ttdBasah === 'scan') {
+      data = data.filter(d => d.diarsipkanOleh === 'Sistem (Auto-Arsip TTD Basah)');
+    } else if (ttdBasah === 'snapshot') {
+      data = data.filter(d => d.diarsipkanOleh === 'Sistem (Auto-Snapshot TTD)');
+    } else if (ttdBasah === 'semua') {
+      data = data.filter(d =>
+        d.diarsipkanOleh === 'Sistem (Auto-Arsip TTD Basah)' ||
+        d.diarsipkanOleh === 'Sistem (Auto-Snapshot TTD)'
+      );
+    }
     if (cari) {
       data = data.filter(d =>
         d.namaInstitusi.toLowerCase().includes(cari) ||
@@ -208,19 +223,42 @@ export async function POST(req: NextRequest) {
 // asli di "Dokumen Kerja sama", bukan field independen yang bisa diedit di sini.
 export async function PATCH(req: NextRequest) {
   try {
-    const { id, statusKerjaSama } = await req.json();
+    const body = await req.json();
+    const { id, statusKerjaSama, editLengkap } = body;
     if (!id) return NextResponse.json({ message: 'id wajib diisi.' }, { status: 400 });
-    if (!['Masih Berlaku', 'Sudah Berakhir'].includes(statusKerjaSama)) {
-      return NextResponse.json({ message: 'Status kerja sama tidak valid.' }, { status: 400 });
-    }
 
     const rows = await getSheetData(SHEET);
     const idx = rows.findIndex(r => String(r[C.ID] || '').trim() === id);
     if (idx === -1) {
       return NextResponse.json({ message: 'Data arsip tidak ditemukan (mungkin ini entri sistem, statusnya ikut dokumen asli).' }, { status: 404 });
     }
-
     const rowNumber = idx + 2; // +2 karena header di baris 1, array 0-based
+
+    // ── Edit lengkap — KHUSUS Admin BNN Utama, cuma berlaku di entri arsip
+    // (bukan dokumen sistem yang masih aktif dikerjakan BNNP/BNNK). Arsip
+    // sudah selesai/tidak sedang dikerjakan siapa pun, jadi resiko akuntabilitas
+    // lebih rendah dibanding edit dokumen sistem yang masih berjalan.
+    if (editLengkap) {
+      const session = await requireSession(req);
+      const s = session as Record<string, unknown> | null;
+      if (!session || String(s?.level || '') !== 'utama') {
+        return NextResponse.json({ message: 'Cuma Admin BNN Utama yang bisa mengedit arsip secara lengkap.' }, { status: 403 });
+      }
+      const { namaInstitusi, judul, tglBerlaku, tglBerakhir, komentarUtama } = editLengkap;
+      if (namaInstitusi !== undefined) await updateCell(SHEET, rowNumber, C.NAMA + 1, String(namaInstitusi).trim());
+      if (judul !== undefined) await updateCell(SHEET, rowNumber, C.JUDUL + 1, String(judul).trim());
+      if (tglBerlaku !== undefined) await updateCell(SHEET, rowNumber, C.TGL_BERLAKU + 1, String(tglBerlaku));
+      if (tglBerakhir !== undefined) await updateCell(SHEET, rowNumber, C.TGL_BERAKHIR + 1, String(tglBerakhir));
+      // Komentar BNN Utama ditulis ke kolom TERPISAH (index 17) — TIDAK PERNAH
+      // menyentuh kolom Catatan (index 12) yang dipakai BNNP/BNNK saat arsipkan
+      // manual, biar tidak tercampur/ketimpa.
+      if (komentarUtama !== undefined) await updateCell(SHEET, rowNumber, C.KOMENTAR_UTAMA + 1, String(komentarUtama).trim());
+      return NextResponse.json({ message: 'Arsip berhasil diperbarui oleh BNN Utama.' });
+    }
+
+    if (!['Masih Berlaku', 'Sudah Berakhir'].includes(statusKerjaSama)) {
+      return NextResponse.json({ message: 'Status kerja sama tidak valid.' }, { status: 400 });
+    }
     await updateCell(SHEET, rowNumber, C.STATUS_KS + 1, statusKerjaSama);
 
     return NextResponse.json({ message: 'Status kerja sama berhasil diperbarui.', statusKerjaSama });

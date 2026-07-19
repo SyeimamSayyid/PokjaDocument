@@ -3,13 +3,14 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import LoaderPage from '@/components/LoaderPage';
 import EditPencilIndicator from '@/components/EditPencilIndicator';
+import Sidebar, { SidebarItem } from '@/components/Sidebar';
 import {
   FiFileText, FiImage, FiDownload, FiTrash2,
   FiClock, FiAlertCircle, FiCheckCircle, FiInfo, FiUpload,
-  FiCalendar, FiDatabase, FiLogOut, FiBell,
+  FiCalendar, FiDatabase, FiBell,
   FiGrid, FiHome, FiEdit2, FiCheck, FiX, FiZap, FiArrowUpRight,
 } from 'react-icons/fi';
-import { FaBuilding, FaFileSignature, FaFileAlt } from 'react-icons/fa';
+import { FaFileSignature, FaFileAlt } from 'react-icons/fa';
 import { SiGoogledocs } from 'react-icons/si';
 
 interface MitraUser {
@@ -237,29 +238,31 @@ export default function DashboardMitraPage() {
     <div style={{ minHeight: '100dvh', fontFamily: FONT, background: 'radial-gradient(1000px 480px at 85% -10%, #dbeafe 0%, rgba(219,234,254,0) 55%), linear-gradient(180deg,#f7f9fc,#eef2f8)' }}>
       <GlobalStyle />
 
-      {/* Nav pill mengambang */}
-      <div style={{ maxWidth: 880, margin: '0 auto', padding: '1.3rem 1.25rem 0' }}>
-        <nav style={navPill} className="rise">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 800, fontSize: 14, color: '#0f1f3d' }}>
-            <div style={{ width: 34, height: 34, borderRadius: 11, background: `linear-gradient(150deg, ${BLUE_LIGHT}, ${BLUE_DARK})`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 8px 18px -8px ${BLUE}70` }}>
-              <FaBuilding size={15} color="#fff" />
-            </div>
-            <span style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{labelMitra || user.namaMitra}</span>
-          </div>
+      {/* Nav ramping — cuma notif + avatar, brand & logout sudah di sidebar */}
+      <Sidebar
+        items={[{ href: '/dashboard/mitra', icon: <FiGrid size={17} />, label: 'Dashboard' }]}
+        activeHref="/dashboard/mitra"
+        brandLabel="SI-POKJA HUMKER"
+        brandSub="Akses Mitra"
+        userName={user.namaMitra}
+        userTag={labelMitra || user.namaMitra}
+        accent={GOLD}
+        onLogout={logout}
+      />
+
+      <div className="main-content-wrap" style={{ maxWidth: 880, margin: '0 auto', padding: '1.3rem 1.25rem 0' }}>
+        <nav style={{ ...navPill, justifyContent: 'flex-end' }} className="rise">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <button onClick={bukaNotif} style={navIcon} className="btn-hover" title="Notifikasi">
               <FiBell size={15} strokeWidth={1.8} />
               {belumDibaca > 0 && <span style={notifBadge}>{belumDibaca}</span>}
             </button>
             <div style={avatarCircle}>{inisial}</div>
-            <button onClick={logout} style={{ ...navIcon, width: 'auto', padding: '0 13px', gap: 6, fontSize: 12, fontWeight: 600, color: '#54635e' }} className="btn-hover">
-              <FiLogOut size={13} strokeWidth={1.8} /> Keluar
-            </button>
           </div>
         </nav>
       </div>
 
-      <div style={{ maxWidth: 880, margin: '0 auto', padding: '1.5rem 1.25rem 3rem' }}>
+      <div className="main-content-wrap" style={{ maxWidth: 880, margin: '0 auto', padding: '1.5rem 1.25rem 3rem' }}>
 
         {showNotif && (
           <div style={{ ...shellStyle, borderColor: '#FDE68A', marginBottom: 16 }} className="fld">
@@ -508,6 +511,9 @@ function GlobalStyle() {
       .ic-wrap { transition: transform 0.4s cubic-bezier(0.32,0.72,0,1); }
       .lift:hover .arr { opacity: 1; transform: translate(2px,-2px); }
       .arr { transition: all 0.4s cubic-bezier(0.32,0.72,0,1); opacity: 0; }
+      @media (min-width: 901px) {
+        .main-content-wrap { margin-left: 236px !important; width: calc(100% - 236px) !important; max-width: 880px !important; box-sizing: border-box !important; }
+      }
     `}</style>
   );
 }

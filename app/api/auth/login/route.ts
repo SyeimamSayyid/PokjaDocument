@@ -14,20 +14,53 @@ type AdminSheetResult =
   | { error: string; status: number }
   | null;
 
-async function cekSheetAdmin(
-  sheetName: string,
-  actualRole: 'superadmin' | 'admin',
-  username: string,
-  password: string
-): Promise<AdminSheetResult> {
-  const rows = await getSheetData(sheetName);
+// Login dari sheet "Admin" — sekarang baca kolom Level (index 8) buat
+// bedain 'utama' (BNN Utama) vs 'bnnp_bnnk' (BNNP/BNNK). Kosong/tidak
+// dikenali dianggap 'bnnp_bnnk' (aman, level paling terbatas).
+async function cekSheetAdmin(username: string, password: string): Promise<AdminSheetResult> {
+  const rows = await getSheetData('Admin');
   const userRow = rows.find(
     r => String(r[2]).toLowerCase().trim() === username.toLowerCase().trim()
   );
   if (!userRow) return null;
 
   if (String(userRow[4]).toLowerCase().trim() !== 'aktif') {
-    return { error: 'Akun tidak aktif. Hubungi Superadmin.', status: 403 };
+    return { error: 'Akun tidak aktif. Hubungi Admin BNN Utama.', status: 403 };
+  }
+  if (String(userRow[3]).trim() !== password.trim()) {
+    return { error: 'Password salah.', status: 401 };
+  }
+
+  const levelRaw = String(userRow[8] || '').trim().toLowerCase();
+  const level = levelRaw === 'bnn utama' ? 'utama' : 'bnnp_bnnk';
+  const wilayah = level === 'bnnp_bnnk' ? String(userRow[9] || '').trim() : '';
+
+  return {
+    user: {
+      role: 'admin',
+      level,
+      wilayah,
+      id: userRow[0],
+      nama: userRow[1],
+      username: userRow[2],
+      email: userRow[2],
+    },
+  };
+}
+
+// Login dari sheet "Superadmin" — DILEBUR ke role 'admin' dengan level
+// 'bnnp_bnnk' (setara Admin BNNP/BNNK penuh, termasuk fitur yang dulu
+// superadmin-only kayak Kelola Admin). Sheet "Superadmin" TIDAK dihapus,
+// akun lama tetap bisa login lewat sini — cuma perannya sekarang disamakan.
+async function cekSheetSuperadmin(username: string, password: string): Promise<AdminSheetResult> {
+  const rows = await getSheetData('Superadmin');
+  const userRow = rows.find(
+    r => String(r[2]).toLowerCase().trim() === username.toLowerCase().trim()
+  );
+  if (!userRow) return null;
+
+  if (String(userRow[4]).toLowerCase().trim() !== 'aktif') {
+    return { error: 'Akun tidak aktif. Hubungi Admin BNN Utama.', status: 403 };
   }
   if (String(userRow[3]).trim() !== password.trim()) {
     return { error: 'Password salah.', status: 401 };
@@ -35,7 +68,8 @@ async function cekSheetAdmin(
 
   return {
     user: {
-      role: actualRole,
+      role: 'admin',
+      level: 'bnnp_bnnk', // dilebur — bukan lagi role terpisah 'superadmin'
       id: userRow[0],
       nama: userRow[1],
       username: userRow[2],
@@ -105,8 +139,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ message: 'Email dan password wajib diisi.' }, { status: 400 });
       }
 
-      let hasil = await cekSheetAdmin('Superadmin', 'superadmin', username, password);
-      if (!hasil) hasil = await cekSheetAdmin('Admin', 'admin', username, password);
+      // Coba sheet Admin dulu, baru Superadmin (keduanya sekarang jadi role
+      // 'admin' — bedanya cuma di field 'level').
+      let hasil = await cekSheetAdmin(username, password);
+      if (!hasil) hasil = await cekSheetSuperadmin(username, password);
 
       if (!hasil) {
         return NextResponse.json({ message: 'Email tidak ditemukan.' }, { status: 401 });

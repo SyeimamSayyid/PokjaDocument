@@ -9,6 +9,8 @@ const COL_DOK = {
   TGL_BERLAKU:6, TGL_BERAKHIR:7, DURASI:8, STATUS:9, KODE:10,
   KODE_EXP:11, DOCS_ID:12, DOCS_URL:13, FOLDER_ID:14,
   DIBUAT_OLEH:15, CATATAN:16, TERAKHIR_DIAKSES:17, FOTO_FOLDER:18,
+  // BARU — dipakai untuk notifikasi "siap dipublikasikan" di halaman Extract Poin
+  TGL_KEG_MULAI:20, TGL_KEG_SELESAI:21,
 };
 
 function getAuth() {
@@ -104,6 +106,8 @@ export async function GET(req: NextRequest) {
         tglBerlaku:  String(r[COL_DOK.TGL_BERLAKU]),
         tglBerakhir: String(r[COL_DOK.TGL_BERAKHIR]),
         fotoFolderId: String(r[COL_DOK.FOTO_FOLDER] || ''),
+        tglKegiatanMulai:   String(r[COL_DOK.TGL_KEG_MULAI] || ''),
+        tglKegiatanSelesai: String(r[COL_DOK.TGL_KEG_SELESAI] || ''),
       }));
 
     if (idDokumen && getPoin) {
@@ -114,6 +118,8 @@ export async function GET(req: NextRequest) {
           status: String(r[COL_DOK.STATUS]), docsId: String(r[COL_DOK.DOCS_ID] || ''),
           tglBerlaku: String(r[COL_DOK.TGL_BERLAKU]), tglBerakhir: String(r[COL_DOK.TGL_BERAKHIR]),
           fotoFolderId: String(r[COL_DOK.FOTO_FOLDER] || ''),
+          tglKegiatanMulai: String(r[COL_DOK.TGL_KEG_MULAI] || ''),
+          tglKegiatanSelesai: String(r[COL_DOK.TGL_KEG_SELESAI] || ''),
         })).find(d => d.id === idDokumen);
 
       if (!dok || !dok.docsId) {

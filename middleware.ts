@@ -18,6 +18,16 @@ import { verifySession, SESSION_COOKIE } from '@/lib/auth';
 //   di level route handler pakai requireSession() dari lib/auth.ts):
 //     /api/rencana, /api/superadmin/*, dll.
 // ════════════════════════════════════════════════════════════
+//
+// ★ CATATAN PERUBAHAN ROLE (peleburan Superadmin → Admin+level):
+// Role 'superadmin' TIDAK LAGI DITERBITKAN oleh login route — sejak sekarang
+// akun Admin maupun Superadmin sama-sama masuk sebagai role:'admin', dibedakan
+// lewat field 'level' ('utama' | 'bnnp_bnnk') yang TIDAK dicek middleware ini
+// (cuma dicek di level halaman/API kalau perlu granular). 'superadmin' masih
+// disebut di ALLOWED_ROLES di bawah semata-mata buat kompatibilitas token lama
+// yang mungkin masih aktif (masa berlaku token maks 24 jam) — aman dihapus
+// total setelah ~1 hari sejak perubahan ini di-deploy.
+// ════════════════════════════════════════════════════════════
 
 // Sub-path SHARED di bawah /dashboard/superadmin yang boleh diakses admin juga.
 // Dicek LEBIH DULU, sebelum fallback ke PROTECTED — supaya prefix match
@@ -27,10 +37,14 @@ const SHARED_PATHS: Record<string, string[]> = {
   '/dashboard/superadmin/laporan':       ['admin', 'superadmin'],
 };
 
-// Route yang butuh login + role tertentu (via cookie JWT, admin/superadmin).
+// Route yang butuh login + role tertentu (via cookie JWT). Semua area admin
+// sekarang cukup role:'admin' (BNN Utama & BNNP/BNNK sama-sama masuk sini —
+// pembatasan lebih halus antar level dilakukan di level halaman/API, bukan
+// di middleware ini).
 const PROTECTED: Record<string, string[]> = {
-  '/dashboard/superadmin':           ['superadmin'],
+  '/dashboard/superadmin':           ['admin', 'superadmin'],
   '/dashboard/admin':                ['admin', 'superadmin'],
+  '/dashboard/bnn-utama':            ['admin', 'superadmin'],
   '/dashboard/dokumen':              ['admin', 'superadmin'],
   '/dashboard/pengajuan':            ['admin', 'superadmin'],
   '/dashboard/rencana':              ['admin', 'superadmin'],
@@ -71,7 +85,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // ── PATH DASHBOARD ADMIN/SUPERADMIN ─────────────────────
+  // ── PATH DASHBOARD ADMIN (BNN Utama + BNNP/BNNK) ─────────
   const sharedMatch = Object.entries(SHARED_PATHS).find(([path]) =>
     pathname.startsWith(path)
   )?.[1];
@@ -88,16 +102,18 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL('/login', req.url));
   }
 
-  // 2. Ada sesi valid, tapi rolenya bukan admin/superadmin sama sekali
+  // 2. Ada sesi valid, tapi rolenya bukan admin sama sekali
   //    (misal ternyata session.role === 'mitra' atau 'pegawai_bnn' nyasar ke sini)
-  //    → tetap ke login.
+  //    → tetap ke login. 'superadmin' tetap diterima sementara (lihat catatan
+  //    peleburan role di atas).
   if (!['admin', 'superadmin'].includes(String(session.role))) {
     return NextResponse.redirect(new URL('/login', req.url));
   }
 
-  // 3. Sudah login sah sebagai admin/superadmin, TAPI rolenya kurang untuk
-  //    path spesifik ini (misal admin coba akses area superadmin-only)
-  //    → jangan lempar ke login, cukup lempar ke dashboard yang sesuai rolenya.
+  // 3. Sudah login sah sebagai admin, dan sekarang semua path admin cuma
+  //    butuh role:'admin' (tidak ada lagi pembedaan role di titik ini —
+  //    BNN Utama vs BNNP/BNNK dibedakan lewat 'level', dicek di halaman/API
+  //    masing-masing kalau memang perlu granular).
   if (!allowedRoles.includes(String(session.role))) {
     return NextResponse.redirect(new URL('/dashboard/admin', req.url));
   }

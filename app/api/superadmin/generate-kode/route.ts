@@ -13,6 +13,7 @@ const COL = {
   DIVISI:23, // sudah ada dari desain awal sheet — dipakai utk tampilan, TIDAK ditulis appendRow di sini
   LOG_EDIT:30, // sama seperti di dokumen-id-route.ts — siapa terakhir edit, format "role|nama|waktu"
   // (index 29 SUDAH DIPAKAI di Kode.gs untuk "Milestone Diingatkan" — jangan pakai ulang!)
+  FLAG_REVISI:33, // BARU — flag "perlu revisi" dari BNN Utama, format "ya|waktu"
 };
 
 // ── POST: Generate kode + buat Docs + Drive via Apps Script ──
@@ -133,7 +134,7 @@ export async function POST(req: NextRequest) {
       // muncul setelah ada PATCH edit belakangan.
       const rowBaru = await findRow('Dokumen Kerja sama', COL.ID, idDokumen);
       if (rowBaru) {
-        await updateCell('Dokumen Kerja sama', rowBaru.rowNumber, COL.LOG_EDIT + 1, `admin|${dibuatOleh || 'Superadmin'}|${formatTanggalWaktu(now)}`);
+        await updateCell('Dokumen Kerja sama', rowBaru.rowNumber, COL.LOG_EDIT + 1, `admin|${dibuatOleh || 'Superadmin'}|${formatTanggalWaktu(now)}|bnnp_bnnk`);
       }
 
       return NextResponse.json({
@@ -177,6 +178,7 @@ export async function GET() {
       catatan:     String(r[COL.CATATAN] || ''),
       divisi:      String(r[COL.DIVISI] || '').split(',').map(s => s.trim()).filter(Boolean),
       manualLog:   String(r[COL.LOG_EDIT] || ''),
+      flagRevisi:  String(r[COL.FLAG_REVISI] || '').startsWith('ya'),
     })).reverse();
     return NextResponse.json({ data });
   } catch (err) {
@@ -253,6 +255,7 @@ export async function PATCH(req: NextRequest) {
     // penjelasan lengkap di dokumen-id-route.ts.
     let pelaku = String(pelakuBody || 'admin');
     let namaPelaku = String(namaPelakuBody || '');
+    let levelPelaku = '';
     try {
       const session = await requireSession(req);
       const idMitraRow = String(found.data[COL.ID_MITRA] || '');
@@ -269,6 +272,7 @@ export async function PATCH(req: NextRequest) {
         pelaku = 'admin';
         const s = session as Record<string, unknown>;
         namaPelaku = String(s.email || s.username || s.nama || namaPelakuBody || 'Admin');
+        levelPelaku = String(s.level || '') === 'utama' ? 'utama' : 'bnnp_bnnk';
       }
     } catch { /* fallback ke nilai dari body */ }
 
@@ -288,10 +292,11 @@ export async function PATCH(req: NextRequest) {
       await updateCell('Dokumen Kerja sama', found.rowNumber, col, v);
     }
 
-    // Catat siapa (+role) terakhir mengubah — dipakai EditPencilIndicator di dashboard admin
+    // Catat siapa (+role, +level) terakhir mengubah — dipakai EditPencilIndicator di dashboard admin
     const role = pelaku === 'mitra' ? 'mitra' : 'admin';
     const nama = String(namaPelaku || (role === 'mitra' ? 'Mitra' : 'Admin')).trim();
-    await updateCell('Dokumen Kerja sama', found.rowNumber, COL.LOG_EDIT + 1, `${role}|${nama}|${formatTanggalWaktu(new Date())}`);
+    const levelStr = role === 'admin' ? (levelPelaku === 'utama' ? 'utama' : 'bnnp_bnnk') : '';
+    await updateCell('Dokumen Kerja sama', found.rowNumber, COL.LOG_EDIT + 1, `${role}|${nama}|${formatTanggalWaktu(new Date())}|${levelStr}`);
 
     // Log Aktivitas — sebutkan field spesifik yang diubah
     const fieldLabel: Record<string, string> = {

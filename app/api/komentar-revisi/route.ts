@@ -3,34 +3,41 @@ import { appendRow, getSheetData } from '@/lib/sheet';
 import { generateId, formatTanggalWaktu } from '@/lib/utils';
 import { requireSession } from '@/lib/auth';
 
+// Sheet "Komentar Revisi" (0-based) — 8 kolom
+// 0 ID Komentar
+// 1 ID Dokumen
+// 2 Pengirim     (admin / mitra — peran)
+// 3 ID Pengirim  (identitas unik: id/email admin, atau 'mitra')
+// 4 Nama Pengirim
+// 5 Pesan
+// 6 Tgl Dibuat
+// 7 Dibaca (Ya / '')
 const K = { ID: 0, DOK: 1, ROLE: 2, SENDER: 3, NAMA: 4, PESAN: 5, TGL: 6, DIBACA: 7 };
 const SHEET = 'Komentar Revisi';
 
-// Admin/superadmin bebas; mitra HANYA boleh akses komentar dokumennya sendiri.
-async function checkAkses(req: NextRequest, idDokumen: string) {
-  const session = await requireSession(req);
-  if (!session) return null;
-  if (['admin', 'superadmin'].includes(String(session.role))) return session;
-  if (session.role === 'mitra' && String(session.idDokumen) === idDokumen) return session;
-  return null;
-}
-
+// Resolve label tampilan mitra dari dokumen → (ID Mitra ATAU Nama Institusi) → Pengajuan Mitra.
+// Format:
+//   MOU → "Nama PIC (Nama Institusi)"
+//   PKS → "Nama PIC (Jurusan · Nama Institusi)"  (jurusan diabaikan jika kosong)
+// Fallback jika PIC tidak ditemukan sama sekali → nama institusi saja.
 async function resolveLabelMitra(idDokumen: string): Promise<string> {
   try {
     const dok = await getSheetData('Dokumen Kerja sama');
     const drow = dok.find(r => String(r[0] || '').trim() === idDokumen);
     if (!drow) return 'Mitra';
 
-    const jenisDok    = String(drow[1] || '').trim();
-    const idMitra     = String(drow[3] || '').trim();
-    const namaInstansi = String(drow[4] || '').trim();
+    const jenisDok    = String(drow[1] || '').trim();  // MOU / PKS
+    const idMitra     = String(drow[3] || '').trim();  // kol 3 = ID Mitra
+    const namaInstansi = String(drow[4] || '').trim();  // kol 4 = Nama Mitra
 
     const pj = await getSheetData('Pengajuan Mitra');
 
+    // 1) Coba match by ID Mitra (paling akurat)
     let matchRows = idMitra
       ? pj.filter(r => String(r[1] || '').trim() === idMitra)
       : [];
 
+    // 2) Fallback: match by nama institusi (case-insensitive) jika ID Mitra kosong/tidak cocok
     if (matchRows.length === 0 && namaInstansi) {
       matchRows = pj.filter(r =>
         String(r[2] || '').trim().toLowerCase() === namaInstansi.toLowerCase()
@@ -39,12 +46,13 @@ async function resolveLabelMitra(idDokumen: string): Promise<string> {
 
     if (matchRows.length === 0) return namaInstansi || 'Mitra';
 
+    // ambil baris terakhir yang punya Nama PIC terisi (data terbaru)
     let pic = '', jurusan = '';
     for (const r of matchRows) {
-      const p = String(r[18] || '').trim();
+      const p = String(r[18] || '').trim(); // kol 18 = Nama PIC
       if (p) {
         pic = p;
-        jurusan = String(r[13] || '').trim();
+        jurusan = String(r[13] || '').trim(); // kol 13 = Jurusan
       }
     }
 
@@ -68,16 +76,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ message: 'idDokumen wajib diisi.' }, { status: 400 });
     }
 
-    const session = await checkAkses(req, idDokumen);
-    if (!session) {
-      return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
-    }
-
     let rows: string[][] = [];
     try {
       rows = await getSheetData(SHEET);
     } catch {
-      return NextResponse.json({ data: [] });
+      return NextResponse.json({ data: [] }); // sheet belum ada → kosong
     }
 
     const data = rows
@@ -112,14 +115,18 @@ export async function POST(req: NextRequest) {
     if (!idDokumen) {
       return NextResponse.json({ message: 'idDokumen wajib diisi.' }, { status: 400 });
     }
-
-    const session = await checkAkses(req, idDokumen);
-    if (!session) {
-      return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
-    }
-
-    if (!['admin', 'mitra'].includes(pengirim)) {
+    if (!['admin', 'mitra', 'bnn_utama'].includes(pengirim)) {
       return NextResponse.json({ message: 'Pengirim tidak valid.' }, { status: 400 });
+    }
+    // Komentar "resmi BNN Utama" cuma boleh dikirim kalau sesinya beneran
+    // level 'utama' — cegah admin BNNP/BNNK mengaku-ngaku jadi BNN Utama
+    // lewat body request.
+    if (pengirim === 'bnn_utama') {
+      const session = await requireSession(req);
+      const s = session as Record<string, unknown> | null;
+      if (!session || String(s?.level || '') !== 'utama') {
+        return NextResponse.json({ message: 'Cuma Admin BNN Utama yang bisa mengirim komentar resmi.' }, { status: 403 });
+      }
     }
     if (!pesan) {
       return NextResponse.json({ message: 'Pesan tidak boleh kosong.' }, { status: 400 });
@@ -128,28 +135,32 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'Pesan terlalu panjang (maks 2000 karakter).' }, { status: 400 });
     }
 
+    // Nama tampilan:
+    // - mitra → selalu resolve label (PIC + institusi/jurusan) dari server, agar konsisten
+    // - admin → pakai nama yang dikirim (mendukung banyak admin)
     let nama: string;
     let idPengirim: string;
     if (pengirim === 'mitra') {
       nama = await resolveLabelMitra(idDokumen);
-      idPengirim = 'mitra';
+      idPengirim = 'mitra'; // satu pihak mitra per dokumen
     } else {
-      nama = namaPengirim || 'Admin Pokja';
-      idPengirim = senderId || nama;
+      nama = namaPengirim || (pengirim === 'bnn_utama' ? 'Admin BNN Utama' : 'Admin Pokja');
+      idPengirim = senderId || nama; // bedakan antar-admin; fallback ke nama
     }
 
     const now = new Date();
     const id  = generateId('KMT');
 
+    // index 0–7 sesuai struktur sheet
     await appendRow(SHEET, [
-      id,
-      idDokumen,
-      pengirim,
-      idPengirim,
-      nama,
-      pesan,
-      formatTanggalWaktu(now),
-      '',
+      id,                      // 0 ID Komentar
+      idDokumen,               // 1 ID Dokumen
+      pengirim,                // 2 Pengirim (role)
+      idPengirim,              // 3 ID Pengirim
+      nama,                    // 4 Nama Pengirim
+      pesan,                   // 5 Pesan
+      formatTanggalWaktu(now), // 6 Tgl Dibuat
+      '',                      // 7 Dibaca
     ]);
 
     return NextResponse.json({

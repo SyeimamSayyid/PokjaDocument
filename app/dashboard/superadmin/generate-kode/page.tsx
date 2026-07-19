@@ -1,6 +1,11 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Sidebar, { SidebarItem } from '@/components/Sidebar';
+import {
+  FiGrid, FiCalendar, FiInbox, FiKey, FiFolder, FiActivity,
+  FiUsers, FiList, FiArchive, FiShield,
+} from 'react-icons/fi';
 import {
   ArrowLeft, Key, Building, User, FileText, Tag, Calendar,
   Copy, Check, ExternalLink, AlertCircle, CheckCircle, Loader2, Send,
@@ -35,6 +40,8 @@ const WA_MAX = 12;
 
 export default function GenerateKodePage() {
   const [role, setRole] = useState('');
+  const [level, setLevel] = useState<'utama' | 'bnnp_bnnk'>('bnnp_bnnk');
+  const [namaAdmin, setNamaAdmin] = useState('Admin');
   const [institusiOpsi, setInstitusiOpsi] = useState<string[]>([]);
   const [riwayat, setRiwayat] = useState<RiwayatItem[]>([]);
   const [loadingRiwayat, setLoadingRiwayat] = useState(true);
@@ -93,6 +100,8 @@ export default function GenerateKodePage() {
     const u = JSON.parse(raw);
     if (!['admin','superadmin'].includes(u.role)) { window.location.href = '/login'; return; }
     setRole(u.role);
+    setLevel(u.level === 'utama' ? 'utama' : 'bnnp_bnnk');
+    setNamaAdmin(u.nama || u.email || 'Admin');
     loadRiwayat();
     loadInstitusi();
   }, [loadRiwayat, loadInstitusi]);
@@ -205,25 +214,61 @@ export default function GenerateKodePage() {
   };
 
   const backUrl = role === 'superadmin' ? '/dashboard/superadmin' : '/dashboard/admin';
+
+  const sidebarItems: SidebarItem[] = [
+    { href: '/dashboard/admin', icon: <FiGrid size={17} />, label: 'Dashboard' },
+    { href: '/dashboard/rencana', icon: <FiCalendar size={17} />, label: 'E-Planning' },
+    { href: '/dashboard/pengajuan', icon: <FiInbox size={17} />, label: 'Kelola Pengajuan' },
+    { href: '/dashboard/superadmin/generate-kode', icon: <FiKey size={17} />, label: 'Generate Kode' },
+    { href: '/dashboard/dokumen', icon: <FiFolder size={17} />, label: 'Daftar Dokumen' },
+    { href: '/dashboard/kelola-kegiatan', icon: <FiActivity size={17} />, label: 'Kelola Kegiatan' },
+    { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
+    { href: '/dashboard/dokumen/extract-poin', icon: <FiList size={17} />, label: 'Extract Poin Publik' },
+    { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
+    ...(level === 'bnnp_bnnk' ? [{ href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Kelola Admin' }] : []),
+  ];
+
+  const logout = async () => {
+    try { await fetch('/api/auth/logout', { method: 'POST' }); } catch {}
+    window.location.href = '/login';
+  };
+
   const riwayatFiltered = riwayat.filter(r =>
     !search || r.namaMitra?.toLowerCase().includes(search.toLowerCase()) || r.judul?.toLowerCase().includes(search.toLowerCase()) || r.kode?.toLowerCase().includes(search.toLowerCase())
   );
 
+  if (!role) return (
+    <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background:'linear-gradient(180deg,#FCFAF4,#F5F1E8)', fontFamily:FONT, color:'#64748b', gap:16 }}>
+      <div style={{ width:40, height:40, border:'3px solid #eef2f6', borderTop:`3px solid ${BLUE}`, borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
+      <div style={{ fontSize:13 }}>Memuat...</div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+
   return (
-    <div style={{ minHeight:'100vh', fontFamily: FONT, background: 'radial-gradient(1000px 480px at 85% -10%, #dbeafe 0%, rgba(219,234,254,0) 55%), linear-gradient(180deg,#f7f9fc,#eef2f8)' }}>
+    <div style={{ minHeight:'100vh', fontFamily: FONT, background: 'radial-gradient(1100px 520px at 85% -8%, rgba(30,58,95,0.05) 0%, rgba(30,58,95,0) 55%), linear-gradient(180deg,#FCFAF4,#F5F1E8)' }}>
       <GlobalStyle />
 
-      <div style={{ maxWidth:1000, margin:'0 auto', padding:'1.4rem 1.25rem 0' }}>
+      <Sidebar
+        items={sidebarItems}
+        activeHref="/dashboard/superadmin/generate-kode"
+        brandLabel="SI-POKJA HUMKER"
+        brandSub={level === 'utama' ? 'BNN Utama' : 'Admin BNNP/BNNK'}
+        userName={namaAdmin}
+        userTag={level === 'utama' ? 'Admin BNN Utama' : 'Admin BNNP/BNNK'}
+        accent={BLUE}
+        onLogout={logout}
+      />
+
+      <div className="main-content-wrap" style={{ maxWidth:1000, margin:'0 auto', padding:'1.4rem 1.25rem 0' }}>
         <nav style={navPill} className="fld">
-          <a href={backUrl} style={backLink}><ArrowLeft size={14} /> Dashboard</a>
-          <div style={{ fontWeight:800, fontSize:14, display:'flex', alignItems:'center', gap:8, color:'#0f1f3d' }}>
+          <div style={{ fontWeight:800, fontSize:14, display:'flex', alignItems:'center', gap:8, color:'#0f1f3d', margin:'0 auto' }}>
             <Key size={17} style={{ color: BLUE }} /> Generate Dokumen
           </div>
-          <div style={{ width:34 }} />
         </nav>
       </div>
 
-      <div style={{ maxWidth:1000, margin:'0 auto', padding:'1.5rem 1.25rem 3rem', display:'grid', gridTemplateColumns:'1fr 380px', gap:16 }}>
+      <div className="main-content-wrap" style={{ maxWidth:1000, margin:'0 auto', padding:'1.5rem 1.25rem 3rem', display:'grid', gridTemplateColumns:'1fr 380px', gap:16 }}>
 
         {/* Kolom kiri — form / hasil */}
         <div>
@@ -464,6 +509,9 @@ function GlobalStyle() {
       .shake { animation: shakeX 0.4s ease-out; }
       .btn-hover { transition: all 0.3s cubic-bezier(0.32,0.72,0,1); }
       .btn-hover:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.05); }
+      @media (min-width: 901px) {
+        .main-content-wrap { margin-left: 236px !important; width: calc(100% - 236px) !important; box-sizing: border-box !important; }
+      }
     `}</style>
   );
 }
@@ -475,16 +523,16 @@ const coreStyle: React.CSSProperties = { background:'#fff', borderRadius:15, box
 const labelSt: React.CSSProperties = { display:'flex', alignItems:'center', fontSize:11, fontWeight:600, color:'#334155', marginBottom:5 };
 const subLabel: React.CSSProperties = { display:'flex', alignItems:'center', fontSize:10.5, fontWeight:600, color:'#54635e', marginBottom:5 };
 const hint: React.CSSProperties = { fontSize:10, color:'#94a3b8', marginTop:8, lineHeight:1.5 };
-const inputFull: React.CSSProperties = { width:'100%', padding:'9px 12px', borderRadius:9, borderWidth:1.5, borderStyle:'solid', borderColor:'rgba(29,78,216,0.10)', fontSize:12, fontFamily:FONT, boxSizing:'border-box', background:'#f8fafc', outline:'none' };
-const nestGroup: React.CSSProperties = { background:'#f8fafc', border:'1px solid rgba(29,78,216,0.06)', borderRadius:12, padding:'0.9rem 1rem' };
+const inputFull: React.CSSProperties = { width:'100%', padding:'9px 12px', borderRadius:9, borderWidth:1.5, borderStyle:'solid', borderColor:'rgba(29,78,216,0.10)', fontSize:12, fontFamily:FONT, boxSizing:'border-box', background:'#F5F1E8', outline:'none' };
+const nestGroup: React.CSSProperties = { background:'#F5F1E8', border:'1px solid rgba(29,78,216,0.06)', borderRadius:12, padding:'0.9rem 1rem' };
 const btnPrimary: React.CSSProperties = { padding:'10px 16px', borderRadius:10, border:'none', background:`linear-gradient(135deg,${BLUE_LIGHT},${BLUE_DARK})`, color:'#fff', fontSize:12.5, fontWeight:700, cursor:'pointer', fontFamily:FONT, display:'flex', alignItems:'center', justifyContent:'center', gap:7, boxShadow:`0 6px 16px -6px ${BLUE}60` };
 const btnPrimarySm: React.CSSProperties = { ...btnPrimary, padding:'8px 18px', fontSize:11.5, display:'inline-flex' };
 const btnSm: React.CSSProperties = { padding:'9px 14px', borderRadius:10, borderWidth:1.5, borderStyle:'solid', borderColor:'rgba(29,78,216,0.10)', background:'#fff', color:'#334155', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:FONT };
-const dField: React.CSSProperties = { display:'flex', flexDirection:'column', gap:2, background:'#f8fafc', borderRadius:8, padding:'8px 10px' };
+const dField: React.CSSProperties = { display:'flex', flexDirection:'column', gap:2, background:'#F5F1E8', borderRadius:8, padding:'8px 10px' };
 const dLabel: React.CSSProperties = { fontSize:9.5, color:'#94a3b8', textTransform:'uppercase', letterSpacing:0.3, fontWeight:600 };
 const kodeBox: React.CSSProperties = { background:'linear-gradient(135deg,#EFF6FF,#DBEAFE)', border:'2px solid #93C5FD', borderRadius:14, padding:'1.3rem', textAlign:'center', marginBottom:6 };
 const mouBox: React.CSSProperties = { background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:12, padding:'12px 14px' };
 const msgBox = (color: string, bg: string): React.CSSProperties => ({ fontSize:12, color, background:bg, padding:'10px 14px', borderRadius:10, marginBottom:14 });
-const riwayatRow: React.CSSProperties = { display:'block', padding:'9px 11px', borderRadius:10, background:'#f8fafc', border:'1px solid rgba(29,78,216,0.06)', textDecoration:'none' };
+const riwayatRow: React.CSSProperties = { display:'block', padding:'9px 11px', borderRadius:10, background:'#F5F1E8', border:'1px solid rgba(29,78,216,0.06)', textDecoration:'none' };
 const fileChip: React.CSSProperties = { display:'flex', alignItems:'center', gap:9, padding:'9px 11px', background:'#EFF6FF', borderRadius:10 };
 const miniIconBtn: React.CSSProperties = { width:26, height:26, borderRadius:8, border:'1px solid rgba(220,38,38,0.15)', background:'#fff', color:'#DC2626', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 };

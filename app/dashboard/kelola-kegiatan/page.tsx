@@ -1,9 +1,12 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Sidebar, { SidebarItem } from '@/components/Sidebar';
 import {
-  FiArrowLeft, FiClock, FiRadio, FiCheckCircle, FiCamera, FiTrash2,
+  FiClock, FiRadio, FiCheckCircle, FiCamera, FiTrash2,
   FiCalendar, FiInbox, FiX, FiArrowRight,
+  FiGrid, FiInbox as FiInboxNav, FiKey, FiFolder, FiActivity,
+  FiUsers, FiList, FiArchive, FiShield,
 } from 'react-icons/fi';
 
 interface FotoItem { fileId: string; nama: string; ukuran: number; thumbnailUrl: string; }
@@ -50,6 +53,8 @@ function fmt(t: string) {
 
 export default function KelolaKegiatanPage() {
   const [role, setRole]     = useState('');
+  const [level, setLevel]   = useState<'utama' | 'bnnp_bnnk'>('bnnp_bnnk');
+  const [namaAdmin, setNamaAdmin] = useState('Admin');
   const [ring, setRing]     = useState<Ringkasan | null>(null);
   const [akan, setAkan]     = useState<DokItem[]>([]);
   const [berlang, setBerlang] = useState<DokItem[]>([]);
@@ -79,16 +84,42 @@ export default function KelolaKegiatanPage() {
   }, []);
 
   useEffect(() => {
-    const raw = localStorage.getItem('paktasign_user');
-    if (!raw) { window.location.href = '/login'; return; }
-    const u = JSON.parse(raw);
-    if (!['admin','superadmin'].includes(u.role)) { window.location.href = '/login'; return; }
-    setRole(u.role);
-    setMounted(true);
-    load();
+    fetch('/api/auth/me')
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(u => {
+        if (!['admin','superadmin'].includes(u.role)) { window.location.href = '/login'; return; }
+        setRole(u.role);
+        setLevel(u.level === 'utama' ? 'utama' : 'bnnp_bnnk');
+        setNamaAdmin(u.nama || u.email || 'Admin');
+        setMounted(true);
+        load();
+      })
+      .catch(() => { window.location.href = '/login'; });
   }, [load]);
 
-  const backUrl = role === 'superadmin' ? '/dashboard/superadmin' : '/dashboard/admin';
+  const sidebarItems: SidebarItem[] = level === 'utama' ? [
+    { href: '/dashboard/bnn-utama', icon: <FiGrid size={17} />, label: 'Dashboard' },
+    { href: '/dashboard/dokumen', icon: <FiFolder size={17} />, label: 'Dokumen & Tata Kelola' },
+    { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
+    { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
+    { href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Daftar Admin' },
+  ] : [
+    { href: '/dashboard/admin', icon: <FiGrid size={17} />, label: 'Dashboard' },
+    { href: '/dashboard/rencana', icon: <FiCalendar size={17} />, label: 'E-Planning' },
+    { href: '/dashboard/pengajuan', icon: <FiInboxNav size={17} />, label: 'Kelola Pengajuan' },
+    { href: '/dashboard/superadmin/generate-kode', icon: <FiKey size={17} />, label: 'Generate Kode' },
+    { href: '/dashboard/dokumen', icon: <FiFolder size={17} />, label: 'Daftar Dokumen' },
+    { href: '/dashboard/kelola-kegiatan', icon: <FiActivity size={17} />, label: 'Kelola Kegiatan' },
+    { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
+    { href: '/dashboard/dokumen/extract-poin', icon: <FiList size={17} />, label: 'Extract Poin Publik' },
+    { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
+    { href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Kelola Admin' },
+  ];
+
+  const logout = async () => {
+    try { await fetch('/api/auth/logout', { method: 'POST' }); } catch {}
+    window.location.href = '/login';
+  };
 
   const handleHapusFoto = async () => {
     if (!hapusTarget) return;
@@ -120,7 +151,7 @@ export default function KelolaKegiatanPage() {
   const list = tab === 'akan' ? akan : tab === 'berlang' ? berlang : selesai;
 
   if (loading) return (
-    <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background:'#f8fafc', fontFamily:FONT, color:'#64748b', gap:16 }}>
+    <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background:'#F5F1E8', fontFamily:FONT, color:'#64748b', gap:16 }}>
       <div style={{ width:40, height:40, border:'3px solid #eef2f6', borderTop:`3px solid ${BLUE}`, borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
       <div style={{ fontSize:13 }}>Memuat kegiatan...</div>
       <style>{`@keyframes spin { to{transform:rotate(360deg)} }`}</style>
@@ -128,12 +159,22 @@ export default function KelolaKegiatanPage() {
   );
 
   return (
-    <div style={{ minHeight:'100dvh', fontFamily:FONT, background:'radial-gradient(1000px 500px at 80% -10%, #dbeafe 0%, rgba(219,234,254,0) 55%), linear-gradient(180deg,#f7f9fc,#eef2f8)' }}>
+    <div style={{ minHeight:'100dvh', fontFamily:FONT, background:'radial-gradient(1100px 520px at 85% -8%, rgba(30,58,95,0.05) 0%, rgba(30,58,95,0) 55%), linear-gradient(180deg,#FCFAF4,#F5F1E8)' }}>
       <GlobalStyle />
 
-      <div style={{ maxWidth:980, margin:'0 auto', padding:'1.4rem 1.25rem 0' }}>
+      <Sidebar
+        items={sidebarItems}
+        activeHref="/dashboard/kelola-kegiatan"
+        brandLabel="SI-POKJA HUMKER"
+        brandSub={level === 'utama' ? 'BNN Utama' : 'Admin BNNP/BNNK'}
+        userName={namaAdmin}
+        userTag={level === 'utama' ? 'Admin BNN Utama' : 'Admin BNNP/BNNK'}
+        accent={level === 'utama' ? '#ABD1C6' : BLUE}
+        onLogout={logout}
+      />
+
+      <div className="main-content-wrap" style={{ maxWidth:980, margin:'0 auto', padding:'1.4rem 1.25rem 0' }}>
         <nav style={navPill} className="fld">
-          <a href={backUrl} style={backLink}><FiArrowLeft size={13} /> Dashboard</a>
           <div style={{ fontWeight:800, fontSize:14, display:'flex', alignItems:'center', gap:8, color:'#0f1f3d' }}>
             <FiCalendar size={15} style={{ color: BLUE }} />
             Kelola Kegiatan
@@ -144,7 +185,7 @@ export default function KelolaKegiatanPage() {
         </nav>
       </div>
 
-      <div style={{ maxWidth:980, margin:'0 auto', padding:'1.25rem 1.25rem 3rem' }}>
+      <div className="main-content-wrap" style={{ maxWidth:980, margin:'0 auto', padding:'1.25rem 1.25rem 3rem' }}>
 
         <div style={{ marginBottom:20 }} className="fld">
           <div style={eyebrow}>Kegiatan E-Planning</div>
@@ -157,7 +198,6 @@ export default function KelolaKegiatanPage() {
         {msg   && <div style={{ ...msgBox('#0a5c47','#e9f7f1'), marginBottom:14 }} className="fld">{msg}</div>}
         {error && <div style={{ ...msgBox('#A32D2D','#FCEBEB'), marginBottom:14 }} className="fld">{error}</div>}
 
-        {/* Ringkasan e-planning */}
         {ring && (
           <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))', gap:12, marginBottom:20 }} className="fld">
             <div style={statShell}><div style={statCore}>
@@ -183,7 +223,6 @@ export default function KelolaKegiatanPage() {
           </div>
         )}
 
-        {/* Tabs */}
         <div style={{ display:'flex', gap:6, marginBottom:18, flexWrap:'wrap' }} className="fld">
           {TABS.map(t => {
             const c = t.key==='akan'?akan.length:t.key==='berlang'?berlang.length:selesai.length;
@@ -224,7 +263,6 @@ export default function KelolaKegiatanPage() {
                     <FiCalendar size={11} /> {fmt(dok.tglMulai)} – {fmt(dok.tglSelesai)}
                   </div>
 
-                  {/* Foto (hanya tab berlangsung) */}
                   {tab === 'berlang' && (
                     <div style={{ marginTop:12, paddingTop:12, borderTop:'1px solid rgba(29,78,216,0.06)' }}>
                       <div style={{ fontSize:11.5, fontWeight:700, color:'#334155', marginBottom:8, display:'flex', alignItems:'center', gap:6 }}>
@@ -257,7 +295,6 @@ export default function KelolaKegiatanPage() {
         )}
       </div>
 
-      {/* Modal konfirmasi hapus foto */}
       {hapusTarget && (
         <div style={modalOverlay} onClick={() => !hapusLoading && setHapusTarget(null)}>
           <div style={modalBox} className="fld" onClick={e => e.stopPropagation()}>
@@ -296,6 +333,9 @@ function GlobalStyle() {
       .btn-hover:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.05); }
       .btn-hover:active { transform: scale(0.96); }
       textarea::placeholder { color:#aab4b0; }
+      @media (min-width: 901px) {
+        .main-content-wrap { margin-left: 236px !important; width: calc(100% - 236px) !important; box-sizing: border-box !important; }
+      }
     `}</style>
   );
 }
@@ -317,4 +357,4 @@ const modalOverlay: React.CSSProperties = { position:'fixed', inset:0, backgroun
 const modalBox: React.CSSProperties = { background:'#fff', borderRadius:20, padding:'1.5rem', width:'100%', maxWidth:440, maxHeight:'92vh', overflowY:'auto', boxShadow:'0 30px 60px -20px rgba(15,23,42,0.35)' };
 const closeBtn: React.CSSProperties = { width:28, height:28, borderRadius:8, border:'1px solid rgba(29,78,216,0.10)', background:'#fff', color:'#64748b', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 };
 const fieldLabel: React.CSSProperties = { display:'block', fontSize:11, fontWeight:700, color:'#334155', marginBottom:5 };
-const fieldInput: React.CSSProperties = { width:'100%', padding:'10px 12px', borderRadius:10, borderWidth:1.5, borderStyle:'solid', borderColor:'rgba(29,78,216,0.10)', background:'#f8fafc', fontSize:12.5, fontFamily:FONT, outline:'none', color:'#0f1f3d', boxSizing:'border-box' };
+const fieldInput: React.CSSProperties = { width:'100%', padding:'10px 12px', borderRadius:10, borderWidth:1.5, borderStyle:'solid', borderColor:'rgba(29,78,216,0.10)', background:'#F5F1E8', fontSize:12.5, fontFamily:FONT, outline:'none', color:'#0f1f3d', boxSizing:'border-box' };

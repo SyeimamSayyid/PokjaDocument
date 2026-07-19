@@ -1,11 +1,16 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Sidebar, { SidebarItem } from '@/components/Sidebar';
 import {
-  ArrowLeft, FileText, Search, Filter, Eye, Check, X, Edit, Save, Send,
+  FiGrid, FiCalendar, FiInbox, FiKey, FiFolder, FiActivity,
+  FiUsers, FiList, FiArchive, FiShield,
+} from 'react-icons/fi';
+import {
+  FileText, Search, Filter, Eye, Check, X, Edit, Save, Send,
   Mail, Phone, Calendar, Building, GraduationCap, Clipboard,
   Copy, CheckCircle, AlertCircle, Clock, Tag, ExternalLink,
-  ChevronDown, ChevronUp, Info, Key, Briefcase, MessageSquare, Paperclip,
+  ChevronDown, ChevronUp, Info, Key, MessageSquare, Paperclip,
   List, Landmark,
 } from 'lucide-react';
 
@@ -70,6 +75,9 @@ function toDivisiArray(raw: unknown): string[] {
 
 export default function PengajuanPage() {
   const [role, setRole]           = useState('');
+  const [level, setLevel]         = useState<'utama' | 'bnnp_bnnk'>('bnnp_bnnk');
+  const [namaAdmin, setNamaAdmin] = useState('Admin');
+  const [aksesMap, setAksesMap]   = useState<Record<string, { diaccOleh: string; emailTerkirim: boolean; loading?: boolean }>>({});
   const [data, setData]           = useState<PengajuanItem[]>([]);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState('');
@@ -106,10 +114,46 @@ export default function PengajuanPage() {
     return DEFAULT_STATUS_COLOR;
   };
 
-  const toggleExpand = (id: string) => {
+  // Ambil status "diacc oleh siapa" + "email sudah terkirim?" — lazy, cuma
+  // dipanggil sekali per item pas kartu di-expand (biar tidak batch-fetch
+  // semua item sekaligus di awal, hemat request).
+  const muatAksesInfo = useCallback(async (id: string) => {
+    setAksesMap(prev => ({ ...prev, [id]: { ...(prev[id] || { diaccOleh:'', emailTerkirim:false }), loading: true } }));
+    try {
+      const r = await fetch(`/api/pengajuan/akses-mitra?id=${id}`);
+      const d = await r.json();
+      setAksesMap(prev => ({ ...prev, [id]: { diaccOleh: d.diaccOleh || '', emailTerkirim: !!d.emailTerkirim, loading: false } }));
+    } catch {
+      setAksesMap(prev => ({ ...prev, [id]: { ...(prev[id] || { diaccOleh:'', emailTerkirim:false }), loading: false } }));
+    }
+  }, []);
+
+  const kirimUlangAkses = async (id: string) => {
+    setAksesMap(prev => ({ ...prev, [id]: { ...(prev[id] || { diaccOleh:'', emailTerkirim:false }), loading: true } }));
+    setError(''); setMsg('');
+    try {
+      const r = await fetch('/api/pengajuan/akses-mitra', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, aksi: 'kirimUlangAkses' }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setError(d.message || 'Gagal mengirim kode akses.'); setAksesMap(prev => ({ ...prev, [id]: { ...(prev[id] || { diaccOleh:'', emailTerkirim:false }), loading: false } })); return; }
+      setMsg(d.message);
+      setAksesMap(prev => ({ ...prev, [id]: { ...(prev[id] || { diaccOleh:'' }), emailTerkirim: true, loading: false } }));
+    } catch {
+      setError('Terjadi kesalahan saat mengirim kode akses.');
+      setAksesMap(prev => ({ ...prev, [id]: { ...(prev[id] || { diaccOleh:'', emailTerkirim:false }), loading: false } }));
+    }
+  };
+
+  const toggleExpand = (id: string, status: string) => {
     const newSet = new Set(expandedItems);
     if (newSet.has(id)) newSet.delete(id);
-    else newSet.add(id);
+    else {
+      newSet.add(id);
+      // Lazy-load info akses cuma pas item Disetujui di-expand & belum pernah dicek
+      if (status === 'Disetujui' && !aksesMap[id]) muatAksesInfo(id);
+    }
     setExpandedItems(newSet);
   };
 
@@ -129,16 +173,39 @@ export default function PengajuanPage() {
   }, []);
 
   useEffect(() => {
-    const raw = localStorage.getItem('paktasign_user');
-    if (!raw) { window.location.href = '/login'; return; }
-    const u = JSON.parse(raw);
-    if (!['admin','superadmin'].includes(u.role)) { window.location.href = '/login'; return; }
-    setRole(u.role);
-    load();
-    fetch('/api/superadmin/mitra').then(r => r.json()).then(d => setMitraList(d.data || []));
+    fetch('/api/auth/me')
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(u => {
+        if (!['admin','superadmin'].includes(u.role)) { window.location.href = '/login'; return; }
+        setRole(u.role);
+        setLevel(u.level === 'utama' ? 'utama' : 'bnnp_bnnk');
+        setNamaAdmin(u.nama || u.email || 'Admin');
+        load();
+        fetch('/api/superadmin/mitra').then(r => r.json()).then(d => setMitraList(d.data || []));
+      })
+      .catch(() => { window.location.href = '/login'; });
   }, [load]);
 
   const backUrl = role === 'superadmin' ? '/dashboard/superadmin' : '/dashboard/admin';
+
+  const sidebarItems: SidebarItem[] = [
+    { href: '/dashboard/admin', icon: <FiGrid size={17} />, label: 'Dashboard' },
+    { href: '/dashboard/rencana', icon: <FiCalendar size={17} />, label: 'E-Planning' },
+    { href: '/dashboard/pengajuan', icon: <FiInbox size={17} />, label: 'Kelola Pengajuan' },
+    { href: '/dashboard/superadmin/generate-kode', icon: <FiKey size={17} />, label: 'Generate Kode' },
+    { href: '/dashboard/dokumen', icon: <FiFolder size={17} />, label: 'Daftar Dokumen' },
+    { href: '/dashboard/kelola-kegiatan', icon: <FiActivity size={17} />, label: 'Kelola Kegiatan' },
+    { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
+    { href: '/dashboard/dokumen/extract-poin', icon: <FiList size={17} />, label: 'Extract Poin Publik' },
+    { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
+    ...(level === 'bnnp_bnnk' ? [{ href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Kelola Admin' }] : []),
+  ];
+
+  const logout = async () => {
+    try { await fetch('/api/auth/logout', { method: 'POST' }); } catch {}
+    window.location.href = '/login';
+  };
+
 
   const activeStatuses = FILTER_TABS.find(f => f.key === activeFilter)?.statuses || [];
   const filtered = data.filter(d => {
@@ -216,7 +283,7 @@ export default function PengajuanPage() {
         body: JSON.stringify({
           tipeKode: 'dokumen', idMitra: idMitraAcc || '', namaMitra,
           namaPIC: '', jenis: accItem.jenis, judul: judulDok.trim(),
-          tglBerlaku: tglMulaiOtomatis, tglBerakhir: '', dibuatOleh: role,
+          tglBerlaku: tglMulaiOtomatis, tglBerakhir: '', dibuatOleh: namaAdmin,
           templateMitraId: pilihanTemplate === 'mitra' ? (accItem.fileDokumenId || '') : '',
           divisi: accItem.divisi || [],
         }),
@@ -232,6 +299,13 @@ export default function PengajuanPage() {
           catatan: `Disetujui. Template: ${pilihanTemplate === 'mitra' ? 'Dokumen mitra' : 'Template resmi BNN'}.`,
         }),
       });
+
+      // Catat siapa yang meng-ACC — endpoint terpisah, tidak menyentuh route status di atas.
+      fetch('/api/pengajuan/akses-mitra', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: accItem.id, aksi: 'catatDiacc', diaccOleh: namaAdmin }),
+      }).catch(() => {});
+
       setHasilGenerate(d);
       load();
     } catch (e) {
@@ -264,6 +338,12 @@ export default function PengajuanPage() {
       const d = await res.json();
       if (!res.ok) { setError(d.message || 'Gagal mengirim email.'); return; }
       setEmailTerkirim(true);
+      // Sekalian tandai di sheet biar status "sudah terkirim" persisten,
+      // bukan cuma hidup di state lokal modal ini.
+      fetch('/api/pengajuan/akses-mitra', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: accItem.id, aksi: 'kirimUlangAkses' }),
+      }).catch(() => {});
       setTimeout(() => setShowPlaneAnimation(false), 3000);
     } catch {
       setError('Terjadi kesalahan saat mengirim email.');
@@ -308,42 +388,39 @@ export default function PengajuanPage() {
   };
 
   if (loading) return (
-    <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background:'linear-gradient(180deg,#f7f9fc,#eef2f8)', fontFamily:FONT, color:'#64748b', gap:16 }}>
+    <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background:'linear-gradient(180deg,#FCFAF4,#F5F1E8)', fontFamily:FONT, color:'#64748b', gap:16 }}>
       <div style={{ width:40, height:40, border:'3px solid #eef2f6', borderTop:`3px solid ${BLUE}`, borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
       <div style={{ fontSize:13 }}>Memuat pengajuan...</div>
     </div>
   );
 
   return (
-    <div style={{ minHeight:'100vh', fontFamily: FONT, background: 'radial-gradient(1000px 480px at 85% -10%, #dbeafe 0%, rgba(219,234,254,0) 55%), linear-gradient(180deg,#f7f9fc,#eef2f8)' }}>
+    <div style={{ minHeight:'100vh', fontFamily: FONT, background: 'radial-gradient(1100px 520px at 85% -8%, rgba(30,58,95,0.05) 0%, rgba(30,58,95,0) 55%), linear-gradient(180deg,#FCFAF4,#F5F1E8)' }}>
       <GlobalStyle />
 
-      <div style={{ maxWidth:960, margin:'0 auto', padding:'1.4rem 1.25rem 0' }}>
+      <Sidebar
+        items={sidebarItems}
+        activeHref="/dashboard/pengajuan"
+        brandLabel="SI-POKJA HUMKER"
+        brandSub={level === 'utama' ? 'BNN Utama' : 'Admin BNNP/BNNK'}
+        userName={namaAdmin}
+        userTag={level === 'utama' ? 'Admin BNN Utama' : 'Admin BNNP/BNNK'}
+        accent={BLUE}
+        onLogout={logout}
+      />
+
+      <div className="main-content-wrap" style={{ maxWidth:960, margin:'0 auto', padding:'1.4rem 1.25rem 0' }}>
         <nav style={navStyle} className="fld">
           <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-            <a href={backUrl} style={backLink} className="btn-hover">
-              <ArrowLeft size={14} />
-              Dashboard
-            </a>
             <div style={{ fontWeight:800, fontSize:14, display:'flex', alignItems:'center', gap:8, color:'#0f1f3d' }}>
               <FileText size={16} style={{ color: BLUE }} />
               Kelola Pengajuan
             </div>
           </div>
-          <div style={{ display:'flex', gap:8 }}>
-            <a href="/dashboard/rencana" style={btnOutline} className="btn-hover">
-              <Briefcase size={13} />
-              E-Planning
-            </a>
-            <a href="/pengajuan" target="_blank" rel="noopener noreferrer" style={btnOutline} className="btn-hover">
-              <ExternalLink size={13} />
-              Form Publik
-            </a>
-          </div>
         </nav>
       </div>
 
-      <div style={{ maxWidth:960, margin:'0 auto', padding:'1.25rem 1.25rem 3rem' }}>
+      <div className="main-content-wrap" style={{ maxWidth:960, margin:'0 auto', padding:'1.25rem 1.25rem 3rem' }}>
         {msg && (
           <div style={{ ...msgBox(BLUE_DARK,'#DBEAFE'), display:'flex', alignItems:'center', gap:8, animation:'fadeInDown 0.4s ease-out' }}>
             <CheckCircle size={16} />
@@ -437,6 +514,7 @@ export default function PengajuanPage() {
               const isExpanded = expandedItems.has(item.id);
               const pickerOpen = openDivisiPicker === item.id;
               const bisaAksi = !['Disetujui','Ditolak','Kegiatan Selesai'].includes(item.status);
+              const akses = aksesMap[item.id];
 
               return (
                 <div key={item.id} style={{ ...shellStyle, animation: `fadeInUp 0.4s ease-out ${index * 0.03}s both` }}>
@@ -521,7 +599,7 @@ export default function PengajuanPage() {
                             </div>
                           )}
                         </div>
-                        <button onClick={() => toggleExpand(item.id)} style={iconToolBtn} className="btn-hover" title={isExpanded ? 'Sembunyikan' : 'Tampilkan detail'}>
+                        <button onClick={() => toggleExpand(item.id, item.status)} style={iconToolBtn} className="btn-hover" title={isExpanded ? 'Sembunyikan' : 'Tampilkan detail'}>
                           {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                         </button>
                       </div>
@@ -541,7 +619,7 @@ export default function PengajuanPage() {
                     {isExpanded && (
                       <div style={{ marginTop:8, animation: 'fadeInUp 0.3s ease-out' }}>
                         {(item.email||item.noWa) && (
-                          <div style={{ fontSize:11, color:'#64748b', marginTop:4, display:'flex', gap:14, flexWrap:'wrap', background:'#f8fafc', padding:'4px 10px', borderRadius:8 }}>
+                          <div style={{ fontSize:11, color:'#64748b', marginTop:4, display:'flex', gap:14, flexWrap:'wrap', background:'#F5F1E8', padding:'4px 10px', borderRadius:8 }}>
                             {item.email && <span style={{ display:'flex', alignItems:'center', gap:4 }}><Mail size={12} />{item.email}</span>}
                             {item.noWa && <span style={{ display:'flex', alignItems:'center', gap:4 }}><Phone size={12} />{item.noWa}</span>}
                           </div>
@@ -550,6 +628,40 @@ export default function PengajuanPage() {
                           <div style={{ fontSize:11, color:'#92400E', background:'#FFFBEB', padding:'6px 10px', borderRadius:8, marginTop:6, display:'flex', alignItems:'flex-start', gap:4 }}>
                             <MessageSquare size={12} style={{ flexShrink:0, marginTop:1 }} />
                             {item.catatan}
+                          </div>
+                        )}
+                        {item.status === 'Disetujui' && (
+                          <div style={{ marginTop:8, background:'#F8FAFC', border:'1px solid rgba(29,78,216,0.08)', borderRadius:10, padding:'10px 12px' }}>
+                            {akses?.diaccOleh && (
+                              <div style={{ fontSize:11, color:'#64748b', marginBottom:8, display:'flex', alignItems:'center', gap:5 }}>
+                                <CheckCircle size={12} style={{ color: BLUE }} />
+                                Disetujui oleh <strong style={{ color:'#0f1f3d' }}>{akses.diaccOleh}</strong>
+                              </div>
+                            )}
+                            {item.email ? (
+                              akses?.emailTerkirim ? (
+                                <div style={{ fontSize:11.5, fontWeight:700, color: BLUE_DARK, background:'#DBEAFE', padding:'8px 12px', borderRadius:8, display:'flex', alignItems:'center', gap:6 }}>
+                                  <CheckCircle size={13} />
+                                  Kode akses mitra telah dikirim
+                                </div>
+                              ) : (
+                                <button onClick={() => kirimUlangAkses(item.id)} disabled={akses?.loading} style={{ ...btnSm, width:'100%', background:`linear-gradient(135deg,${GOLD},#B45309)`, color:'#fff', border:'none', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }} className="btn-hover">
+                                  {akses?.loading ? (
+                                    <>
+                                      <div style={{ width:13, height:13, border:'2px solid rgba(255,255,255,.3)', borderTop:'2px solid #fff', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
+                                      Memproses...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Send size={13} />
+                                      Kirimkan Kode Akses ke Mitra
+                                    </>
+                                  )}
+                                </button>
+                              )
+                            ) : (
+                              <div style={{ fontSize:11, color:'#94a3b8' }}>Pengajuan ini tidak punya alamat email mitra.</div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -626,7 +738,7 @@ export default function PengajuanPage() {
                   emailTerkirim ? (
                     <div style={{ background:'#DBEAFE', borderRadius:10, padding:'12px 16px', fontSize:13, color:BLUE_DARK, marginBottom:14, textAlign:'center', fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', gap:8, animation: 'fadeInUp 0.4s ease-out' }}>
                       <CheckCircle size={18} />
-                      Email kode akses terkirim ke {accItem.email}
+                      Kode akses mitra telah dikirim
                     </div>
                   ) : (
                     <button onClick={handleKirimEmail} disabled={kirimEmailLoading} style={{ ...btnPrimary, width:'100%', marginBottom:12, background:`linear-gradient(135deg,${GOLD},#B45309)`, height:48, display:'flex', alignItems:'center', justifyContent:'center', gap:8, fontSize:13, opacity: kirimEmailLoading ? 0.7 : 1, position:'relative', overflow:'hidden' }} className="btn-hover">
@@ -685,7 +797,7 @@ export default function PengajuanPage() {
                   </div>
                 )}
 
-                <div style={{ background:'#f8fafc', borderRadius:12, padding:'12px 16px', marginBottom:16, border:'1px solid rgba(29,78,216,0.08)' }}>
+                <div style={{ background:'#F5F1E8', borderRadius:12, padding:'12px 16px', marginBottom:16, border:'1px solid rgba(29,78,216,0.08)' }}>
                   <div style={{ fontSize:11, fontWeight:700, color:'#64748b', marginBottom:8, textTransform:'uppercase', letterSpacing:0.5, display:'flex', alignItems:'center', gap:6 }}>
                     <FileText size={14} />
                     Data Pengajuan
@@ -783,7 +895,7 @@ export default function PengajuanPage() {
 
                   {accItem.fileDokumenId && (
                     <div style={{ marginTop:10, border:'1px solid rgba(29,78,216,0.10)', borderRadius:12, overflow:'hidden', background:'#fff' }}>
-                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 12px', background:'#f8fafc', borderBottom:'1px solid rgba(29,78,216,0.08)' }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 12px', background:'#F5F1E8', borderBottom:'1px solid rgba(29,78,216,0.08)' }}>
                         <span style={{ fontSize:11, fontWeight:700, color:BLUE_DARK, display:'flex', alignItems:'center', gap:6 }}>
                           <Eye size={14} />
                           Preview Dokumen Mitra
@@ -966,7 +1078,7 @@ export default function PengajuanPage() {
             )}
 
             {showUbah && (
-              <div style={{ background:'#f8fafc', border:'1px solid rgba(29,78,216,0.08)', borderRadius:12, padding:'14px 16px', marginBottom:14, animation: 'fadeInUp 0.3s ease-out' }}>
+              <div style={{ background:'#F5F1E8', border:'1px solid rgba(29,78,216,0.08)', borderRadius:12, padding:'14px 16px', marginBottom:14, animation: 'fadeInUp 0.3s ease-out' }}>
                 <div style={{ fontSize:12, fontWeight:700, marginBottom:8 }}>Ubah Status</div>
                 <select style={{ ...inputFull, marginBottom:8 }} value={newStatus} onChange={e => setNewStatus(e.target.value)}>
                   {STATUS_LIST.map(s => <option key={s} value={s}>{s}</option>)}
@@ -1049,6 +1161,9 @@ function GlobalStyle() {
       .fld { animation: fadeInUp 0.5s cubic-bezier(0.32,0.72,0,1) both; }
       .btn-hover { transition: all .3s cubic-bezier(0.32,0.72,0,1); }
       .btn-hover:hover:not(:disabled) { filter:brightness(1.05); transform:translateY(-1px); }
+      @media (min-width: 901px) {
+        .main-content-wrap { margin-left: 236px !important; width: calc(100% - 236px) !important; box-sizing: border-box !important; }
+      }
     `}</style>
   );
 }
@@ -1057,16 +1172,16 @@ const navStyle: React.CSSProperties = { display:'flex', alignItems:'center', jus
 const backLink: React.CSSProperties = { fontSize:12.5, color:'#64748b', textDecoration:'none', fontWeight:600, display:'flex', alignItems:'center', gap:6, padding:'6px 10px', borderRadius:100 };
 const shellStyle: React.CSSProperties = { background:'rgba(255,255,255,0.65)', borderWidth:1, borderStyle:'solid', borderColor:'rgba(29,78,216,0.08)', borderRadius:20, padding:6, boxShadow:'0 1px 2px rgba(15,23,42,0.03), 0 20px 40px -30px rgba(15,23,42,0.18)' };
 const coreStyle: React.CSSProperties = { background:'#fff', borderRadius:15, boxShadow:'inset 0 1px 1px rgba(255,255,255,0.9)' };
-const searchInput: React.CSSProperties = { width:'100%', padding:'10px 12px 10px 36px', borderRadius:11, border:'1.5px solid rgba(29,78,216,0.10)', fontSize:12, fontFamily:FONT, boxSizing:'border-box', background:'#f8fafc', outline:'none' };
+const searchInput: React.CSSProperties = { width:'100%', padding:'10px 12px 10px 36px', borderRadius:11, border:'1.5px solid rgba(29,78,216,0.10)', fontSize:12, fontFamily:FONT, boxSizing:'border-box', background:'#F5F1E8', outline:'none' };
 const card: React.CSSProperties = { background:'#fff', borderRadius:14, padding:'1rem 1.25rem', border:'1px solid rgba(29,78,216,0.08)', boxShadow:'0 1px 4px rgba(15,23,42,.04)' };
 const labelSt: React.CSSProperties = { display:'flex', alignItems:'center', fontSize:11, fontWeight:700, color:'#334155', marginBottom:5 };
-const inputFull: React.CSSProperties = { width:'100%', padding:'9px 12px', borderRadius:10, borderWidth:1.5, borderStyle:'solid', borderColor:'rgba(29,78,216,0.10)', fontSize:12, fontFamily:FONT, boxSizing:'border-box', background:'#f8fafc', outline:'none' };
+const inputFull: React.CSSProperties = { width:'100%', padding:'9px 12px', borderRadius:10, borderWidth:1.5, borderStyle:'solid', borderColor:'rgba(29,78,216,0.10)', fontSize:12, fontFamily:FONT, boxSizing:'border-box', background:'#F5F1E8', outline:'none' };
 const btnPrimary: React.CSSProperties = { padding:'9px 18px', borderRadius:11, border:'none', background:`linear-gradient(135deg,${BLUE_LIGHT},${BLUE_DARK})`, color:'#fff', fontSize:12, fontWeight:700, cursor:'pointer', fontFamily:FONT, boxShadow:`0 6px 16px -6px ${BLUE}60` };
 const btnSm: React.CSSProperties = { padding:'8px 14px', borderRadius:10, borderWidth:1.5, borderStyle:'solid', borderColor:'rgba(29,78,216,0.10)', background:'#fff', color:'#334155', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:FONT, whiteSpace:'nowrap' };
 const btnOutline: React.CSSProperties = { fontSize:12, padding:'8px 15px', borderRadius:100, border:'1.5px solid rgba(29,78,216,0.10)', textDecoration:'none', color:'#334155', background:'#fff', display:'flex', alignItems:'center', gap:5, fontWeight:600 };
 const overlay: React.CSSProperties = { position:'fixed', inset:0, background:'rgba(15,23,42,.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200, padding:'1rem', backdropFilter:'blur(4px)' };
 const modalBox: React.CSSProperties = { background:'#fff', borderRadius:20, padding:'1.75rem', width:'100%', maxWidth:480, maxHeight:'92vh', overflowY:'auto', boxShadow:'0 30px 70px -20px rgba(15,23,42,0.3)' };
-const dField: React.CSSProperties = { display:'flex', flexDirection:'column', gap:2, background:'#f8fafc', borderRadius:10, padding:'8px 10px' };
+const dField: React.CSSProperties = { display:'flex', flexDirection:'column', gap:2, background:'#F5F1E8', borderRadius:10, padding:'8px 10px' };
 const dLabel: React.CSSProperties = { fontSize:10, color:'#94a3b8', textTransform:'uppercase', letterSpacing:0.3, fontWeight:600 };
 const msgBox = (color: string, bg: string): React.CSSProperties => ({ fontSize:12, color, background:bg, padding:'10px 14px', borderRadius:12, marginBottom:12 });
 const chipDivisi = (active: boolean, color: string): React.CSSProperties => ({

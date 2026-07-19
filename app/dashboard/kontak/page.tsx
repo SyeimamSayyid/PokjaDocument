@@ -1,9 +1,12 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import Sidebar, { SidebarItem } from '@/components/Sidebar';
 import {
-  FiArrowLeft, FiSearch, FiMail, FiPhone, FiCopy, FiCheck,
+  FiSearch, FiMail, FiPhone, FiCopy, FiCheck,
   FiMessageCircle, FiUsers, FiFilter, FiChevronDown, FiEdit2, FiX,
+  FiGrid, FiCalendar, FiInbox, FiKey, FiFolder, FiActivity,
+  FiList, FiArchive, FiShield,
 } from 'react-icons/fi';
 import { FaBuilding, FaGraduationCap, FaUserCheck } from 'react-icons/fa';
 
@@ -74,6 +77,8 @@ function statusColor(s: string): { c: string; bg: string } {
 
 export default function KontakMitraPage() {
   const [role, setRole]     = useState('');
+  const [level, setLevel]   = useState<'utama' | 'bnnp_bnnk'>('bnnp_bnnk');
+  const [namaAdmin, setNamaAdmin] = useState('Admin');
   const [data, setData]     = useState<Kontak[]>([]);
   const [instansiOptions, setInstansiOptions] = useState<InstansiOpt[]>([]);
   const [loading, setLoading] = useState(true);
@@ -84,7 +89,6 @@ export default function KontakMitraPage() {
   const [copied, setCopied] = useState('');
   const [mounted, setMounted] = useState(false);
 
-  // ── Edit kontak ──
   const [editItem, setEditItem] = useState<Kontak | null>(null);
   const [form, setForm] = useState({ namaPIC: '', email: '', noWa: '' });
   const [saving, setSaving] = useState(false);
@@ -121,16 +125,42 @@ export default function KontakMitraPage() {
   }, []);
 
   useEffect(() => {
-    const raw = localStorage.getItem('paktasign_user');
-    if (!raw) { window.location.href = '/login'; return; }
-    const u = JSON.parse(raw);
-    if (!['admin', 'superadmin'].includes(u.role)) { window.location.href = '/login'; return; }
-    setRole(u.role);
-    setMounted(true);
-    load();
+    fetch('/api/auth/me')
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(u => {
+        if (!['admin', 'superadmin'].includes(u.role)) { window.location.href = '/login'; return; }
+        setRole(u.role);
+        setLevel(u.level === 'utama' ? 'utama' : 'bnnp_bnnk');
+        setNamaAdmin(u.nama || u.email || 'Admin');
+        setMounted(true);
+        load();
+      })
+      .catch(() => { window.location.href = '/login'; });
   }, [load]);
 
-  const backUrl = role === 'superadmin' ? '/dashboard/superadmin' : '/dashboard/admin';
+  const sidebarItems: SidebarItem[] = level === 'utama' ? [
+    { href: '/dashboard/bnn-utama', icon: <FiGrid size={17} />, label: 'Dashboard' },
+    { href: '/dashboard/dokumen', icon: <FiFolder size={17} />, label: 'Dokumen & Tata Kelola' },
+    { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
+    { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
+    { href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Daftar Admin' },
+  ] : [
+    { href: '/dashboard/admin', icon: <FiGrid size={17} />, label: 'Dashboard' },
+    { href: '/dashboard/rencana', icon: <FiCalendar size={17} />, label: 'E-Planning' },
+    { href: '/dashboard/pengajuan', icon: <FiInbox size={17} />, label: 'Kelola Pengajuan' },
+    { href: '/dashboard/superadmin/generate-kode', icon: <FiKey size={17} />, label: 'Generate Kode' },
+    { href: '/dashboard/dokumen', icon: <FiFolder size={17} />, label: 'Daftar Dokumen' },
+    { href: '/dashboard/kelola-kegiatan', icon: <FiActivity size={17} />, label: 'Kelola Kegiatan' },
+    { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
+    { href: '/dashboard/dokumen/extract-poin', icon: <FiList size={17} />, label: 'Extract Poin Publik' },
+    { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
+    { href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Kelola Admin' },
+  ];
+
+  const logout = async () => {
+    try { await fetch('/api/auth/logout', { method: 'POST' }); } catch {}
+    window.location.href = '/login';
+  };
 
   const filtered = useMemo(() => data.filter(k => {
     const mJenis = jenisF === 'Semua' || k.jenis === jenisF;
@@ -195,7 +225,7 @@ export default function KontakMitraPage() {
   };
 
   if (loading) return (
-    <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background:'#f8fafc', fontFamily:FONT, color:'#64748b', gap:16 }}>
+    <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background:'#F5F1E8', fontFamily:FONT, color:'#64748b', gap:16 }}>
       <div style={{ width:40, height:40, border:'3px solid #eef2f6', borderTop:`3px solid ${BLUE}`, borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
       <div style={{ fontSize:13 }}>Memuat kontak mitra...</div>
       <style>{`@keyframes spin { to{transform:rotate(360deg)} }`}</style>
@@ -203,21 +233,30 @@ export default function KontakMitraPage() {
   );
 
   return (
-    <div style={{ minHeight:'100dvh', fontFamily:FONT, background:'radial-gradient(1000px 500px at 80% -10%, #dbeafe 0%, rgba(219,234,254,0) 55%), linear-gradient(180deg,#f7f9fc,#eef2f8)' }}>
+    <div style={{ minHeight:'100dvh', fontFamily:FONT, background:'radial-gradient(1100px 520px at 85% -8%, rgba(30,58,95,0.05) 0%, rgba(30,58,95,0) 55%), linear-gradient(180deg,#FCFAF4,#F5F1E8)' }}>
       <GlobalStyle />
 
-      <div style={{ maxWidth:1040, margin:'0 auto', padding:'1.4rem 1.25rem 0' }}>
+      <Sidebar
+        items={sidebarItems}
+        activeHref="/dashboard/kontak"
+        brandLabel="SI-POKJA HUMKER"
+        brandSub={level === 'utama' ? 'BNN Utama' : 'Admin BNNP/BNNK'}
+        userName={namaAdmin}
+        userTag={level === 'utama' ? 'Admin BNN Utama' : 'Admin BNNP/BNNK'}
+        accent={level === 'utama' ? '#ABD1C6' : BLUE}
+        onLogout={logout}
+      />
+
+      <div className="main-content-wrap" style={{ maxWidth:1040, margin:'0 auto', padding:'1.4rem 1.25rem 0' }}>
         <nav style={navPill} className="fld">
-          <a href={backUrl} style={backLink}><FiArrowLeft size={13} /> Dashboard</a>
-          <div style={{ fontWeight:800, fontSize:14, display:'flex', alignItems:'center', gap:8, color:'#0f1f3d' }}>
+          <div style={{ fontWeight:800, fontSize:14, display:'flex', alignItems:'center', gap:8, color:'#0f1f3d', margin:'0 auto' }}>
             <FiUsers size={15} style={{ color: BLUE }} />
             Pencatatan Kontak
           </div>
-          <div style={{ width:34 }} />
         </nav>
       </div>
 
-      <div style={{ maxWidth:1040, margin:'0 auto', padding:'1.25rem 1.25rem 3rem' }}>
+      <div className="main-content-wrap" style={{ maxWidth:1040, margin:'0 auto', padding:'1.25rem 1.25rem 3rem' }}>
 
         <div style={{ marginBottom:20 }} className="fld">
           <div style={eyebrow}>Direktori Mitra Kerja Sama</div>
@@ -299,7 +338,6 @@ export default function KontakMitraPage() {
               <div key={`${k.sumber}-${k.id}-${i}`} style={{ ...shellStyle, animationDelay: mounted ? `${i * 0.02}s` : undefined }} className="fld">
                 <div style={{ ...coreStyle, padding:'1.1rem 1.3rem' }}>
                   <div style={{ display:'flex', justifyContent:'space-between', gap:14, flexWrap:'wrap' }}>
-                    {/* Kiri: identitas */}
                     <div style={{ flex:1, minWidth:200 }}>
                       <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6, flexWrap:'wrap' }}>
                         <span style={pill(k.jenis==='MOU'?BLUE_DARK:'#92400E', k.jenis==='MOU'?'#DBEAFE':'#FEF3C7')}>{k.jenis}</span>
@@ -323,12 +361,10 @@ export default function KontakMitraPage() {
                       )}
                     </div>
 
-                    {/* Kanan: aksi kontak */}
                     <div style={{ display:'flex', flexDirection:'column', gap:7, minWidth:180 }}>
                       <button onClick={() => openEdit(k)} className="btn-hover" style={editBtnSmall}>
                         <FiEdit2 size={11} /> Edit
                       </button>
-                      {/* Email */}
                       <div style={contactRow}>
                         <FiMail size={13} style={{ color: BLUE_DARK, flexShrink:0 }} />
                         <span style={{ flex:1, fontSize:12, color:'#334155', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{k.email || '—'}</span>
@@ -338,7 +374,6 @@ export default function KontakMitraPage() {
                           </button>
                         )}
                       </div>
-                      {/* WA */}
                       <div style={contactRow}>
                         <FiPhone size={13} style={{ color: BLUE, flexShrink:0 }} />
                         <span style={{ flex:1, fontSize:12, color:'#334155', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{k.noWa ? formatNoWa(k.noWa) : '—'}</span>
@@ -370,7 +405,6 @@ export default function KontakMitraPage() {
         )}
       </div>
 
-      {/* Modal Edit Kontak */}
       {editItem && (
         <div style={modalOverlay} onClick={closeEdit}>
           <div style={modalBox} className="fld" onClick={e => e.stopPropagation()}>
@@ -416,6 +450,9 @@ function GlobalStyle() {
       .btn-hover:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.05); }
       .btn-hover:active { transform: scale(0.96); }
       input::placeholder { color:#aab4b0; }
+      @media (min-width: 901px) {
+        .main-content-wrap { margin-left: 236px !important; width: calc(100% - 236px) !important; box-sizing: border-box !important; }
+      }
     `}</style>
   );
 }
@@ -426,7 +463,7 @@ const shellStyle: React.CSSProperties = { background:'rgba(255,255,255,0.65)', b
 const coreStyle: React.CSSProperties = { background:'#fff', borderRadius:15, boxShadow:'inset 0 1px 1px rgba(255,255,255,0.9)' };
 const statShell: React.CSSProperties = { ...shellStyle, borderRadius:18, padding:5 };
 const statCore: React.CSSProperties = { ...coreStyle, borderRadius:13, padding:'1rem 1.1rem' };
-const contactRow: React.CSSProperties = { display:'flex', alignItems:'center', gap:8, background:'#f8fafc', borderWidth:1, borderStyle:'solid', borderColor:'rgba(29,78,216,0.06)', borderRadius:10, padding:'7px 10px' };
+const contactRow: React.CSSProperties = { display:'flex', alignItems:'center', gap:8, background:'#F5F1E8', borderWidth:1, borderStyle:'solid', borderColor:'rgba(29,78,216,0.06)', borderRadius:10, padding:'7px 10px' };
 const miniBtn: React.CSSProperties = { width:28, height:28, borderRadius:8, borderWidth:1, borderStyle:'solid', borderColor:'rgba(29,78,216,0.10)', background:'#fff', color:'#64748b', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontFamily:FONT, textDecoration:'none' };
 const editBtnSmall: React.CSSProperties = { alignSelf:'flex-end', display:'inline-flex', alignItems:'center', gap:5, fontSize:10.5, fontWeight:700, padding:'5px 10px', borderRadius:100, border:'1px solid rgba(29,78,216,0.15)', background:'#EFF6FF', color: BLUE_DARK, cursor:'pointer', fontFamily:FONT };
 const eyebrow: React.CSSProperties = { display:'inline-block', fontSize:9.5, color: BLUE, textTransform:'uppercase', letterSpacing:'0.14em', fontWeight:700, background:'#DBEAFE', padding:'4px 11px', borderRadius:100 };
@@ -440,4 +477,4 @@ const modalOverlay: React.CSSProperties = { position:'fixed', inset:0, backgroun
 const modalBox: React.CSSProperties = { background:'#fff', borderRadius:20, padding:'1.5rem', width:'100%', maxWidth:380, boxShadow:'0 30px 60px -20px rgba(15,23,42,0.35)' };
 const closeBtn: React.CSSProperties = { width:28, height:28, borderRadius:8, border:'1px solid rgba(29,78,216,0.10)', background:'#fff', color:'#64748b', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 };
 const fieldLabel: React.CSSProperties = { display:'block', fontSize:11, fontWeight:700, color:'#334155', marginBottom:5, marginTop:12 };
-const fieldInput: React.CSSProperties = { width:'100%', padding:'10px 12px', borderRadius:10, borderWidth:1.5, borderStyle:'solid', borderColor:'rgba(29,78,216,0.10)', background:'#f8fafc', fontSize:13, fontFamily:FONT, outline:'none', color:'#0f1f3d', boxSizing:'border-box' };
+const fieldInput: React.CSSProperties = { width:'100%', padding:'10px 12px', borderRadius:10, borderWidth:1.5, borderStyle:'solid', borderColor:'rgba(29,78,216,0.10)', background:'#F5F1E8', fontSize:13, fontFamily:FONT, outline:'none', color:'#0f1f3d', boxSizing:'border-box' };

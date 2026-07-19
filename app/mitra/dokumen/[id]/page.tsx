@@ -82,6 +82,10 @@ export default function MitraDokumenDetailPage({ params }: { params: Promise<{ i
 
   const [notif, setNotif]       = useState<Notif[]>([]);
   const [showNotif, setShowNotif] = useState(false);
+  const [editMasaBerlaku, setEditMasaBerlaku] = useState(false);
+  const [usulanBerlaku, setUsulanBerlaku] = useState('');
+  const [usulanBerakhir, setUsulanBerakhir] = useState('');
+  const [savingMasaBerlaku, setSavingMasaBerlaku] = useState(false);
 
   const [foto, setFoto]         = useState<FotoItem[]>([]);
   const [terpakai, setTerpakai] = useState(0);
@@ -255,6 +259,30 @@ export default function MitraDokumenDetailPage({ params }: { params: Promise<{ i
       setMsg('Tanggal kegiatan disimpan. Admin dapat melihat & menyesuaikannya kembali jika diperlukan.');
     } catch { setError('Terjadi kesalahan.'); }
     finally { setSavingTgl(false); }
+  };
+
+  const mulaiUsulkanMasaBerlaku = () => {
+    setUsulanBerlaku(dok?.tglBerlaku || '');
+    setUsulanBerakhir(dok?.tglBerakhir || '');
+    setEditMasaBerlaku(true);
+    setMsg(''); setError('');
+  };
+
+  const simpanMasaBerlaku = async () => {
+    if (!usulanBerlaku || !usulanBerakhir) { setError('Tanggal mulai dan berakhir wajib diisi.'); return; }
+    setSavingMasaBerlaku(true); setError(''); setMsg('');
+    try {
+      const res = await fetch(`/api/dokumen/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tglBerlaku: usulanBerlaku, tglBerakhir: usulanBerakhir, pelaku: 'mitra', namaPelaku: dok?.namaMitra }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setError(d.message); return; }
+      setDok(prev => prev ? { ...prev, tglBerlaku: usulanBerlaku, tglBerakhir: usulanBerakhir } : prev);
+      setMsg('Masa berlaku berhasil diajukan.');
+      setEditMasaBerlaku(false);
+    } catch { setError('Terjadi kesalahan.'); }
+    finally { setSavingMasaBerlaku(false); }
   };
 
   const pilihFoto = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -630,21 +658,54 @@ export default function MitraDokumenDetailPage({ params }: { params: Promise<{ i
 
           <div style={shellStyle} className="fld">
             <div style={coreStyle}>
-              <div style={cardTitle}><FiFileText size={13} style={{ marginRight:6, verticalAlign:'middle', color: GOLD }} />Masa Berlaku Kesepakatan {dok.jenis}</div>
-              <div style={hintText}>Tanggal resmi dokumen {dok.jenis} ini berlaku — ditetapkan sekali saat dokumen dibuat.</div>
-              <div style={mouKesepakatanBox}>
-                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                  <div>
-                    <div style={{ fontSize:9.5, color:'#94a3b8', textTransform:'uppercase', letterSpacing:0.4, fontWeight:600 }}>Mulai</div>
-                    <div style={{ fontSize:13, fontWeight:700, color:'#0f1f3d' }}>{dok.tglBerlaku}</div>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:2 }}>
+                <div style={cardTitle}><FiFileText size={13} style={{ marginRight:6, verticalAlign:'middle', color: GOLD }} />Masa Berlaku Kesepakatan {dok.jenis}</div>
+                {dok.status === 'Draft' && !editMasaBerlaku && (
+                  <button onClick={mulaiUsulkanMasaBerlaku} style={{ ...btnSm, fontSize:10.5 }} className="btn-hover">
+                    {dok.tglBerlaku && dok.tglBerakhir ? 'Ubah' : 'Ajukan'}
+                  </button>
+                )}
+              </div>
+              <div style={hintText}>
+                {dok.status === 'Draft'
+                  ? 'Ajukan berapa lama kerja sama ini berlangsung — admin akan meninjau sebelum dokumen difinalisasi.'
+                  : `Tanggal resmi dokumen ${dok.jenis} ini berlaku — sudah tidak bisa diubah dari sisi mitra (status sudah lewat tahap Draft).`}
+              </div>
+
+              {editMasaBerlaku ? (
+                <div style={{ ...mouKesepakatanBox, background:'#F5FAF8', border:`1.5px solid ${GOLD}55` }}>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
+                    <div>
+                      <label style={{ fontSize:9.5, color:'#94a3b8', textTransform:'uppercase', letterSpacing:0.4, fontWeight:600, display:'block', marginBottom:4 }}>Mulai</label>
+                      <input type="date" value={usulanBerlaku} onChange={e => setUsulanBerlaku(e.target.value)} style={inputFull} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize:9.5, color:'#94a3b8', textTransform:'uppercase', letterSpacing:0.4, fontWeight:600, display:'block', marginBottom:4 }}>Berakhir</label>
+                      <input type="date" value={usulanBerakhir} onChange={e => setUsulanBerakhir(e.target.value)} style={inputFull} />
+                    </div>
                   </div>
-                  <div style={{ color: GOLD, fontSize:16 }}>→</div>
-                  <div style={{ textAlign:'right' }}>
-                    <div style={{ fontSize:9.5, color:'#94a3b8', textTransform:'uppercase', letterSpacing:0.4, fontWeight:600 }}>Berakhir</div>
-                    <div style={{ fontSize:13, fontWeight:700, color:'#0f1f3d' }}>{dok.tglBerakhir}</div>
+                  <div style={{ display:'flex', gap:6 }}>
+                    <button onClick={() => setEditMasaBerlaku(false)} disabled={savingMasaBerlaku} style={{ ...btnSm, flex:1 }} className="btn-hover">Batal</button>
+                    <button onClick={simpanMasaBerlaku} disabled={savingMasaBerlaku} style={{ ...btnPrimary, flex:1, height:36 }} className="btn-hover">
+                      {savingMasaBerlaku ? 'Menyimpan…' : 'Simpan'}
+                    </button>
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div style={mouKesepakatanBox}>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                    <div>
+                      <div style={{ fontSize:9.5, color:'#94a3b8', textTransform:'uppercase', letterSpacing:0.4, fontWeight:600 }}>Mulai</div>
+                      <div style={{ fontSize:13, fontWeight:700, color:'#0f1f3d' }}>{dok.tglBerlaku || '—'}</div>
+                    </div>
+                    <div style={{ color: GOLD, fontSize:16 }}>→</div>
+                    <div style={{ textAlign:'right' }}>
+                      <div style={{ fontSize:9.5, color:'#94a3b8', textTransform:'uppercase', letterSpacing:0.4, fontWeight:600 }}>Berakhir</div>
+                      <div style={{ fontSize:13, fontWeight:700, color:'#0f1f3d' }}>{dok.tglBerakhir || '—'}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

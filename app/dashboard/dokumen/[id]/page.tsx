@@ -1,6 +1,11 @@
 'use client';
 
 import { useEffect, useState, use } from 'react';
+import Sidebar, { SidebarItem, SidebarExtraItem } from '@/components/Sidebar';
+import {
+  FiGrid, FiCalendar as FiCalendarNav, FiInbox, FiKey, FiFolder as FiFolderNav,
+  FiActivity, FiUsers, FiList, FiArchive, FiShield,
+} from 'react-icons/fi';
 import KomentarRevisi from '@/components/KomentarRevisi';
 import EditPencilIndicator from '@/components/EditPencilIndicator';
 import KomentarDocs from '@/components/KomentarDocs';
@@ -17,13 +22,14 @@ interface Dokumen {
   tglDibuat: string; tglBerlaku: string; tglBerakhir: string;
   durasi: string; status: string; kode: string; kodeExpire: string;
   docsId: string; docsUrl: string; embedUrl: string;
-  folderId: string; dibuatOleh: string; catatan: string; fotoFolderId: string;
+  folderId: string; dibuatOleh: string; dibuatOlehWilayah?: string; catatan: string; fotoFolderId: string;
   tglKegiatanMulai: string; tglKegiatanSelesai: string; pdfId: string;
   sisaHari: number | null;
   divisi: string[];
   manualLog?: string;
   scanTtdId?: string;
   scanTtdUrl?: string;
+  flagRevisi?: boolean;
   ttdTipe: string; ttdTglDiajukan: string; ttdStatus: string; ttdTglFinal: string; ttdCatatan: string;
 }
 
@@ -65,6 +71,9 @@ const BLUE = '#1D4ED8';
 const BLUE_LIGHT = '#2563EB';
 const BLUE_DARK = '#1E3A8A';
 const GOLD = '#D97706';
+const INDIGO = '#1E3A5F';
+const CREAM = '#FAF8F0';
+const GOLD_ACCENT = '#4A7FB5';
 
 // Pertajam scan buram: unsharp mask + naikkan kontras via canvas. Ini BUKAN
 // AI upscaling (tidak nambah detail yang beneran hilang) — cuma bikin scan
@@ -130,6 +139,8 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
   const [genPdf, setGenPdf]       = useState(false);
 
   const [namaAdmin, setNamaAdmin] = useState('Admin Pokja');
+  const [level, setLevel] = useState<'utama' | 'bnnp_bnnk' | ''>('');
+  const [dokLain, setDokLain] = useState<{ id: string; judul: string; namaMitra: string; manualLog?: string }[]>([]);
   const [idAdmin, setIdAdmin]     = useState('');
 
   const [templateKandidat, setTemplateKandidat]   = useState<Kandidat[]>([]);
@@ -189,14 +200,27 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
   };
 
   useEffect(() => {
-    const raw = localStorage.getItem('paktasign_user');
-    if (!raw) { window.location.href = '/login'; return; }
-    const u = JSON.parse(raw);
-    if (!['admin', 'superadmin'].includes(u.role)) { window.location.href = '/login'; return; }
-    setRole(u.role);
-    setNamaAdmin(u.nama || u.email || 'Admin Pokja');
-    setIdAdmin(u.id || u.email || '');
-    loadDok();
+    fetch('/api/auth/me')
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(u => {
+        if (!['admin', 'superadmin'].includes(u.role)) { window.location.href = '/login'; return; }
+        setRole(u.role);
+        setNamaAdmin(u.nama || u.email || 'Admin Pokja');
+        setIdAdmin(u.id || u.email || '');
+        setLevel(u.level === 'utama' ? 'utama' : 'bnnp_bnnk');
+        loadDok();
+
+        // Daftar dokumen lain buat sidebar switcher — dokumen sistem
+        // (otomatis cuma yang sudah pernah di-ACC & digenerate dari pengajuan,
+        // karena baris di "Dokumen Kerja sama" cuma tercipta lewat jalur itu).
+        fetch('/api/superadmin/generate-kode')
+          .then(r => r.json())
+          .then(d => setDokLain((d.data || []).map((r: any) => ({
+            id: r.id, judul: r.judul, namaMitra: r.namaMitra, manualLog: r.manualLog,
+          }))))
+          .catch(() => {});
+      })
+      .catch(() => { window.location.href = '/login'; });
   }, [id]);
 
   useEffect(() => {
@@ -411,6 +435,78 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
     finally { setSaving(false); }
   };
 
+  // ── Aksi khusus Admin BNN Utama (QC/persetujuan akhir) ──────────────
+  const [showKembalikanUtama, setShowKembalikanUtama] = useState(false);
+  const [alasanKembaliUtama, setAlasanKembaliUtama] = useState('');
+  const [savingUtama, setSavingUtama] = useState(false);
+  const [showFlagRevisi, setShowFlagRevisi] = useState(false);
+  const [catatanFlag, setCatatanFlag] = useState('');
+  const [savingFlag, setSavingFlag] = useState(false);
+
+  const setujuiFinalUtama = async () => {
+    setSavingUtama(true); setError(''); setMsg('');
+    try {
+      const res = await fetch(`/api/dokumen/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bnnUtamaAction: 'setujuiFinal' }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setError(d.message); return; }
+      setMsg('Dokumen disetujui final.');
+      loadDok();
+    } catch { setError('Terjadi kesalahan.'); }
+    finally { setSavingUtama(false); }
+  };
+
+  const kembalikanUtama = async () => {
+    if (!alasanKembaliUtama.trim()) { setError('Alasan pengembalian wajib diisi.'); return; }
+    setSavingUtama(true); setError(''); setMsg('');
+    try {
+      const res = await fetch(`/api/dokumen/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bnnUtamaAction: 'kembalikan', alasanKembaliUtama }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setError(d.message); return; }
+      setMsg('Dokumen dikembalikan ke Admin BNNP/BNNK.');
+      setShowKembalikanUtama(false); setAlasanKembaliUtama('');
+      loadDok();
+    } catch { setError('Terjadi kesalahan.'); }
+    finally { setSavingUtama(false); }
+  };
+
+  const kirimFlagRevisi = async () => {
+    if (!catatanFlag.trim()) { setError('Catatan revisi wajib diisi.'); return; }
+    setSavingFlag(true); setError(''); setMsg('');
+    try {
+      const res = await fetch(`/api/dokumen/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bnnUtamaAction: 'flagRevisi', alasanKembaliUtama: catatanFlag }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setError(d.message); return; }
+      setMsg('Dokumen ditandai perlu revisi.');
+      setShowFlagRevisi(false); setCatatanFlag('');
+      loadDok();
+    } catch { setError('Terjadi kesalahan.'); }
+    finally { setSavingFlag(false); }
+  };
+
+  const bersihkanFlagRevisi = async () => {
+    setSavingFlag(true); setError(''); setMsg('');
+    try {
+      const res = await fetch(`/api/dokumen/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bnnUtamaAction: 'bersihkanFlag', pelaku: 'admin', namaPelaku: namaAdmin }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setError(d.message); return; }
+      setMsg('Flag revisi dibersihkan.');
+      loadDok();
+    } catch { setError('Terjadi kesalahan.'); }
+    finally { setSavingFlag(false); }
+  };
+
   const pilihScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     setScanError(''); setScanInfo('');
@@ -537,6 +633,41 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
 
   const backUrl = role === 'superadmin' ? '/dashboard/superadmin' : '/dashboard/admin';
 
+  const sidebarItems: SidebarItem[] = level === 'utama' ? [
+    { href: '/dashboard/bnn-utama', icon: <FiGrid size={17} />, label: 'Dashboard' },
+    { href: '/dashboard/dokumen', icon: <FiFolderNav size={17} />, label: 'Dokumen & Tata Kelola' },
+    { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
+    { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
+    { href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Daftar Admin' },
+  ] : [
+    { href: '/dashboard/admin', icon: <FiGrid size={17} />, label: 'Dashboard' },
+    { href: '/dashboard/rencana', icon: <FiCalendarNav size={17} />, label: 'E-Planning' },
+    { href: '/dashboard/pengajuan', icon: <FiInbox size={17} />, label: 'Kelola Pengajuan' },
+    { href: '/dashboard/superadmin/generate-kode', icon: <FiKey size={17} />, label: 'Generate Kode' },
+    { href: '/dashboard/dokumen', icon: <FiFolderNav size={17} />, label: 'Daftar Dokumen' },
+    { href: '/dashboard/kelola-kegiatan', icon: <FiActivity size={17} />, label: 'Kelola Kegiatan' },
+    { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
+    { href: '/dashboard/dokumen/extract-poin', icon: <FiList size={17} />, label: 'Extract Poin Publik' },
+    { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
+    { href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Kelola Admin' },
+  ];
+
+  // Section terpisah — loncat ke dokumen sistem lain (yang sudah pernah
+  // di-ACC & digenerate dari pengajuan) tanpa balik ke daftar dulu.
+  const extraItems: SidebarExtraItem[] = dokLain.map(d => ({
+    href: `/dashboard/dokumen/${d.id}`,
+    label: d.judul || d.namaMitra,
+    sublabel: d.namaMitra,
+    active: d.id === id,
+    pencil: <EditPencilIndicator manualLog={d.manualLog} size={16} />,
+  }));
+
+  const logout = async () => {
+    try { await fetch('/api/auth/logout', { method: 'POST' }); } catch {}
+    window.location.href = '/login';
+  };
+
+
   if (loading) return <div style={{ ...centerStyle, fontFamily: FONT }}><GlobalStyle />Memuat detail dokumen…</div>;
   if (error && !dok) return <div style={{ ...centerStyle, color:'#A32D2D', fontFamily: FONT }}><GlobalStyle />{error}</div>;
   if (!dok) return null;
@@ -547,25 +678,41 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
   const kandidatUtama = templateKandidat[0] || null;
 
   return (
-    <div style={{ minHeight:'100vh', background:'linear-gradient(180deg,#f7f9fc,#eef2f8)', fontFamily: FONT }}>
+    <div style={{ minHeight:'100vh', background:'radial-gradient(1100px 520px at 85% -8%, rgba(30,58,95,0.05) 0%, rgba(30,58,95,0) 55%), linear-gradient(180deg,#FCFAF4,#F5F1E8)', fontFamily: FONT }}>
       <GlobalStyle />
-      <nav style={navStyle}>
-        <a href={backUrl} style={backLink}><FiArrowLeft size={13} /> Dashboard</a>
-        <div style={{ fontWeight:700, fontSize:13.5, flex:1, textAlign:'center', color:'#0f1f3d', letterSpacing:'-0.01em' }}>Detail Dokumen</div>
-        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-          <NotifikasiAdminBell />
-          {dok.docsUrl && <a href={dok.docsUrl} target="_blank" rel="noopener noreferrer" style={btnGhost}><FiExternalLink size={12} style={{ marginRight:6, verticalAlign:'middle' }} />Buka Docs</a>}
-        </div>
-      </nav>
 
-      {msg   && <div style={{ ...msgBox(BLUE_DARK,'#DBEAFE'), margin:'14px auto', maxWidth:1120 }} className="fld"><FiCheckCircle size={14} style={{ marginRight:6, verticalAlign:'middle' }} />{msg}</div>}
-      {error && <div style={{ ...msgBox('#A32D2D','#FCEBEB'), margin:'14px auto', maxWidth:1120 }} className="fld"><FiInfo size={14} style={{ marginRight:6, verticalAlign:'middle' }} />{error}</div>}
+      <Sidebar
+        items={sidebarItems}
+        activeHref={level === 'utama' ? '/dashboard/bnn-utama' : '/dashboard/dokumen'}
+        brandLabel="SI-POKJA HUMKER"
+        brandSub={level === 'utama' ? 'BNN Utama' : 'Admin BNNP/BNNK'}
+        userName={namaAdmin}
+        userTag={level === 'utama' ? 'Admin BNN Utama' : 'Admin BNNP/BNNK'}
+        accent={level === 'utama' ? '#ABD1C6' : BLUE}
+        onLogout={logout}
+        extraSectionTitle="Dokumen Lain"
+        extraItems={extraItems}
+      />
 
-      <div style={{ maxWidth:1120, margin:'0 auto', padding:'1.5rem 1.25rem 3rem', display:'grid', gridTemplateColumns:'1fr 380px', gap:16 }}>
+      <div className="main-content-wrap" style={{ maxWidth:1160, margin:'0 auto', padding:'1.4rem 1.25rem 0', position:'sticky', top:0, zIndex:150 }}>
+        <nav style={navStyle}>
+          <a href={backUrl} style={backLink}><FiArrowLeft size={13} /> Dashboard</a>
+          <div style={{ fontWeight:700, fontSize:13.5, flex:1, textAlign:'center', color:'#0f1f3d', letterSpacing:'-0.01em' }}>Detail Dokumen</div>
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <NotifikasiAdminBell />
+            {dok.docsUrl && <a href={dok.docsUrl} target="_blank" rel="noopener noreferrer" style={btnGhost}><FiExternalLink size={12} style={{ marginRight:6, verticalAlign:'middle' }} />Buka Docs</a>}
+          </div>
+        </nav>
+      </div>
+
+      {msg   && <div style={{ ...msgBox(BLUE_DARK,'#DBEAFE'), margin:'16px auto', maxWidth:1160 }} className="fld main-content-wrap"><FiCheckCircle size={14} style={{ marginRight:6, verticalAlign:'middle' }} />{msg}</div>}
+      {error && <div style={{ ...msgBox('#A32D2D','#FCEBEB'), margin:'16px auto', maxWidth:1160 }} className="fld main-content-wrap"><FiInfo size={14} style={{ marginRight:6, verticalAlign:'middle' }} />{error}</div>}
+
+      <div className="main-content-wrap" style={{ maxWidth:1160, margin:'0 auto', padding:'1.5rem 1.25rem 3rem', display:'grid', gridTemplateColumns:'1fr 380px', gap:16 }}>
 
         {/* Kolom kiri */}
         <div>
-          <div style={{ ...shellStyle, marginBottom:14 }} className="fld">
+          <div style={{ ...shellStyle, marginBottom:12 }} className="fld">
             <div style={coreStyle}>
               <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:10, flexWrap:'wrap' }}>
                 <span style={{ ...pill, background:dok.jenis==='MOU'?'#DBEAFE':'#FEF3C7', color:dok.jenis==='MOU'?BLUE_DARK:'#92400E' }}>{dok.jenis}</span>
@@ -585,19 +732,27 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
                 {dok.judul}
                 <EditPencilIndicator manualLog={dok.manualLog} size={24} ttdBasahPending={dok.ttdStatus === 'Menunggu Basah'} />
               </div>
+              {dok.flagRevisi && (
+                <div style={{ display:'flex', alignItems:'center', gap:10, background:'#FEF3C7', border:'1px solid #FBBF24', borderRadius:12, padding:'9px 13px', marginBottom:10 }}>
+                  <span style={{ fontSize:12.5, fontWeight:700, color:'#92400E', flex:1 }}>🚩 Ditandai perlu revisi oleh BNN Utama — cek Log Aktivitas untuk detail catatannya.</span>
+                  <button onClick={bersihkanFlagRevisi} disabled={savingFlag} style={{ ...btnSm, background:'#fff', flexShrink:0 }} className="btn-hover">
+                    {savingFlag ? '…' : 'Sudah Ditindaklanjuti'}
+                  </button>
+                </div>
+              )}
               <div style={{ fontSize:13.5, color:BLUE, fontWeight:600, display:'flex', alignItems:'center', gap:6 }}><FiHome size={13} />{dok.namaMitra}</div>
               <div style={{ fontSize:11.5, color:'#64748b', marginTop:8, lineHeight:1.7 }}>
                 <strong>Masa berlaku:</strong> {dok.tglBerlaku} s.d. {dok.tglBerakhir} ({dok.durasi} th)<br/>
                 {(dok.tglKegiatanMulai || dok.tglKegiatanSelesai) && (
                   <><strong>Tanggal kegiatan:</strong> {dok.tglKegiatanMulai || '—'} s.d. {dok.tglKegiatanSelesai || '—'}<br/></>
                 )}
-                Dibuat oleh {dok.dibuatOleh}
+                Dibuat oleh {dok.dibuatOleh}{dok.dibuatOlehWilayah ? ` · ${dok.dibuatOlehWilayah}` : ''}
               </div>
               <div style={infoNote}><FiInfo size={12} style={{ marginRight:6, flexShrink:0, marginTop:1 }} />{STATUS_DESC[dok.status] || ''}</div>
             </div>
           </div>
 
-          <div style={{ ...shellStyle, marginBottom:14 }} className="fld">
+          <div style={{ ...shellStyle, marginBottom:12 }} className="fld">
             <div style={coreStyle}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
                 <div style={cardTitle}>Preview Dokumen</div>
@@ -644,12 +799,77 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
             </div>
           </div>
 
-          <div className="fld"><KomentarRevisi idDokumen={dok.id} pengirim="admin" senderId={idAdmin} namaPengirim={namaAdmin} /></div>
+          {level === 'utama' && !dok.flagRevisi && (
+            <div style={shellStyle} className="fld">
+              <div style={coreStyle}>
+                {!showFlagRevisi ? (
+                  <button onClick={() => setShowFlagRevisi(true)} style={{ ...btnSm, width:'100%', color:'#92400E', borderColor:'#FDE68A', background:'#FFFBEB', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }} className="btn-hover">
+                    🚩 Tandai Perlu Revisi
+                  </button>
+                ) : (
+                  <div>
+                    <label style={{ ...labelSt, marginBottom:6 }}>Catatan revisi untuk Admin BNNP/BNNK *</label>
+                    <textarea value={catatanFlag} onChange={e => setCatatanFlag(e.target.value)}
+                      rows={3} style={{ ...inputFull, marginBottom:8, resize:'vertical' }}
+                      placeholder="Jelaskan bagian mana yang perlu direvisi..." />
+                    <div style={{ display:'flex', gap:6 }}>
+                      <button onClick={() => { setShowFlagRevisi(false); setCatatanFlag(''); }} disabled={savingFlag} style={{ ...btnSm, flex:1 }} className="btn-hover">Batal</button>
+                      <button onClick={kirimFlagRevisi} disabled={savingFlag || !catatanFlag.trim()} style={{ ...btnSm, flex:1, background:'#D97706', color:'#fff', borderColor:'#D97706' }} className="btn-hover">
+                        {savingFlag ? 'Mengirim…' : 'Kirim Flag'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="fld"><KomentarRevisi idDokumen={dok.id} pengirim={level === 'utama' ? 'bnn_utama' : 'admin'} senderId={idAdmin} namaPengirim={namaAdmin} /></div>
           <KomentarDocs docsId={dok.docsId} namaPengirim={namaAdmin} />
+
+          {level !== 'utama' && (
+          <div style={{ ...shellStyle, marginTop:12 }} className="fld">
+            <div style={coreStyle}>
+              <div style={cardTitle}><FiCalendar size={13} style={{ marginRight:6, verticalAlign:'middle', color: BLUE }} />Tanggal Kegiatan</div>
+              <div style={hintText}>Memicu perpindahan otomatis status. Terpisah dari masa berlaku dokumen.</div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                <div>
+                  <label style={labelSt}>Mulai</label>
+                  <input type="date" style={{ ...inputFull, marginBottom:10 }} value={tglMulai} onChange={e => setTglMulai(e.target.value)} />
+                </div>
+                <div>
+                  <label style={labelSt}>Selesai</label>
+                  <input type="date" style={{ ...inputFull, marginBottom:10 }} value={tglSelesai} onChange={e => setTglSelesai(e.target.value)} />
+                </div>
+              </div>
+              <button onClick={saveTanggal} disabled={saving} style={{ ...btnPrimary, width:'100%' }} className="btn-hover">
+                {saving ? 'Menyimpan…' : 'Simpan Tanggal'}
+              </button>
+            </div>
+          </div>
+          )}
+
+          {level !== 'utama' && (
+          <div style={{ ...shellStyle, marginTop:12 }} className="fld">
+            <div style={coreStyle}>
+              <div style={cardTitle}><FiDownload size={13} style={{ marginRight:6, verticalAlign:'middle', color: GOLD }} />Unduh PDF</div>
+              {bolehUnduhPdf ? (
+                <>
+                  <button onClick={unduhPdf} disabled={genPdf} style={{ ...btnPrimary, width:'100%', background:`linear-gradient(135deg,${GOLD},#B45309)` }} className="btn-hover">
+                    {genPdf ? 'Membuat PDF…' : 'Unduh PDF Kualitas Tinggi'}
+                  </button>
+                  <div style={hintText}>PDF dibuat langsung dari Google Docs.</div>
+                </>
+              ) : (
+                <div style={emptyBox}>PDF tersedia setelah status &quot;Selesai&quot;.</div>
+              )}
+            </div>
+          </div>
+          )}
         </div>
 
         {/* Kolom kanan */}
-        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+        <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
 
           <div style={shellStyle} className="fld">
             <div style={coreStyle}>
@@ -689,6 +909,7 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
             <div style={shellStyle} className="fld">
               <div style={coreStyle}>
                 <div style={cardTitle}><FiUser size={13} style={{ marginRight:6, verticalAlign:'middle', color: BLUE }} />Kontak Mitra</div>
+                <div style={{ background:'rgba(30,58,95,0.025)', borderRadius:12, padding:'2px 10px' }}>
                 {kontak.namaPIC && (
                   <div style={kontakRow}>
                     <FiUser size={13} style={{ color:'#94a3b8', flexShrink:0 }} />
@@ -716,13 +937,14 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
                   </div>
                 )}
                 {!kontak.namaPIC && !kontak.email && !kontak.noWa && (
-                  <div style={{ fontSize:11, color:'#94a3b8' }}>Kontak mitra belum tersedia.</div>
+                  <div style={{ fontSize:11, color:'#94a3b8', padding:'8px 0' }}>Kontak mitra belum tersedia.</div>
                 )}
+                </div>
               </div>
             </div>
           )}
 
-          {(dok.ttdStatus || dok.ttdTglFinal) && (
+          {level !== 'utama' && (dok.ttdStatus || dok.ttdTglFinal) && (
             <div style={shellStyle} className="fld">
               <div style={coreStyle}>
                 <div style={cardTitle}><FiPenTool size={13} style={{ marginRight:6, verticalAlign:'middle', color: GOLD }} />Penandatanganan Dokumen</div>
@@ -843,6 +1065,44 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
                         </div>
                       </div>
                     )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {level === 'utama' && dok.status === 'Selesai' && (
+            <div style={{ ...shellStyle, borderColor:'rgba(181,129,63,0.4)' }} className="fld">
+              <div style={{ ...coreStyle, background:'linear-gradient(170deg,#fffbf0,#fef6e0)' }}>
+                <div style={cardTitle}><FiCheckCircle size={13} style={{ marginRight:6, verticalAlign:'middle', color:'#B5813F' }} />Review BNN Utama</div>
+                <div style={{ ...hintText, marginBottom:10 }}>
+                  Dokumen ini sudah ditandai "Selesai" oleh Admin BNNP/BNNK. Tinjau isinya, lalu setujui final atau kembalikan kalau ada yang keliru.
+                </div>
+                {!showKembalikanUtama ? (
+                  <div style={{ display:'flex', gap:8 }}>
+                    <button onClick={() => setShowKembalikanUtama(true)} disabled={savingUtama}
+                      style={{ ...btnSm, flex:1, color:'#A32D2D', borderColor:'#FCEBEB' }} className="btn-hover">
+                      ↩ Kembalikan
+                    </button>
+                    <button onClick={setujuiFinalUtama} disabled={savingUtama}
+                      style={{ ...btnPrimary, flex:2, background:'#B5813F' }} className="btn-hover">
+                      {savingUtama ? 'Memproses…' : '✓ Setujui Final (BNN Utama)'}
+                    </button>
+                  </div>
+                ) : (
+                  <div style={kembaliBox}>
+                    <label style={{ ...labelSt, marginBottom:6 }}>Alasan pengembalian ke Admin BNNP/BNNK *</label>
+                    <textarea value={alasanKembaliUtama} onChange={e => setAlasanKembaliUtama(e.target.value)}
+                      rows={3} style={{ ...inputFull, marginBottom:8, resize:'vertical' }}
+                      placeholder="Jelaskan bagian mana yang keliru atau perlu diperbaiki..." />
+                    <div style={{ display:'flex', gap:6 }}>
+                      <button onClick={() => { setShowKembalikanUtama(false); setAlasanKembaliUtama(''); }} disabled={savingUtama}
+                        style={{ ...btnSm, flex:1 }} className="btn-hover">Batal</button>
+                      <button onClick={kembalikanUtama} disabled={savingUtama || !alasanKembaliUtama.trim()}
+                        style={{ ...btnSm, flex:1, background:'#FCEBEB', color:'#A32D2D', borderColor:'#FCA5A5' }} className="btn-hover">
+                        {savingUtama ? 'Memproses…' : 'Ya, Kembalikan'}
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -992,36 +1252,7 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
             </div>
           </div>
 
-          <div style={shellStyle} className="fld">
-            <div style={coreStyle}>
-              <div style={cardTitle}><FiCalendar size={13} style={{ marginRight:6, verticalAlign:'middle', color: BLUE }} />Tanggal Kegiatan</div>
-              <div style={hintText}>Memicu perpindahan otomatis status. Terpisah dari masa berlaku dokumen.</div>
-              <label style={labelSt}>Mulai</label>
-              <input type="date" style={{ ...inputFull, marginBottom:10 }} value={tglMulai} onChange={e => setTglMulai(e.target.value)} />
-              <label style={labelSt}>Selesai</label>
-              <input type="date" style={{ ...inputFull, marginBottom:10 }} value={tglSelesai} onChange={e => setTglSelesai(e.target.value)} />
-              <button onClick={saveTanggal} disabled={saving} style={{ ...btnPrimary, width:'100%' }} className="btn-hover">
-                {saving ? 'Menyimpan…' : 'Simpan Tanggal'}
-              </button>
-            </div>
-          </div>
-
-          <div style={shellStyle} className="fld">
-            <div style={coreStyle}>
-              <div style={cardTitle}><FiDownload size={13} style={{ marginRight:6, verticalAlign:'middle', color: GOLD }} />Unduh PDF</div>
-              {bolehUnduhPdf ? (
-                <>
-                  <button onClick={unduhPdf} disabled={genPdf} style={{ ...btnPrimary, width:'100%', background:`linear-gradient(135deg,${GOLD},#B45309)` }} className="btn-hover">
-                    {genPdf ? 'Membuat PDF…' : 'Unduh PDF Kualitas Tinggi'}
-                  </button>
-                  <div style={hintText}>PDF dibuat langsung dari Google Docs.</div>
-                </>
-              ) : (
-                <div style={emptyBox}>PDF tersedia setelah status &quot;Selesai&quot;.</div>
-              )}
-            </div>
-          </div>
-
+          {level !== 'utama' && (
           <div style={shellStyle} className="fld">
             <div style={coreStyle}>
               <div style={cardTitle}>Ubah Status (Manual)</div>
@@ -1034,7 +1265,9 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
               <div style={hintText}>Override manual bebas. Otomatisasi hanya mendorong status maju.</div>
             </div>
           </div>
+          )}
 
+          {level !== 'utama' && (
           <div style={shellStyle} className="fld">
             <div style={coreStyle}>
               {dok.tglKegiatanMulai && !publikasiDitolak ? (
@@ -1065,6 +1298,7 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
               )}
             </div>
           </div>
+          )}
 
         </div>
       </div>
@@ -1085,15 +1319,18 @@ function GlobalStyle() {
       .btn-hover:active:not(:disabled) { transform: scale(0.98); }
       .tpl-active { transition: all 0.35s cubic-bezier(0.32,0.72,0,1); }
       .tpl-active:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 10px 22px -8px rgba(29,78,216,0.3); }
+      @media (min-width: 901px) {
+        .main-content-wrap { margin-left: 236px !important; width: calc(100% - 236px) !important; box-sizing: border-box !important; }
+      }
     `}</style>
   );
 }
 
-const navStyle: React.CSSProperties = { display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0.9rem 1.5rem', background:'rgba(255,255,255,0.75)', backdropFilter:'blur(10px)', borderBottom:'1px solid rgba(29,78,216,0.06)', position:'sticky', top:0, zIndex:100, gap:8 };
+const navStyle: React.CSSProperties = { display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 16px', background:'rgba(240,231,213,0.7)', backdropFilter:'blur(12px)', WebkitBackdropFilter:'blur(12px)', border:'1px solid rgba(30,58,95,0.1)', borderRadius:100, boxShadow:'0 10px 30px -18px rgba(30,58,95,0.25)', gap:8 };
 const backLink: React.CSSProperties = { fontSize:12.5, color:'#64748b', textDecoration:'none', flexShrink:0, fontWeight:600, display:'flex', alignItems:'center', gap:6 };
-const shellStyle: React.CSSProperties = { background:'rgba(255,255,255,0.65)', borderWidth:1, borderStyle:'solid', borderColor:'rgba(29,78,216,0.08)', borderRadius:22, padding:6, boxShadow:'0 1px 2px rgba(15,23,42,0.03), 0 20px 40px -30px rgba(15,23,42,0.18)' };
-const coreStyle: React.CSSProperties = { background:'#fff', borderRadius:17, padding:'1.15rem 1.3rem', boxShadow:'inset 0 1px 1px rgba(255,255,255,0.9)' };
-const cardTitle: React.CSSProperties = { fontSize:12.5, fontWeight:700, marginBottom:10, color:'#0f1f3d' };
+const shellStyle: React.CSSProperties = { background:'rgba(255,255,255,0.7)', borderWidth:1, borderStyle:'solid', borderColor:'rgba(30,58,95,0.08)', borderRadius:20, padding:5, boxShadow:'0 1px 2px rgba(30,58,95,0.04), 0 20px 40px -30px rgba(30,58,95,0.2)' };
+const coreStyle: React.CSSProperties = { background:'#fff', borderRadius:16, padding:'1.15rem 1.25rem', boxShadow:'inset 0 1px 1px rgba(255,255,255,0.9)' };
+const cardTitle: React.CSSProperties = { fontSize:12, fontWeight:800, marginBottom:11, color: INDIGO, display:'flex', alignItems:'center', gap:7, textTransform:'uppercase', letterSpacing:'0.04em' };
 const labelSt: React.CSSProperties = { display:'block', fontSize:11, color:'#475569', marginBottom:5, fontWeight:600 };
 const hintText: React.CSSProperties = { fontSize:10.5, color:'#94a3b8', marginBottom:8, lineHeight:1.5, marginTop: -2 };
 const inputFull: React.CSSProperties = { width:'100%', padding:'9px 11px', borderRadius:10, border:'1.5px solid rgba(29,78,216,0.10)', fontSize:12, fontFamily:FONT, boxSizing:'border-box', outline:'none', background:'#f8fafc' };

@@ -199,7 +199,7 @@ export default function LoginMitraPage() {
         <div className="auth-subtitle">SI-POKJA HUMKER</div>
 
         <div className="auth-field" style={{ marginTop: 10 }}>
-          <input
+          <input suppressHydrationWarning
             type="text"
             value={kode}
             onChange={e => setKode(e.target.value.toUpperCase())}
@@ -212,14 +212,16 @@ export default function LoginMitraPage() {
 
         {error && <div className="auth-error">{error}</div>}
 
-        <button className="auth-submit" type="submit" disabled={loading || !kode.trim()}>
+        <button className="auth-submit" type="submit" disabled={loading || !kode.trim()} suppressHydrationWarning>
           {loading && <span className="auth-spinner" />}
           {loading ? 'Memverifikasi' : 'Akses Dokumen Saya'}
         </button>
 
         <div className="auth-footer">
           Kode dikirim oleh Pokja Kerja Sama saat pengajuan disetujui.<br />
-          <a href="/cek-pengajuan">Belum punya kode? Cek status pengajuan</a>
+          <a href="/lupa-kode-mitra">Lupa kode akses?</a>
+          {' · '}
+          <a href="/cek-pengajuan">Cek status pengajuan</a>
         </div>
       </form>
     </div>

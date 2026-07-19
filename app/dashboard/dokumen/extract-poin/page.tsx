@@ -1,17 +1,23 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import Sidebar, { SidebarItem } from '@/components/Sidebar';
+import {
+  FiGrid, FiCalendar, FiInbox, FiKey, FiFolder, FiActivity,
+  FiUsers, FiList as FiListSidebar, FiArchive, FiShield,
+} from 'react-icons/fi';
 import {
   ArrowLeft, FileText, Search, Building, Tag, CheckCircle, AlertCircle,
   Check, X, Save, Calendar, MapPin, List, Info,
   RefreshCw, ExternalLink, Loader2, Zap, Shuffle,
-  Sparkles, Edit3,
+  Sparkles, Edit3, Bell,
 } from 'lucide-react';
 
 interface DokSelesai {
   id: string; jenis: string; judul: string; namaMitra: string;
   status: string; docsId: string; tglBerlaku: string; tglBerakhir: string;
   fotoFolderId: string;
+  tglKegiatanMulai?: string; tglKegiatanSelesai?: string;
   publikasi?: { statusPublikasi: string; tanggalKegiatan: string; tempatKegiatan: string; narasiKustom?: string } | null;
 }
 
@@ -29,15 +35,11 @@ const TOPIK_MAP: { kata: string[]; frase: string }[] = [
   { kata: ['rehabilitasi','pemulihan','konseling'], frase: 'program rehabilitasi' },
 ];
 
-// 3 gaya kalimat pembuka berbeda — biar tidak template itu-itu terus tiap generate
 const GAYA_NARASI = [
-  // 0 — resmi/institusional
   (p: { jenis:string; namaMitra:string; waktuTempat:string; topikStr:string; rangkum:string }) =>
     `BNN Provinsi Sulawesi Selatan menjalin kerja sama ${p.jenis} dengan ${p.namaMitra}${p.waktuTempat ? ` ${p.waktuTempat}` : ''}, berfokus pada ${p.topikStr}.${p.rangkum ? `\n\nRangkaian kegiatan mencakup: ${p.rangkum}.` : ''}`,
-  // 1 — lebih hidup/naratif
   (p: { jenis:string; namaMitra:string; waktuTempat:string; topikStr:string; rangkum:string }) =>
     `Sebagai wujud komitmen bersama memberantas penyalahgunaan narkotika, BNN Provinsi Sulawesi Selatan dan ${p.namaMitra} merajut kerja sama ${p.jenis}${p.waktuTempat ? ` ${p.waktuTempat}` : ''}. Kolaborasi ini menghadirkan ${p.topikStr} yang menyasar langsung lingkungan ${p.namaMitra}.${p.rangkum ? `\n\nBeberapa hal yang disepakati: ${p.rangkum}.` : ''}`,
-  // 2 — ringkas/lugas
   (p: { jenis:string; namaMitra:string; waktuTempat:string; topikStr:string; rangkum:string }) =>
     `${p.namaMitra} resmi bergandengan tangan dengan BNN Provinsi Sulawesi Selatan lewat ${p.jenis}${p.waktuTempat ? ` ${p.waktuTempat}` : ''}. Fokus utamanya: ${p.topikStr}.${p.rangkum ? ` Poin kesepakatan meliputi ${p.rangkum}.` : ''}`,
 ];
@@ -60,13 +62,14 @@ function generateNarasi(params: { jenis:string; namaMitra:string; tanggalKegiata
   return fn({ jenis, namaMitra, waktuTempat, topikStr, rangkum });
 }
 
-// Palet — biru navy + emas
 const BLUE = '#1D4ED8';
 const BLUE_DARK = '#1E3A8A';
 const GOLD = '#D97706';
 
 export default function ExtractPoinPage() {
   const [role, setRole]           = useState('');
+  const [namaAdmin, setNamaAdmin] = useState('Admin');
+  const [level, setLevel] = useState<'utama' | 'bnnp_bnnk'>('bnnp_bnnk');
   const [dokList, setDokList]     = useState<DokSelesai[]>([]);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState('');
@@ -94,7 +97,6 @@ export default function ExtractPoinPage() {
     tanggalKegiatan, tempatKegiatan, poinDipilih, gaya: gayaNarasi,
   }) : '';
 
-  // Kalau admin belum menyunting manual, textarea ikut update otomatis saat poin/gaya berubah
   useEffect(() => {
     if (!narasiDisunting) setNarasiEdit(narasiOtomatis);
   }, [narasiOtomatis, narasiDisunting]);
@@ -108,19 +110,21 @@ export default function ExtractPoinPage() {
   }, []);
 
   useEffect(() => {
-    const raw = localStorage.getItem('paktasign_user');
-    if (!raw) { window.location.href = '/login'; return; }
-    const u = JSON.parse(raw);
-    if (!['admin','superadmin'].includes(u.role)) { window.location.href = '/login'; return; }
-    setRole(u.role);
-    loadDokList();
+    fetch('/api/auth/me')
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(u => {
+        if (!['admin','superadmin'].includes(u.role)) { window.location.href = '/login'; return; }
+        setRole(u.role);
+        setNamaAdmin(u.nama || u.email || 'Admin');
+        setLevel(u.level === 'utama' ? 'utama' : 'bnnp_bnnk');
+        loadDokList();
 
-    // Datang dari link "Publikasikan?" di halaman detail dokumen — langsung
-    // pilih dokumen itu + auto-isi Tanggal Kegiatan dari yang sudah disepakati.
-    const params = new URLSearchParams(window.location.search);
-    const idDariUrl  = params.get('idDokumen');
-    const tglDariUrl = params.get('tglMulai');
-    if (idDariUrl) pilihDokumenById(idDariUrl, tglDariUrl || undefined);
+        const params = new URLSearchParams(window.location.search);
+        const idDariUrl  = params.get('idDokumen');
+        const tglDariUrl = params.get('tglMulai');
+        if (idDariUrl) pilihDokumenById(idDariUrl, tglDariUrl || undefined);
+      })
+      .catch(() => { window.location.href = '/login'; });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadDokList]);
 
@@ -131,7 +135,7 @@ export default function ExtractPoinPage() {
   const pilihDokumen = async (dok: DokSelesai, tglDefault?: string) => {
     setActiveDok(dok); setPasalData([]); setPoinDipilih([]);
     setMsg(''); setError(''); setLoadingPasal(true);
-    setTanggalKegiatan(tglDefault || ''); setTempatKegiatan(''); setCariPoin('');
+    setTanggalKegiatan(tglDefault || dok.tglKegiatanMulai || ''); setTempatKegiatan(''); setCariPoin('');
     setGayaNarasi(0); setNarasiDisunting(false); setNarasiEdit('');
     setPasalAktif(null);
 
@@ -141,12 +145,10 @@ export default function ExtractPoinPage() {
       if (!res.ok) { setError(d.message || 'Gagal.'); return; }
 
       setPasalData(d.pasalData || []);
-      // Pasal pertama otomatis jadi tab aktif
       if ((d.pasalData || []).length > 0) setPasalAktif(d.pasalData[0].nomor);
 
       if (d.savedData) {
-        // Data yang sudah pernah disimpan admin selalu diutamakan dari tanggal default URL
-        setTanggalKegiatan(d.savedData.tanggalKegiatan || tglDefault || '');
+        setTanggalKegiatan(d.savedData.tanggalKegiatan || tglDefault || dok.tglKegiatanMulai || '');
         setTempatKegiatan(d.savedData.tempatKegiatan || '');
         setPoinDipilih(d.savedData.poinDipilih || []);
         if (d.savedData.narasiKustom) {
@@ -158,9 +160,6 @@ export default function ExtractPoinPage() {
     finally { setLoadingPasal(false); }
   };
 
-  // Dipanggil saat datang dari link "Publikasikan?" di halaman detail dokumen —
-  // dokumen mungkin belum berstatus "Selesai" jadi belum tentu ada di daftar kiri,
-  // makanya diambil langsung dari API (yang memang tidak membatasi status).
   const pilihDokumenById = async (idDokumen: string, tglDefault?: string) => {
     setMsg(''); setError(''); setLoadingPasal(true);
     try {
@@ -185,7 +184,6 @@ export default function ExtractPoinPage() {
     setPoinDipilih(prev => prev.includes(poin) ? prev.filter(p => p !== poin) : [...prev, poin]);
   };
 
-  // Filter poin berdasarkan kata kunci pencarian — pasal yang tidak ada hasilnya disembunyikan
   const pasalTersaring = useMemo(() => {
     if (!cariPoin.trim()) return pasalData;
     const kw = cariPoin.toLowerCase();
@@ -194,11 +192,17 @@ export default function ExtractPoinPage() {
       .filter(p => p.poin.length > 0 || p.judul.toLowerCase().includes(kw));
   }, [pasalData, cariPoin]);
 
+  // Dokumen "Selesai" yang tanggal kegiatannya sudah ditentukan TAPI belum
+  // pernah dipublikasikan sama sekali — kandidat kuat yang admin mungkin lupa.
+  const siapDipublikasi = useMemo(() =>
+    dokList.filter(d => d.status === 'Selesai' && !!d.tglKegiatanMulai && !d.publikasi?.statusPublikasi),
+  [dokList]);
+
   const acakGaya = () => {
     let next = gayaNarasi;
     while (next === gayaNarasi) next = Math.floor(Math.random() * GAYA_NARASI.length);
     setGayaNarasi(next);
-    setNarasiDisunting(false); // biar textarea ikut ke-update otomatis pakai gaya baru
+    setNarasiDisunting(false);
   };
 
   const simpan = async () => {
@@ -206,14 +210,13 @@ export default function ExtractPoinPage() {
     setSaving(true); setError(''); setMsg('');
     try {
       const res = await fetch('/api/extract-poin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           idDokumen: activeDok.id, jenis: activeDok.jenis,
           judul: activeDok.judul, namaMitra: activeDok.namaMitra,
           statusPublikasi: STATUS_TETAP, tanggalKegiatan, tempatKegiatan,
-          poinDipilih, dibuatOleh: role,
-          narasiKustom: narasiEdit, // teks yang beneran tampil di beranda — hasil edit admin
+          poinDipilih, dibuatOleh: namaAdmin,
+          narasiKustom: narasiEdit,
         }),
       });
       const d = await res.json();
@@ -224,6 +227,25 @@ export default function ExtractPoinPage() {
   };
 
   const backUrl  = role === 'superadmin' ? '/dashboard/superadmin' : '/dashboard/admin';
+
+  const sidebarItems: SidebarItem[] = [
+    { href: '/dashboard/admin', icon: <FiGrid size={17} />, label: 'Dashboard' },
+    { href: '/dashboard/rencana', icon: <FiCalendar size={17} />, label: 'E-Planning' },
+    { href: '/dashboard/pengajuan', icon: <FiInbox size={17} />, label: 'Kelola Pengajuan' },
+    { href: '/dashboard/superadmin/generate-kode', icon: <FiKey size={17} />, label: 'Generate Kode' },
+    { href: '/dashboard/dokumen', icon: <FiFolder size={17} />, label: 'Daftar Dokumen' },
+    { href: '/dashboard/kelola-kegiatan', icon: <FiActivity size={17} />, label: 'Kelola Kegiatan' },
+    { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
+    { href: '/dashboard/dokumen/extract-poin', icon: <FiListSidebar size={17} />, label: 'Extract Poin Publik' },
+    { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
+    ...(level === 'bnnp_bnnk' ? [{ href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Kelola Admin' }] : []),
+  ];
+
+  const logout = async () => {
+    try { await fetch('/api/auth/logout', { method: 'POST' }); } catch {}
+    window.location.href = '/login';
+  };
+
   const filtered = dokList.filter(d =>
     d.judul.toLowerCase().includes(searchTerm.toLowerCase()) ||
     d.namaMitra.toLowerCase().includes(searchTerm.toLowerCase())
@@ -232,15 +254,29 @@ export default function ExtractPoinPage() {
   const totalPoin = pasalData.reduce((acc, p) => acc + p.poin.length, 0);
   const pasalAktifData = pasalData.find(p => p.nomor === pasalAktif) || null;
 
+  if (!role) return (
+    <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background:'linear-gradient(180deg,#FCFAF4,#F5F1E8)', fontFamily:'sans-serif', color:'#64748b', gap:16 }}>
+      <div style={{ width:40, height:40, border:'3px solid #eef2f6', borderTop:`3px solid ${BLUE}`, borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
+      <div style={{ fontSize:13 }}>Memuat...</div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+
   return (
-    <div style={{ minHeight:'100vh', background:'linear-gradient(135deg, #f8fafc 0%, #eaf1fc 100%)', fontFamily:'sans-serif' }}>
-      <nav style={navStyle}>
+    <div style={{ minHeight:'100vh', background:'radial-gradient(1100px 520px at 85% -8%, rgba(30,58,95,0.05) 0%, rgba(30,58,95,0) 55%), linear-gradient(180deg,#FCFAF4,#F5F1E8)', fontFamily:'sans-serif' }}>
+      <Sidebar
+        items={sidebarItems}
+        activeHref="/dashboard/dokumen/extract-poin"
+        brandLabel="SI-POKJA HUMKER"
+        brandSub={level === 'utama' ? 'BNN Utama' : 'Admin BNNP/BNNK'}
+        userName={namaAdmin}
+        userTag={level === 'utama' ? 'Admin BNN Utama' : 'Admin BNNP/BNNK'}
+        accent={BLUE}
+        onLogout={logout}
+      />
+
+      <nav className="main-content-wrap" style={navStyle}>
         <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-          <a href={backUrl} style={backLink}>
-            <ArrowLeft size={16} />
-            Dashboard
-          </a>
-          <span style={{ color:'#e2e8f0' }}>|</span>
           <div style={{ fontWeight:600, fontSize:14, display:'flex', alignItems:'center', gap:8, color:'#0f1f3d' }}>
             <FileText size={18} style={{ color: BLUE }} />
             Extract Poin Publik
@@ -252,9 +288,42 @@ export default function ExtractPoinPage() {
         </a>
       </nav>
 
-      <div style={{ maxWidth:1200, margin:'0 auto', padding:'1.25rem', display:'grid', gridTemplateColumns:'320px 1fr', gap:20 }}>
+      <div className="main-content-wrap" style={{ maxWidth:1200, margin:'0 auto', padding:'1.25rem' }}>
+        {siapDipublikasi.length > 0 && (
+          <div style={{
+            display:'flex', alignItems:'flex-start', gap:10, background:'linear-gradient(135deg,#FFFBEB,#FEF3C7)',
+            border:'1.5px solid #FDE68A', borderRadius:14, padding:'14px 16px', marginBottom:16,
+            animation:'fadeInDown 0.4s ease-out',
+          }}>
+            <Bell size={18} style={{ color: GOLD, flexShrink:0, marginTop:1 }} />
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:13, fontWeight:700, color:'#92400E', marginBottom:4 }}>
+                {siapDipublikasi.length} dokumen siap dipublikasikan
+              </div>
+              <div style={{ fontSize:11.5, color:'#78350F', lineHeight:1.6, marginBottom: siapDipublikasi.length > 0 ? 8 : 0 }}>
+                Status &quot;Selesai&quot; dan tanggal kegiatannya sudah ditentukan, tapi belum pernah diekstrak poinnya untuk beranda publik.
+              </div>
+              <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+                {siapDipublikasi.slice(0, 6).map(d => (
+                  <button key={d.id} onClick={() => pilihDokumen(d)} style={{
+                    fontSize:11, fontWeight:600, padding:'5px 12px', borderRadius:100, cursor:'pointer',
+                    border:'1px solid #FDE68A', background:'#fff', color:'#92400E', fontFamily:'sans-serif',
+                    display:'flex', alignItems:'center', gap:5,
+                  }}>
+                    <FileText size={11} /> {d.judul.length > 34 ? d.judul.slice(0,34)+'…' : d.judul}
+                  </button>
+                ))}
+                {siapDipublikasi.length > 6 && (
+                  <span style={{ fontSize:11, color:'#92400E', alignSelf:'center' }}>+{siapDipublikasi.length - 6} lainnya</span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
-        {/* Kolom kiri - Daftar Dokumen */}
+      <div className="main-content-wrap" style={{ maxWidth:1200, margin:'0 auto', padding:'0 1.25rem 1.25rem', display:'grid', gridTemplateColumns:'320px 1fr', gap:20 }}>
+
         <div>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
             <div style={{ fontSize:12, fontWeight:600, color:'#64748b', textTransform:'uppercase', letterSpacing:0.5, display:'flex', alignItems:'center', gap:6 }}>
@@ -301,13 +370,14 @@ export default function ExtractPoinPage() {
               {filtered.map((d, index) => {
                 const isActive   = activeDok?.id === d.id;
                 const sudahPublik = !!(d.publikasi?.statusPublikasi);
+                const siapPublik  = d.status === 'Selesai' && !!d.tglKegiatanMulai && !sudahPublik;
                 return (
                   <div
                     key={d.id}
                     onClick={() => pilihDokumen(d)}
                     style={{
                       ...card, cursor:'pointer', padding:'12px 14px',
-                      border: isActive ? `2px solid ${BLUE}` : '1px solid #e2e8f0',
+                      border: isActive ? `2px solid ${BLUE}` : (siapPublik ? '1.5px solid #FDE68A' : '1px solid #e2e8f0'),
                       background: isActive ? 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)' : '#fff',
                       boxShadow: isActive ? `0 2px 12px ${BLUE}20` : 'none',
                       transition:'all 0.3s ease',
@@ -326,6 +396,12 @@ export default function ExtractPoinPage() {
                           Aktif
                         </span>
                       )}
+                      {siapPublik && (
+                        <span style={{ fontSize:10, padding:'2px 10px', borderRadius:100, background:'#FEF3C7', color:'#92400E', display:'flex', alignItems:'center', gap:4 }}>
+                          <Bell size={10} />
+                          Siap Publikasi
+                        </span>
+                      )}
                     </div>
                     <div style={{ fontSize:13, fontWeight:600, lineHeight:1.4, marginBottom:3, color:'#0f1f3d' }}>{d.judul}</div>
                     <div style={{ fontSize:11, color:'#64748b', display:'flex', alignItems:'center', gap:4 }}>
@@ -339,7 +415,6 @@ export default function ExtractPoinPage() {
           )}
         </div>
 
-        {/* Kolom kanan - Detail */}
         <div style={{ minWidth: 0 }}>
           {msg && (
             <div style={{ ...msgBox(BLUE_DARK,'#DBEAFE'), display:'flex', alignItems:'center', gap:8, animation: 'fadeInDown 0.4s ease-out' }}>
@@ -369,7 +444,6 @@ export default function ExtractPoinPage() {
           ) : (
             <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
 
-              {/* Header dokumen */}
               <div style={{ ...card, animation: 'fadeInUp 0.4s ease-out', background: 'linear-gradient(135deg, #f8fafc 0%, #eef4fc 100%)' }}>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:8 }}>
                   <div>
@@ -386,7 +460,6 @@ export default function ExtractPoinPage() {
                 </div>
               </div>
 
-              {/* Status (tetap Aktif) + tanggal + tempat */}
               <div style={{ ...card, animation: 'fadeInUp 0.4s ease-out 0.05s both' }}>
                 <div style={{ fontSize:12, fontWeight:600, marginBottom:10, display:'flex', alignItems:'center', gap:6, color:'#334155' }}>
                   <Zap size={14} style={{ color: GOLD }} />
@@ -419,7 +492,6 @@ export default function ExtractPoinPage() {
                 </div>
               </div>
 
-              {/* Pilih poin — tab horizontal, 1 pasal aktif ditampilkan penuh, lainnya blur */}
               <div style={{ ...card, animation: 'fadeInUp 0.4s ease-out 0.1s both' }}>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10, flexWrap:'wrap', gap:6 }}>
                   <div style={{ fontSize:13, fontWeight:600, display:'flex', alignItems:'center', gap:8, color:'#0f1f3d' }}>
@@ -457,7 +529,7 @@ export default function ExtractPoinPage() {
                 </div>
 
                 {!cariPoin && (
-                  <div style={{ fontSize:11, color:'#64748b', background:'#f8fafc', padding:'8px 12px', borderRadius:8, marginBottom:12, display:'flex', alignItems:'center', gap:6 }}>
+                  <div style={{ fontSize:11, color:'#64748b', background:'#F5F1E8', padding:'8px 12px', borderRadius:8, marginBottom:12, display:'flex', alignItems:'center', gap:6 }}>
                     <Info size={14} />
                     Klik salah satu nomor pasal untuk melihat isi poinnya. Pasal lain akan memudar sampai kamu pilih lagi.
                   </div>
@@ -468,7 +540,6 @@ export default function ExtractPoinPage() {
                     Tidak ada pasal yang berhasil diekstrak.
                   </div>
                 ) : cariPoin ? (
-                  /* Mode pencarian — tampil flat lintas semua pasal, tab disembunyikan sementara */
                   pasalTersaring.length === 0 ? (
                     <div style={{ textAlign:'center', padding:'2rem', color:'#94a3b8', fontSize:13 }}>
                       Tidak ada poin yang cocok dengan &quot;{cariPoin}&quot;.
@@ -498,7 +569,6 @@ export default function ExtractPoinPage() {
                   )
                 ) : (
                   <>
-                    {/* Tab horizontal per-pasal */}
                     <div style={{ display:'flex', gap:8, overflowX:'auto', paddingBottom:8, marginBottom:14 }}>
                       {pasalData.map(pasal => {
                         const isActive = pasalAktif === pasal.nomor;
@@ -535,7 +605,6 @@ export default function ExtractPoinPage() {
                       })}
                     </div>
 
-                    {/* Konten pasal aktif */}
                     {pasalAktifData && (
                       <div key={pasalAktifData.nomor} className="fld-in">
                         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
@@ -576,7 +645,6 @@ export default function ExtractPoinPage() {
                 )}
               </div>
 
-              {/* Narasi — bisa diedit langsung, bukan cuma preview */}
               {poinDipilih.length > 0 && (
                 <div style={{ ...card, border:'2px solid #FDE68A', animation: 'fadeInUp 0.4s ease-out 0.15s both' }}>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10, flexWrap:'wrap', gap:6 }}>
@@ -639,6 +707,9 @@ export default function ExtractPoinPage() {
         @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
         .fld-in { animation: fadeInUp 0.35s ease-out; }
         .tab-pasal:hover { opacity: 1 !important; filter: none !important; transform: scale(1.02); }
+        @media (min-width: 901px) {
+          .main-content-wrap { margin-left: 236px !important; width: calc(100% - 236px) !important; box-sizing: border-box !important; }
+        }
       `}</style>
     </div>
   );
@@ -648,7 +719,7 @@ const navStyle: React.CSSProperties = { display:'flex', alignItems:'center', jus
 const backLink: React.CSSProperties = { fontSize:12, color:'#64748b', textDecoration:'none', display:'flex', alignItems:'center', gap:4, padding:'4px 8px', borderRadius:6 };
 const card: React.CSSProperties = { background:'#fff', borderRadius:14, padding:'1.25rem', border:'1px solid #e2e8f0', boxShadow:'0 1px 4px rgba(15,23,42,.04)', transition:'all .3s ease' };
 const labelSt: React.CSSProperties = { display:'flex', alignItems:'center', fontSize:11, fontWeight:600, color:'#334155', marginBottom:5 };
-const inputFull: React.CSSProperties = { width:'100%', padding:'9px 12px', borderRadius:9, border:'2px solid #e2e8f0', fontSize:12, fontFamily:'sans-serif', boxSizing:'border-box', background:'#f8fafc', transition:'all .3s ease' };
+const inputFull: React.CSSProperties = { width:'100%', padding:'9px 12px', borderRadius:9, border:'2px solid #e2e8f0', fontSize:12, fontFamily:'sans-serif', boxSizing:'border-box', background:'#F5F1E8', transition:'all .3s ease' };
 const btnPrimary: React.CSSProperties = { width:'100%', padding:'10px 16px', borderRadius:11, border:'none', background:`linear-gradient(135deg, #2563EB 0%, ${BLUE_DARK} 100%)`, color:'#fff', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'sans-serif', boxShadow:`0 2px 8px ${BLUE}30` };
 const btnSm: React.CSSProperties = { padding:'5px 12px', borderRadius:8, border:'1px solid #e2e8f0', background:'#fff', color:'#334155', fontSize:11, cursor:'pointer', fontFamily:'sans-serif' };
 const btnOutline: React.CSSProperties = { fontSize:12, padding:'6px 14px', borderRadius:9, border:'1px solid #e2e8f0', textDecoration:'none', color:'#334155', background:'#fff', display:'flex', alignItems:'center', gap:4 };

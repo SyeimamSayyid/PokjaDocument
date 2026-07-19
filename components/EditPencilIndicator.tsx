@@ -8,10 +8,12 @@ const CREAM = '#F0E7D5';
 const ESPRESSO = '#6B4A32';
 const SUNBURST = '#F8C61E';
 const MIDNIGHT = '#252C37';
+const GOLD_UTAMA = '#B5813F'; // pensil BNN Utama — beda dari SUNBURST (khusus animasi TTD Basah)
 const FONT = "'Plus Jakarta Sans', -apple-system, sans-serif";
 
 interface Props {
-  /** Format dari server: "role|nama|waktu", mis. "admin|Admin1|2026-07-15 10:30:00" */
+  /** Format dari server: "role|nama|waktu|level", mis. "admin|Admin1|2026-07-15 10:30:00|utama".
+   *  Field 'level' opsional, cuma relevan kalau role === 'admin' ('utama' = BNN Utama, selain itu = BNNP/BNNK). */
   manualLog?: string;
   size?: number;
   /** true kalau mitra memilih TTD Basah dan masih menunggu dokumen fisik diterima admin */
@@ -42,17 +44,18 @@ export default function EditPencilIndicator({ manualLog, size = 26, ttdBasahPend
   const [hover, setHover] = useState(false);
   if (!manualLog && !ttdBasahPending) return null;
 
-  const [role, nama, waktu] = manualLog ? manualLog.split('|') : ['', '', ''];
+  const [role, nama, waktu, level] = manualLog ? manualLog.split('|') : ['', '', '', ''];
   const isAdmin = role === 'admin';
   const isMitra = role === 'mitra';
+  const isUtama = isAdmin && level === 'utama';
 
-  const bg = ttdBasahPending ? undefined : (isAdmin ? INDIGO : isMitra ? CREAM : '#CBD5E1');
+  const bg = ttdBasahPending ? undefined : (isUtama ? GOLD_UTAMA : isAdmin ? INDIGO : isMitra ? CREAM : '#CBD5E1');
   const iconColor = ttdBasahPending ? MIDNIGHT : (isAdmin ? CREAM : isMitra ? ESPRESSO : '#475569');
-  const label = ttdBasahPending ? 'Menunggu TTD Basah' : (isAdmin ? 'Admin' : isMitra ? 'Mitra' : 'Tidak dikenali');
+  const label = ttdBasahPending ? 'Menunggu TTD Basah' : (isUtama ? 'BNN Utama' : isAdmin ? 'BNNP/BNNK' : isMitra ? 'Mitra' : 'Tidak dikenali');
   const waktuLabel = waktu ? waktuRelatif(waktu) : '';
   const teksTooltip = ttdBasahPending
     ? 'Menunggu dokumen fisik TTD Basah diterima admin'
-    : `${nama || label}${waktuLabel ? ` · ${waktuLabel}` : ''}`;
+    : `${nama || label} (${label})${waktuLabel ? ` · ${waktuLabel}` : ''}`;
 
   return (
     <span

@@ -18,12 +18,13 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [dokRows, pengRows, mitraRows, kegRows, daftarRows] = await Promise.all([
+    const [dokRows, pengRows, mitraRows, kegRows, daftarRows, arsipRows] = await Promise.all([
       getSheetData('Dokumen Kerja sama'),
       getSheetData('Pengajuan Mitra'),
       getSheetData('Mitra'),
       getSheetData('Kegiatan Eplanning'),
       getSheetData('Pendaftaran Kegiatan'),
+      getSheetData('Arsip Dokumen').catch(() => []),
     ]);
 
     const now = new Date();
@@ -90,12 +91,39 @@ export async function GET(req: NextRequest) {
       selesai:      dokList.filter(r => ['Kegiatan Selesai','MOU/PKS Berlaku','Kedaluwarsa'].includes(String(r[9]))).length,
     };
 
+    const arsipList = (arsipRows || []).filter(r => r[0]);
+    const mitraTerdaftar = await (async () => {
+      // Dihitung dari institusi UNIK di endpoint Kontak Mitra — sama persis
+      // cara halaman Kontak Mitra menghitung "instansiOptions", bukan baca
+      // sheet Mitra mentah (yang bisa kosong/tidak sinkron).
+      try {
+        const origin = req.nextUrl.origin;
+        const r = await fetch(`${origin}/api/kontak-mitra`, {
+          headers: { cookie: req.headers.get('cookie') || '' },
+        });
+        const d = await r.json();
+        const namaSet = new Set(
+          (d.data || [])
+            .map((k: any) => String(k.namaInstitusi || '').trim().toLowerCase().replace(/\s+/g, ' '))
+            .filter(Boolean)
+        );
+        return namaSet.size;
+      } catch {
+        // Fallback kalau internal fetch gagal — hitung manual dari sheet Mitra
+        return (mitraRows || []).filter(r => r[0]).length;
+      }
+    })();
+    const arsipMouCount = arsipList.filter(r => String(r[2] || '').toUpperCase() === 'MOU').length;
+    const arsipPksCount = arsipList.filter(r => String(r[2] || '').toUpperCase() === 'PKS').length;
+
     return NextResponse.json({
       stats: {
         pengajuanMenunggu, pengajuanDiterima, pengajuanDitolak,
         dokDraft, dokAktif, dokHampirExpire, dokExpired,
         totalDok: dokList.length,
         mouCount, pksCount,
+        arsipMouCount, arsipPksCount, arsipTotal: arsipList.length,
+        mitraTerdaftar,
         rencanaKegiatanAktif,
         pendaftaranMenunggu,
         ...ksStats,

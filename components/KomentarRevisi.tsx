@@ -15,7 +15,7 @@ interface Komentar {
 
 interface Props {
   idDokumen: string;
-  pengirim: 'admin' | 'mitra';
+  pengirim: 'admin' | 'mitra' | 'bnn_utama';
   /** Identitas unik pengirim saat ini: id/email admin, atau 'mitra'. Membedakan antar-admin. */
   senderId: string;
   /** Nama tampilan (dipakai untuk admin; mitra di-resolve server dari PIC). */
@@ -102,7 +102,7 @@ export default function KomentarRevisi({ idDokumen, pengirim, senderId, namaPeng
     const tmpId = `tmp-${Date.now()}`;
     const tmp: Komentar = {
       id: tmpId, idDokumen, pengirim, idPengirim: myId,
-      namaPengirim: namaPengirim || (pengirim === 'mitra' ? 'Anda' : 'Admin'),
+      namaPengirim: namaPengirim || (pengirim === 'mitra' ? 'Anda' : pengirim === 'bnn_utama' ? 'Admin BNN Utama' : 'Admin'),
       pesan: teks, tglDibuat: '', dibaca: false,
     };
     setList(prev => [...prev, tmp]);
@@ -218,7 +218,8 @@ export default function KomentarRevisi({ idDokumen, pengirim, senderId, namaPeng
           grouped.map((k, idx) => {
             const mine = k.idPengirim === myId;
             const isAdmin = k.pengirim === 'admin';
-            const ac = avatarColor(isAdmin ? k.idPengirim : 'mitra-fixed');
+            const isBnnUtama = k.pengirim === 'bnn_utama';
+            const ac = isBnnUtama ? { bg: '#2F5449', fg: '#fff' } : avatarColor(isAdmin ? k.idPengirim : 'mitra-fixed');
             const isLast = idx === grouped.length - 1;
             return (
               <div
@@ -247,8 +248,8 @@ export default function KomentarRevisi({ idDokumen, pengirim, senderId, namaPeng
                       <span style={{ fontSize: 11.5, fontWeight: 700, color: '#283330' }}>
                         {mine ? 'Anda' : k.namaPengirim}
                       </span>
-                      <span style={{ ...roleTag, ...(isAdmin ? roleAdmin : roleMitra) }}>
-                        {isAdmin ? 'Admin' : 'Mitra'}
+                      <span style={{ ...roleTag, ...(isBnnUtama ? roleBnnUtama : isAdmin ? roleAdmin : roleMitra) }}>
+                        {isBnnUtama ? '🏛 BNN Utama · Resmi' : isAdmin ? 'Admin' : 'Mitra'}
                       </span>
                     </div>
                   )}
@@ -256,6 +257,7 @@ export default function KomentarRevisi({ idDokumen, pengirim, senderId, namaPeng
                     style={{
                       ...bubble,
                       ...(mine ? bubbleMine : bubbleOther),
+                      ...(isBnnUtama ? bubbleBnnUtama : {}),
                       borderTopRightRadius: mine && k.showHeader ? 4 : bubble.borderRadius as number,
                       borderTopLeftRadius: !mine && k.showHeader ? 4 : bubble.borderRadius as number,
                     }}
@@ -363,10 +365,12 @@ const avatar: React.CSSProperties = { width: 26, height: 26, borderRadius: '50%'
 const roleTag: React.CSSProperties = { fontSize: 8.5, fontWeight: 700, padding: '1.5px 6px', borderRadius: 100, textTransform: 'uppercase', letterSpacing: '0.04em' };
 const roleAdmin: React.CSSProperties = { background: '#E6F1FB', color: '#0C447C' };
 const roleMitra: React.CSSProperties = { background: '#E1F5EE', color: '#0F6E56' };
+const roleBnnUtama: React.CSSProperties = { background: '#ABD1C6', color: '#2F5449' };
 
 const bubble: React.CSSProperties = { fontSize: 12.5, padding: '9px 13px', borderRadius: 16, lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word' };
 const bubbleMine: React.CSSProperties = { background: 'linear-gradient(135deg,#13987a,#0F6E56)', color: '#fff' };
 const bubbleOther: React.CSSProperties = { background: '#f3f6f5', color: '#1f2d2a' };
+const bubbleBnnUtama: React.CSSProperties = { background: '#F5FAF8', color: '#1E332D', border: '1.5px solid #ABD1C6' };
 
 const errBox: React.CSSProperties = { fontSize: 11, color: '#A32D2D', background: 'rgba(220,38,38,0.06)', padding: '7px 11px', borderRadius: 10, margin: '8px 0 0', display: 'flex', alignItems: 'center', gap: 6 };
 

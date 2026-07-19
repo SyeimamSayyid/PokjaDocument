@@ -3,13 +3,15 @@
 import { useEffect, useState, useCallback } from 'react';
 import LoaderPage from '@/components/LoaderPage';
 import EditPencilIndicator from '@/components/EditPencilIndicator';
+import Sidebar, { SidebarItem } from '@/components/Sidebar';
 import {
   FiFolder, FiEdit, FiTrash2, FiSearch,
   FiEye, FiExternalLink, FiCheckCircle, FiClock, FiAlertCircle,
   FiCalendar, FiGrid, FiPlus,
   FiX, FiSave, FiArrowLeft, FiImage, FiDatabase,
   FiFileText, FiActivity, FiChevronDown, FiChevronRight, FiMessageCircle,
-  FiUser, FiBookOpen, FiInfo,
+  FiUser, FiBookOpen, FiInfo, FiArchive, FiHome,
+  FiInbox, FiKey, FiUsers, FiList, FiShield,
 } from 'react-icons/fi';
 import { FaFileSignature, FaFileAlt, FaBuilding, FaFolderOpen } from 'react-icons/fa';
 import { SiGoogledocs } from 'react-icons/si';
@@ -20,10 +22,16 @@ interface DokumenItem {
   tglDibuat: string; tglBerlaku: string; tglBerakhir: string;
   durasi: string; status: string; kode: string; kodeExpire: string;
   docsId: string; docsUrl: string; folderId: string; dibuatOleh: string;
-  catatan?: string; divisi?: string[]; manualLog?: string;
+  catatan?: string; divisi?: string[]; manualLog?: string; flagRevisi?: boolean;
 }
 interface KontakInfo { namaPIC: string; jurusan: string; }
 interface NotifInfo { count: number; hasUnread: boolean; }
+interface ArsipLamaItem {
+  id: string; namaInstitusi: string; jenis: string; judul: string;
+  tglBerlaku: string; tglBerakhir: string; fileId: string; fileUrl: string; namaFile: string;
+  namaPIC: string; emailPIC: string; waPIC: string; catatan: string;
+  diarsipkanOleh: string; tglDiarsipkan: string; statusKerjaSama: string;
+}
 
 const STATUS_LIST = STATUS_DOKUMEN;
 const FONT = "'Plus Jakarta Sans', -apple-system, sans-serif";
@@ -96,14 +104,22 @@ function generatePreviewPoin(d: DokumenItem): string[] {
 
 export default function DokumenPage() {
   const [role, setRole]       = useState('');
+  const [level, setLevel]     = useState<'utama' | 'bnnp_bnnk'>('bnnp_bnnk');
+  const [namaAdmin, setNamaAdmin] = useState('Admin');
   const [data, setData]       = useState<DokumenItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
   const [msg, setMsg]         = useState('');
   const [search, setSearch]   = useState('');
   const [filterJenis, setFilterJenis] = useState('');
+  const [hanyaFlag, setHanyaFlag] = useState(false);
   const [filterStage, setFilterStage] = useState('');
   const [viewMode, setViewMode] = useState<'folder' | 'table'>('folder');
+  const [sumberTab, setSumberTab] = useState<'sistem' | 'arsip'>('sistem');
+  const [arsipData, setArsipData] = useState<ArsipLamaItem[]>([]);
+  const [arsipLoading, setArsipLoading] = useState(false);
+  const [arsipLoaded, setArsipLoaded] = useState(false);
+  const [arsipSearch, setArsipSearch] = useState('');
   const [expandedMou, setExpandedMou] = useState(true);
   const [expandedPks, setExpandedPks] = useState(true);
   const [expandedInstitusi, setExpandedInstitusi] = useState<Set<string>>(new Set());
@@ -156,18 +172,69 @@ export default function DokumenPage() {
       .catch(() => {});
   }, []);
 
+  const loadArsipLama = useCallback(() => {
+    if (arsipLoaded) return;
+    setArsipLoading(true);
+    fetch('/api/arsip-dokumen')
+      .then(r => r.json())
+      .then(d => {
+        // Cuma "Arsip Lama" (sumber: manual) — dokumen sebelum sistem ini
+        // ada. "sumber: sistem" TIDAK dipakai di sini karena itu sudah
+        // ditampilkan di tab "Dokumen Sistem" (data hidup di atas).
+        const hanyaManual = (d.data || []).filter((a: any) => a.sumber === 'manual');
+        setArsipData(hanyaManual);
+        setArsipLoaded(true);
+        setArsipLoading(false);
+      })
+      .catch(() => setArsipLoading(false));
+  }, [arsipLoaded]);
+
+  const gantiTab = (tab: 'sistem' | 'arsip') => {
+    setSumberTab(tab);
+    if (tab === 'arsip') loadArsipLama();
+  };
+
   useEffect(() => {
-    const raw = localStorage.getItem('paktasign_user');
-    if (!raw) { window.location.href = '/login'; return; }
-    const u = JSON.parse(raw);
-    if (!['admin','superadmin'].includes(u.role)) { window.location.href = '/login'; return; }
-    setRole(u.role);
-    load();
-    loadKontak();
-    loadNotif();
+    fetch('/api/auth/me')
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(u => {
+        if (!['admin','superadmin'].includes(u.role)) { window.location.href = '/login'; return; }
+        setRole(u.role);
+        setLevel(u.level === 'utama' ? 'utama' : 'bnnp_bnnk');
+        setNamaAdmin(u.nama || u.email || 'Admin');
+        load();
+        loadKontak();
+        loadNotif();
+      })
+      .catch(() => { window.location.href = '/login'; });
   }, [load, loadKontak, loadNotif]);
 
-  const backUrl = role === 'superadmin' ? '/dashboard/superadmin' : '/dashboard/admin';
+  const backUrl = level === 'utama' ? '/dashboard/bnn-utama' : (role === 'superadmin' ? '/dashboard/superadmin' : '/dashboard/admin');
+
+  const sidebarItems: SidebarItem[] = level === 'utama' ? [
+    { href: '/dashboard/bnn-utama', icon: <FiGrid size={17} />, label: 'Dashboard' },
+    { href: '/dashboard/dokumen', icon: <FiFolder size={17} />, label: 'Dokumen & Tata Kelola' },
+    { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
+    { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
+    { href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Daftar Admin' },
+  ] : [
+    { href: '/dashboard/admin', icon: <FiGrid size={17} />, label: 'Dashboard' },
+    { href: '/dashboard/rencana', icon: <FiCalendar size={17} />, label: 'E-Planning' },
+    { href: '/dashboard/pengajuan', icon: <FiInbox size={17} />, label: 'Kelola Pengajuan' },
+    { href: '/dashboard/superadmin/generate-kode', icon: <FiKey size={17} />, label: 'Generate Kode' },
+    { href: '/dashboard/dokumen', icon: <FiFolder size={17} />, label: 'Daftar Dokumen' },
+    { href: '/dashboard/kelola-kegiatan', icon: <FiActivity size={17} />, label: 'Kelola Kegiatan' },
+    { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
+    { href: '/dashboard/dokumen/extract-poin', icon: <FiList size={17} />, label: 'Extract Poin Publik' },
+    { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
+    { href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Kelola Admin' },
+  ];
+
+  const logout = async () => {
+    try { await fetch('/api/auth/logout', { method: 'POST' }); } catch {}
+    window.location.href = '/login';
+  };
+
 
   const openEdit = (d: DokumenItem) => {
     setEditItem(d); setEStatus(d.status); setECatatan(d.catatan || '');
@@ -230,7 +297,8 @@ export default function DokumenPage() {
       d.kode?.toLowerCase().includes(search.toLowerCase());
     const matchJenis = filterJenis ? d.jenis === filterJenis : true;
     const matchStage = filterStage ? stageStatuses.includes(d.status) : true;
-    return matchSearch && matchJenis && matchStage;
+    const matchFlag = hanyaFlag ? !!d.flagRevisi : true;
+    return matchSearch && matchJenis && matchStage && matchFlag;
   });
 
   const countPerStage = STAGE_FILTER.map(f => ({ ...f, count: data.filter(d => f.statuses.includes(d.status)).length }));
@@ -241,27 +309,71 @@ export default function DokumenPage() {
   const pksList = filtered.filter(d => d.jenis === 'PKS');
 
   return (
-    <div style={{ minHeight:'100vh', fontFamily: FONT, background: 'radial-gradient(1000px 480px at 85% -10%, #dbeafe 0%, rgba(219,234,254,0) 55%), linear-gradient(180deg,#f7f9fc,#eef2f8)' }}>
+    <div style={{ minHeight:'100vh', fontFamily: FONT, background: 'radial-gradient(1100px 520px at 85% -8%, rgba(30,58,95,0.05) 0%, rgba(30,58,95,0) 55%), linear-gradient(180deg,#FCFAF4,#F5F1E8)' }}>
       <GlobalStyle />
 
-      <div style={{ maxWidth:1080, margin:'0 auto', padding:'1.4rem 1.25rem 0' }}>
+      <Sidebar
+        items={sidebarItems}
+        activeHref="/dashboard/dokumen"
+        brandLabel="SI-POKJA HUMKER"
+        brandSub={level === 'utama' ? 'BNN Utama' : 'Admin BNNP/BNNK'}
+        userName={namaAdmin}
+        userTag={level === 'utama' ? 'Admin BNN Utama' : 'Admin BNNP/BNNK'}
+        accent={level === 'utama' ? '#ABD1C6' : BLUE}
+        onLogout={logout}
+      />
+
+      <div className="main-content-wrap" style={{ maxWidth:1080, margin:'0 auto', padding:'1.4rem 1.25rem 0' }}>
         <nav style={navPill} className="fld">
-          <a href={backUrl} style={backLink}><FiArrowLeft size={13} /> Dashboard</a>
           <div style={{ fontWeight:800, fontSize:14, display:'flex', alignItems:'center', gap:8, color:'#0f1f3d' }}>
             <FiDatabase size={16} style={{ color: BLUE }} />
             Dokumen &amp; Tata Kelola Kerja Sama
           </div>
-          <a href="/dashboard/superadmin/generate-kode" style={btnPrimary} className="btn-hover">
-            <FiPlus size={13} style={{ marginRight:5, verticalAlign:'middle' }} /> Generate
-          </a>
+          {level === 'utama' ? (
+            <span style={{ fontSize:10.5, fontWeight:700, padding:'6px 14px', borderRadius:100, background:'rgba(171,209,198,0.25)', color:'#2F5449', display:'flex', alignItems:'center', gap:6 }}>
+              <FiEye size={12} /> Mode Tinjau — BNN Utama
+            </span>
+          ) : (
+            <a href="/dashboard/superadmin/generate-kode" style={btnPrimary} className="btn-hover">
+              <FiPlus size={13} style={{ marginRight:5, verticalAlign:'middle' }} /> Generate
+            </a>
+          )}
         </nav>
       </div>
 
-      <div style={{ maxWidth:1080, margin:'0 auto', padding:'1.25rem 1.25rem 3rem' }}>
+      <div className="main-content-wrap" style={{ maxWidth:1080, margin:'0 auto', padding:'1.25rem 1.25rem 3rem' }}>
 
         {msg   && <div style={{ ...msgBox(BLUE_DARK,'#DBEAFE'), marginBottom:14 }} className="fld"><FiCheckCircle size={14} style={{ marginRight:6, verticalAlign:'middle' }} />{msg}</div>}
         {error && <div style={{ ...msgBox('#A32D2D','#FCEBEB'), marginBottom:14 }} className="fld"><FiAlertCircle size={14} style={{ marginRight:6, verticalAlign:'middle' }} />{error}</div>}
 
+        {/* Tab sumber dokumen */}
+        <div style={{ display:'flex', gap:8, marginBottom:14 }} className="fld">
+          <button onClick={() => gantiTab('sistem')} style={{
+            flex:1, padding:'11px 16px', borderRadius:14, border:'none', cursor:'pointer', fontFamily:FONT,
+            fontSize:12.5, fontWeight:700, textAlign:'left',
+            background: sumberTab === 'sistem' ? `linear-gradient(135deg,${BLUE_LIGHT},${BLUE_DARK})` : '#fff',
+            color: sumberTab === 'sistem' ? '#fff' : '#334155',
+            boxShadow: sumberTab === 'sistem' ? `0 8px 20px -8px ${BLUE}70` : '0 1px 3px rgba(15,23,42,.06)',
+          }} className="btn-hover">
+            <div style={{ display:'flex', alignItems:'center', gap:6 }}><FiDatabase size={14} /> Dokumen Sistem</div>
+            <div style={{ fontSize:10.5, fontWeight:500, opacity:.8, marginTop:2 }}>Sejak sistem ini dibangun — {data.length} dokumen</div>
+          </button>
+          <button onClick={() => gantiTab('arsip')} style={{
+            flex:1, padding:'11px 16px', borderRadius:14, border:'none', cursor:'pointer', fontFamily:FONT,
+            fontSize:12.5, fontWeight:700, textAlign:'left',
+            background: sumberTab === 'arsip' ? '#5B21B6' : '#fff',
+            color: sumberTab === 'arsip' ? '#fff' : '#334155',
+            boxShadow: sumberTab === 'arsip' ? '0 8px 20px -8px rgba(91,33,182,0.45)' : '0 1px 3px rgba(15,23,42,.06)',
+          }} className="btn-hover">
+            <div style={{ display:'flex', alignItems:'center', gap:6 }}><FiArchive size={14} /> Dokumen Arsip</div>
+            <div style={{ fontSize:10.5, fontWeight:500, opacity:.8, marginTop:2 }}>Sebelum sistem ini ada{arsipLoaded ? ` — ${arsipData.length} dokumen` : ''}</div>
+          </button>
+        </div>
+
+        {sumberTab === 'arsip' ? (
+          <ArsipLamaSection data={arsipData} loading={arsipLoading} search={arsipSearch} setSearch={setArsipSearch} />
+        ) : (
+        <>
         {/* Toolbar */}
         <div style={{ ...shellStyle, marginBottom:12 }} className="fld">
           <div style={{ ...coreStyle, padding:'0.9rem 1.1rem', display:'flex', gap:10, flexWrap:'wrap', alignItems:'center' }}>
@@ -282,6 +394,10 @@ export default function DokumenPage() {
                   {j || 'Semua Jenis'}
                 </button>
               ))}
+              <button onClick={() => setHanyaFlag(v => !v)}
+                style={{ ...pillBtn, ...(hanyaFlag ? { background:'#FEF3C7', color:'#92400E', borderColor:'#FBBF24' } : {}) }} className="btn-hover">
+                🚩 Perlu Revisi
+              </button>
             </div>
             <div style={{ display:'flex', border:'1.5px solid rgba(29,78,216,0.10)', borderRadius:11, overflow:'hidden' }}>
               <button onClick={() => setViewMode('folder')} style={{ ...toggleBtn, ...(viewMode === 'folder' ? toggleBtnActive : {}) }} title="Tampilan Folder" className="btn-hover">
@@ -376,7 +492,7 @@ export default function DokumenPage() {
                                 <div style={{ padding:'0 10px 10px', display:'flex', flexDirection:'column', gap:7 }}>
                                   {docs.map(d => (
                                     <DokFileRow key={d.id} d={d} kontak={kontakMap[normNama(d.namaMitra)]} notif={notifMap[d.id]}
-                                      expanded={expandedRows.has(d.id)} onToggle={() => toggleRow(d.id)} onEdit={openEdit} onHapus={hapus} />
+                                      expanded={expandedRows.has(d.id)} onToggle={() => toggleRow(d.id)} onEdit={openEdit} onHapus={hapus} level={level} />
                                   ))}
                                 </div>
                               )}
@@ -470,8 +586,12 @@ export default function DokumenPage() {
                               <a href={`/dashboard/dokumen/${d.id}`} style={iconLinkBtn} title="Detail" className="btn-hover"><FiEye size={13} /></a>
                               {d.docsUrl && <a href={d.docsUrl} target="_blank" rel="noopener noreferrer" style={iconLinkBtn} title="Buka Docs" className="btn-hover"><SiGoogledocs size={13} /></a>}
                               <a href={`/dashboard/dokumen/foto?id=${d.id}&judul=${encodeURIComponent(d.judul)}`} style={iconLinkBtn} title="Kelola Foto" className="btn-hover"><FiImage size={13} /></a>
-                              <button onClick={() => openEdit(d)} style={iconBtn} title="Edit Status" className="btn-hover"><FiEdit size={13} /></button>
-                              <button onClick={() => hapus(d.id, d.judul)} style={{ ...iconBtn, color:'#A32D2D', borderColor:'#FCEBEB' }} title="Hapus" className="btn-hover"><FiTrash2 size={13} /></button>
+                              {level !== 'utama' && (
+                                <>
+                                  <button onClick={() => openEdit(d)} style={iconBtn} title="Edit Status" className="btn-hover"><FiEdit size={13} /></button>
+                                  <button onClick={() => hapus(d.id, d.judul)} style={{ ...iconBtn, color:'#A32D2D', borderColor:'#FCEBEB' }} title="Hapus" className="btn-hover"><FiTrash2 size={13} /></button>
+                                </>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -482,6 +602,8 @@ export default function DokumenPage() {
               </div>
             </div>
           </div>
+        )}
+        </>
         )}
       </div>
 
@@ -533,11 +655,191 @@ function NotifBadge({ notif }: { notif: NotifInfo }) {
 }
 
 // ── Baris dokumen dalam mode folder — aksi selalu terlihat, ringkasan bisa diklik ──
-function DokFileRow({ d, kontak, notif, expanded, onToggle, onEdit, onHapus }: {
+function groupByInstitusiArsip(list: ArsipLamaItem[]): [string, ArsipLamaItem[]][] {
+  const map = new Map<string, ArsipLamaItem[]>();
+  list.forEach(a => {
+    const key = a.namaInstitusi || 'Tanpa Institusi';
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(a);
+  });
+  return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+}
+
+function ArsipLamaSection({ data, loading, search, setSearch }: {
+  data: ArsipLamaItem[]; loading: boolean; search: string; setSearch: (v: string) => void;
+}) {
+  const [filterJenis, setFilterJenis] = useState('');
+  const [sortBy, setSortBy] = useState<'arsip' | 'berakhirAsc' | 'berakhirDesc'>('arsip');
+  const [jenisOpen, setJenisOpen] = useState<Record<string, boolean>>({ MOU: true, PKS: true });
+  const [instExpanded, setInstExpanded] = useState<Set<string>>(new Set());
+  const toggleInst = (key: string) => {
+    setInstExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  const filtered = data
+    .filter(a =>
+      (!search ||
+        a.namaInstitusi?.toLowerCase().includes(search.toLowerCase()) ||
+        a.judul?.toLowerCase().includes(search.toLowerCase())) &&
+      (!filterJenis || a.jenis === filterJenis)
+    )
+    .sort((a, b) => {
+      if (sortBy === 'berakhirAsc') return new Date(a.tglBerakhir || 0).getTime() - new Date(b.tglBerakhir || 0).getTime();
+      if (sortBy === 'berakhirDesc') return new Date(b.tglBerakhir || 0).getTime() - new Date(a.tglBerakhir || 0).getTime();
+      return 0; // 'arsip' — biarkan urutan asli (dari API, terbaru diarsipkan duluan)
+    });
+
+  const countJenis = (j: string) => data.filter(a => !j || a.jenis === j).length;
+
+  return (
+    <div className="fld">
+      <div style={{ ...shellStyle, marginBottom:12 }}>
+        <div style={{ ...coreStyle, padding:'0.9rem 1.1rem' }}>
+          <div style={{ position:'relative', marginBottom:10 }}>
+            <FiSearch size={14} style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:'#94a3b8' }} />
+            <input
+              style={searchInput}
+              placeholder="Cari institusi atau judul di arsip lama..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+
+          <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+            <div style={{ display:'flex', gap:4 }}>
+              {['', 'MOU', 'PKS'].map(j => (
+                <button key={j} onClick={() => setFilterJenis(j)} style={{
+                  padding:'6px 13px', borderRadius:100, border:'1.5px solid', fontSize:11, cursor:'pointer', fontFamily:FONT,
+                  fontWeight: filterJenis === j ? 700 : 500,
+                  background: filterJenis === j ? '#5B21B6' : '#fff',
+                  color: filterJenis === j ? '#fff' : '#334155',
+                  borderColor: filterJenis === j ? '#5B21B6' : 'rgba(29,78,216,0.10)',
+                }} className="btn-hover">
+                  {j || 'Semua Jenis'} ({countJenis(j)})
+                </button>
+              ))}
+            </div>
+
+            <div style={{ width:1, height:22, background:'rgba(15,23,42,.08)' }} />
+
+            <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} style={{
+              padding:'6px 10px', borderRadius:100, border:'1.5px solid rgba(29,78,216,0.10)', fontSize:11,
+              fontFamily:FONT, fontWeight:600, color:'#334155', background:'#fff', cursor:'pointer',
+            }}>
+              <option value="arsip">Urutkan: Terbaru Diarsipkan</option>
+              <option value="berakhirDesc">Urutkan: Tanggal Berakhir (Terbaru)</option>
+              <option value="berakhirAsc">Urutkan: Tanggal Berakhir (Terlama)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ ...msgBox('#5B21B6', '#EDE9FE'), marginBottom:14, display:'flex', alignItems:'center', gap:8 }}>
+        <FiArchive size={14} />
+        Dokumen di sini diarsipkan manual oleh admin — riwayat kerja sama <strong>sebelum sistem ini dibangun</strong>. Buat lihat/ubah lebih lengkap, buka halaman{' '}
+        <a href="/dashboard/arsip" style={{ color:'#5B21B6', fontWeight:700, textDecoration:'underline' }}>Arsip Dokumen</a>.
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign:'center', padding:'3rem', color:'#94a3b8', fontSize:13 }}>Memuat arsip lama...</div>
+      ) : filtered.length === 0 ? (
+        <div style={shellStyle}>
+          <div style={{ ...coreStyle, textAlign:'center', padding:'3rem 2rem' }}>
+            <FiArchive size={30} style={{ color:'#cbd5e1', marginBottom:10 }} />
+            <div style={{ fontSize:13.5, color:'#64748b', fontWeight:500 }}>
+              {search ? 'Tidak ada arsip yang cocok dengan pencarian.' : 'Belum ada dokumen arsip lama.'}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+          {[
+            { jenis:'MOU', label:'MOU', color: BLUE, bg:'#DBEAFE' },
+            { jenis:'PKS', label:'PKS', color: GOLD, bg:'#FEF3C7' },
+          ].filter(g => !filterJenis || filterJenis === g.jenis)
+           .map((g, gi) => {
+            const list = filtered.filter(a => a.jenis === g.jenis);
+            if (list.length === 0) return null;
+            const instGroups = groupByInstitusiArsip(list);
+            const open = jenisOpen[g.jenis] ?? true;
+            return (
+              <div key={g.jenis} style={{ ...shellStyle, animationDelay:`${gi*0.05}s` }} className="fld">
+                <div style={coreStyle}>
+                  <button onClick={() => setJenisOpen(prev => ({ ...prev, [g.jenis]: !open }))} style={folderHeaderBtn}>
+                    <span style={{ color:g.color, display:'flex', alignItems:'center' }}>
+                      {open ? <FiChevronDown size={15} /> : <FiChevronRight size={15} />}
+                    </span>
+                    <div style={{ width:34, height:34, borderRadius:11, background:g.bg, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      <FaFolderOpen size={15} style={{ color:g.color }} />
+                    </div>
+                    <span style={{ fontSize:14, fontWeight:800, color:'#0f1f3d' }}>{g.label}</span>
+                    <span style={{ fontSize:11, color:'#94a3b8', fontWeight:500 }}>{list.length} dokumen · {instGroups.length} institusi</span>
+                  </button>
+
+                  {open && (
+                    <div style={{ marginTop:10, display:'flex', flexDirection:'column', gap:8 }}>
+                      {instGroups.map(([namaInstitusi, docs]) => {
+                        const instKey = `${g.jenis}::${namaInstitusi}`;
+                        const instOpen = instExpanded.has(instKey);
+                        return (
+                          <div key={instKey} style={institusiBox}>
+                            <button onClick={() => toggleInst(instKey)} style={{ ...folderHeaderBtn, padding:'8px 10px' }}>
+                              <span style={{ color:'#94a3b8', display:'flex', alignItems:'center' }}>
+                                {instOpen ? <FiChevronDown size={13} /> : <FiChevronRight size={13} />}
+                              </span>
+                              <FaBuilding size={13} style={{ color:'#64748b' }} />
+                              <span style={{ fontSize:12.5, fontWeight:700, color:'#334155' }}>{namaInstitusi}</span>
+                              <span style={{ fontSize:10.5, color:'#94a3b8' }}>{docs.length} dok</span>
+                            </button>
+
+                            {instOpen && (
+                              <div style={{ padding:'0 10px 10px', display:'flex', flexDirection:'column', gap:8 }}>
+                                {docs.map(a => (
+                                  <div key={a.id} style={{ background:'#fff', border:'1px solid rgba(29,78,216,0.06)', borderRadius:11, padding:'0.85rem 1rem' }}>
+                                    <div style={{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap', marginBottom:6 }}>
+                                      <span style={{ fontSize:10, fontWeight:600, padding:'3px 10px', borderRadius:100, background: a.statusKerjaSama === 'Masih Berlaku' ? '#DCFCE7' : '#f1f5f9', color: a.statusKerjaSama === 'Masih Berlaku' ? '#166534' : '#64748b' }}>{a.statusKerjaSama || 'Sudah Berakhir'}</span>
+                                    </div>
+                                    <div style={{ fontSize:13.5, fontWeight:700, color:'#0f1f3d', marginBottom:5 }}>{a.judul}</div>
+                                    <div style={{ fontSize:11, color:'#94a3b8', display:'flex', gap:14, flexWrap:'wrap', marginBottom:6 }}>
+                                      <span style={{ display:'flex', alignItems:'center', gap:4 }}><FiCalendar size={11} /> {a.tglBerlaku} s.d. {a.tglBerakhir}</span>
+                                      {a.namaPIC && <span>{a.namaPIC}</span>}
+                                    </div>
+                                    {a.catatan && <div style={{ fontSize:11.5, color:'#78350F', background:'#FFFBEB', padding:'6px 10px', borderRadius:8, marginBottom:8, fontStyle:'italic' }}>{a.catatan}</div>}
+                                    <div style={{ fontSize:10, color:'#94a3b8', marginBottom:8 }}>Diarsipkan {a.tglDiarsipkan} oleh {a.diarsipkanOleh}</div>
+                                    {a.fileUrl && (
+                                      <a href={a.fileUrl} target="_blank" rel="noopener noreferrer" style={{ ...actBtn, textDecoration:'none', display:'inline-flex' }} className="btn-hover">
+                                        <FiExternalLink size={11} /> Lihat Berkas
+                                      </a>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DokFileRow({ d, kontak, notif, expanded, onToggle, onEdit, onHapus, level }: {
   d: DokumenItem; kontak?: KontakInfo; notif?: NotifInfo;
   expanded: boolean; onToggle: () => void;
   onEdit: (d: DokumenItem) => void;
   onHapus: (id: string, judul: string) => void;
+  level?: 'utama' | 'bnnp_bnnk';
 }) {
   const sc = STATUS_COLOR[d.status] || { bg:'#f1f5f9', color:'#64748b' };
   const [showRingkasan, setShowRingkasan] = useState(false);
@@ -548,6 +850,9 @@ function DokFileRow({ d, kontak, notif, expanded, onToggle, onEdit, onHapus }: {
         <FiFileText size={14} style={{ color:'#94a3b8', flexShrink:0 }} />
         <span style={{ fontSize:12.5, fontWeight:600, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:'#0f1f3d' }}>{d.judul}</span>
         {notif && <NotifBadge notif={notif} />}
+        {d.flagRevisi && (
+          <span title="Ditandai perlu revisi oleh BNN Utama" style={{ fontSize:9.5, fontWeight:700, padding:'3px 8px', borderRadius:100, background:'#FEF3C7', color:'#92400E', flexShrink:0 }}>🚩 Perlu Revisi</span>
+        )}
         <EditPencilIndicator manualLog={d.manualLog} size={22} />
         <span style={{ fontSize:9.5, fontWeight:600, padding:'3px 9px', borderRadius:100, background:sc.bg, color:sc.color, flexShrink:0, display:'inline-flex', alignItems:'center', gap:4 }}>
           {STATUS_ICON[d.status]}
@@ -601,8 +906,12 @@ function DokFileRow({ d, kontak, notif, expanded, onToggle, onEdit, onHapus }: {
             <a href={`/dashboard/dokumen/${d.id}`} style={actBtn} className="btn-hover"><FiEye size={11} /> Detail</a>
             {d.docsUrl && <a href={d.docsUrl} target="_blank" rel="noopener noreferrer" style={actBtn} className="btn-hover"><FiExternalLink size={11} /> Buka Docs</a>}
             <a href={`/dashboard/dokumen/foto?id=${d.id}&judul=${encodeURIComponent(d.judul)}`} style={actBtn} className="btn-hover"><FiImage size={11} /> Kelola Foto</a>
-            <button onClick={() => onEdit(d)} style={actBtn} className="btn-hover"><FiEdit size={11} /> Edit Status</button>
-            <button onClick={() => onHapus(d.id, d.judul)} style={{ ...actBtn, color:'#A32D2D', borderColor:'#FCEBEB' }} className="btn-hover"><FiTrash2 size={11} /> Hapus</button>
+            {level !== 'utama' && (
+              <>
+                <button onClick={() => onEdit(d)} style={actBtn} className="btn-hover"><FiEdit size={11} /> Edit Status</button>
+                <button onClick={() => onHapus(d.id, d.judul)} style={{ ...actBtn, color:'#A32D2D', borderColor:'#FCEBEB' }} className="btn-hover"><FiTrash2 size={11} /> Hapus</button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -621,6 +930,9 @@ function GlobalStyle() {
       .trow { transition: background 0.2s ease; }
       .trow:hover { background: #f8fafc; }
       .trow td { padding: 12px; border-bottom: 1px solid rgba(29,78,216,0.05); }
+      @media (min-width: 901px) {
+        .main-content-wrap { margin-left: 236px !important; width: calc(100% - 236px) !important; box-sizing: border-box !important; }
+      }
     `}</style>
   );
 }
@@ -629,7 +941,7 @@ const navPill: React.CSSProperties = { display:'flex', alignItems:'center', just
 const backLink: React.CSSProperties = { fontSize:12.5, color:'#64748b', textDecoration:'none', fontWeight:600, display:'flex', alignItems:'center', gap:6 };
 const shellStyle: React.CSSProperties = { background:'rgba(255,255,255,0.65)', borderWidth:1, borderStyle:'solid', borderColor:'rgba(29,78,216,0.08)', borderRadius:20, padding:6, boxShadow:'0 1px 2px rgba(15,23,42,0.03), 0 20px 40px -30px rgba(15,23,42,0.18)' };
 const coreStyle: React.CSSProperties = { background:'#fff', borderRadius:15, padding:'1.1rem 1.2rem', boxShadow:'inset 0 1px 1px rgba(255,255,255,0.9)' };
-const searchInput: React.CSSProperties = { padding:'9px 12px 9px 34px', borderRadius:10, borderWidth:1.5, borderStyle:'solid', borderColor:'rgba(29,78,216,0.10)', fontSize:12, fontFamily:FONT, width:'100%', outline:'none', background:'#f8fafc', boxSizing:'border-box' };
+const searchInput: React.CSSProperties = { padding:'9px 12px 9px 34px', borderRadius:10, borderWidth:1.5, borderStyle:'solid', borderColor:'rgba(29,78,216,0.10)', fontSize:12, fontFamily:FONT, width:'100%', outline:'none', background:'#F5F1E8', boxSizing:'border-box' };
 const pillBtn: React.CSSProperties = { padding:'8px 14px', borderRadius:10, borderWidth:1.5, borderStyle:'solid', borderColor:'rgba(29,78,216,0.10)', fontSize:11.5, cursor:'pointer', fontFamily:FONT, background:'#fff', color:'#334155', display:'flex', alignItems:'center', gap:5, fontWeight:500 };
 const pillBtnActive: React.CSSProperties = { background:`linear-gradient(135deg,${BLUE_LIGHT},${BLUE_DARK})`, color:'#fff', borderColor:'transparent', fontWeight:700 };
 const stagePill: React.CSSProperties = { padding:'7px 15px', borderRadius:100, borderWidth:1.5, borderStyle:'solid', borderColor:'rgba(217,119,6,0.16)', fontSize:11.5, cursor:'pointer', fontFamily:FONT, background:'#fff', color:'#92400E', fontWeight:500 };
