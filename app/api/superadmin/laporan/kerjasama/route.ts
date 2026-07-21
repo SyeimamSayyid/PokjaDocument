@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSheetData } from '@/lib/sheet';
+import { requireSession } from '@/lib/auth';
 
 const DOK_COL = {
   ID: 0, JENIS: 1, JUDUL: 2, ID_MITRA: 3, NAMA_MITRA: 4,
@@ -8,7 +9,12 @@ const DOK_COL = {
 };
 const PJ_COL = { ID_MITRA: 1, NAMA: 2, EMAIL: 7, WA: 8, PIC: 18 };
 
-const DIVISI_URUTAN = ['pemberantasan', 'rehabilitasi', 'pencegahan', 'pemberdayaan'];
+// Kolom Arsip Dokumen (0-based) — sudah punya kontak sendiri, tidak perlu
+// cross-reference ke Pengajuan Mitra kayak dokumen sistem.
+const ARS_COL = {
+  ID: 0, NAMA_INSTITUSI: 1, JENIS: 2, JUDUL: 3, TGL_BERLAKU: 4, TGL_BERAKHIR: 5,
+  PIC: 9, EMAIL: 10, WA: 11, TGL_ARSIP: 14, DIVISI: 16,
+};
 
 function normNama(s: unknown): string {
   return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -30,32 +36,41 @@ function resolveKontak(idMitra: string, namaInstitusi: string, pjRows: string[][
 }
 
 export async function GET(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const tahun = parseInt(searchParams.get('tahun') || '0');
+    const sumberFilter = (searchParams.get('sumber') || 'semua') as 'semua' | 'sistem' | 'arsip';
     if (!tahun) {
       return NextResponse.json({ message: 'Parameter tahun wajib diisi.' }, { status: 400 });
     }
 
-    const dokRows = await getSheetData('Dokumen Kerja sama');
-    let pjRows: string[][] = [];
-    try { pjRows = await getSheetData('Pengajuan Mitra'); } catch { pjRows = []; }
+    const [dokRows, pjRowsRaw, arsipRows] = await Promise.all([
+      getSheetData('Dokumen Kerja sama'),
+      getSheetData('Pengajuan Mitra').catch(() => []),
+      getSheetData('Arsip Dokumen').catch(() => []),
+    ]);
+    const pjRows: string[][] = pjRowsRaw || [];
 
-    // Kerja sama yang BERLAKU di tahun tsb — dicek dari Tanggal Berlaku
-    const filtered = dokRows.filter(r => {
+    // ── Dokumen SISTEM yang berlaku di tahun tsb ──
+    const dokFiltered = dokRows.filter(r => {
       if (!r[DOK_COL.ID]) return false;
       const tgl = new Date(String(r[DOK_COL.TGL_BERLAKU]));
       return !isNaN(tgl.getTime()) && tgl.getFullYear() === tahun;
     });
 
-    const data = filtered.map((r, i) => {
+    const dataSistem = dokFiltered.map(r => {
       const idMitra = String(r[DOK_COL.ID_MITRA] || '').trim();
       const namaInstitusi = String(r[DOK_COL.NAMA_MITRA] || '').trim();
       const kontak = resolveKontak(idMitra, namaInstitusi, pjRows);
       const divisiRaw = String(r[DOK_COL.DIVISI] || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
 
       return {
-        no: i + 1,
+        sumber: 'Sistem' as const,
         tglBerlaku: String(r[DOK_COL.TGL_BERLAKU] || ''),
         jenis: String(r[DOK_COL.JENIS] || ''),
         instansi: namaInstitusi,
@@ -74,7 +89,50 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ tahun, satker: 'BNNP SULSEL', data });
+    // ── Dokumen ARSIP yang MASUK ke arsip di tahun tsb (bukan tanggal berlaku) ──
+    const arsipFiltered = (arsipRows || []).filter(r => {
+      if (!r[ARS_COL.ID]) return false;
+      const tglMasuk = new Date(String(r[ARS_COL.TGL_ARSIP]));
+      return !isNaN(tglMasuk.getTime()) && tglMasuk.getFullYear() === tahun;
+    });
+
+    const dataArsip = arsipFiltered.map(r => {
+      const divisiRaw = String(r[ARS_COL.DIVISI] || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+      return {
+        sumber: 'Arsip' as const,
+        tglBerlaku: String(r[ARS_COL.TGL_BERLAKU] || ''),
+        jenis: String(r[ARS_COL.JENIS] || ''),
+        instansi: String(r[ARS_COL.NAMA_INSTITUSI] || ''),
+        judul: String(r[ARS_COL.JUDUL] || ''),
+        namaPIC: String(r[ARS_COL.PIC] || ''),
+        noPIC: String(r[ARS_COL.WA] || ''),
+        emailPIC: String(r[ARS_COL.EMAIL] || ''),
+        bidang: {
+          pemberantasan: divisiRaw.includes('pemberantasan'),
+          rehabilitasi: divisiRaw.includes('rehabilitasi'),
+          pencegahan: divisiRaw.includes('pencegahan'),
+          pemberdayaan: divisiRaw.includes('pemberdayaan'),
+        },
+        durasi: '',
+        tglBerakhir: String(r[ARS_COL.TGL_BERAKHIR] || ''),
+      };
+    });
+
+    // Gabung, urutkan berdasarkan tanggal berlaku, lalu nomori ulang
+    const sumberTerpilih = sumberFilter === 'sistem' ? dataSistem : sumberFilter === 'arsip' ? dataArsip : [...dataSistem, ...dataArsip];
+    const gabungan = sumberTerpilih
+      .sort((a, b) => new Date(a.tglBerlaku).getTime() - new Date(b.tglBerlaku).getTime())
+      .map((d, i) => ({ no: i + 1, ...d }));
+
+    return NextResponse.json({
+      tahun, satker: 'BNNP SULSEL', data: gabungan,
+      ringkasan: {
+        totalSistem: dataSistem.length,
+        totalArsip: dataArsip.length,
+        totalMou: gabungan.filter(d => d.jenis.toUpperCase() === 'MOU').length,
+        totalPks: gabungan.filter(d => d.jenis.toUpperCase() === 'PKS').length,
+      },
+    });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }

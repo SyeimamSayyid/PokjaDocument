@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import LoaderPage from '@/components/LoaderPage';
 import EditPencilIndicator from '@/components/EditPencilIndicator';
 import Sidebar, { SidebarItem } from '@/components/Sidebar';
@@ -102,7 +103,7 @@ function generatePreviewPoin(d: DokumenItem): string[] {
   ];
 }
 
-export default function DokumenPage() {
+function DokumenPageContent() {
   const [role, setRole]       = useState('');
   const [level, setLevel]     = useState<'utama' | 'bnnp_bnnk'>('bnnp_bnnk');
   const [namaAdmin, setNamaAdmin] = useState('Admin');
@@ -111,6 +112,7 @@ export default function DokumenPage() {
   const [error, setError]     = useState('');
   const [msg, setMsg]         = useState('');
   const [search, setSearch]   = useState('');
+  const searchParams = useSearchParams();
   const [filterJenis, setFilterJenis] = useState('');
   const [hanyaFlag, setHanyaFlag] = useState(false);
   const [filterStage, setFilterStage] = useState('');
@@ -195,6 +197,11 @@ export default function DokumenPage() {
   };
 
   useEffect(() => {
+    const cari = searchParams.get('cari');
+    if (cari) setSearch(cari);
+  }, [searchParams]);
+
+  useEffect(() => {
     fetch('/api/auth/me')
       .then(r => { if (!r.ok) throw new Error(); return r.json(); })
       .then(u => {
@@ -227,6 +234,7 @@ export default function DokumenPage() {
     { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
     { href: '/dashboard/dokumen/extract-poin', icon: <FiList size={17} />, label: 'Extract Poin Publik' },
     { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
+    { href: '/dashboard/superadmin/laporan', icon: <FiFileText size={17} />, label: 'Laporan' },
     { href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Kelola Admin' },
   ];
 
@@ -642,6 +650,14 @@ export default function DokumenPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function DokumenPage() {
+  return (
+    <Suspense fallback={null}>
+      <DokumenPageContent />
+    </Suspense>
   );
 }
 

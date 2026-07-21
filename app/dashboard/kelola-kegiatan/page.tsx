@@ -5,7 +5,7 @@ import Sidebar, { SidebarItem } from '@/components/Sidebar';
 import {
   FiClock, FiRadio, FiCheckCircle, FiCamera, FiTrash2,
   FiCalendar, FiInbox, FiX, FiArrowRight,
-  FiGrid, FiInbox as FiInboxNav, FiKey, FiFolder, FiActivity,
+  FiGrid, FiInbox as FiInboxNav, FiKey, FiFolder, FiActivity, FiFileText,
   FiUsers, FiList, FiArchive, FiShield,
 } from 'react-icons/fi';
 
@@ -113,6 +113,7 @@ export default function KelolaKegiatanPage() {
     { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
     { href: '/dashboard/dokumen/extract-poin', icon: <FiList size={17} />, label: 'Extract Poin Publik' },
     { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
+    { href: '/dashboard/superadmin/laporan', icon: <FiFileText size={17} />, label: 'Laporan' },
     { href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Kelola Admin' },
   ];
 

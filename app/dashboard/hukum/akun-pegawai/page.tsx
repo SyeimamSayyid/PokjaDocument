@@ -1,14 +1,18 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import Sidebar, { SidebarItem } from '@/components/Sidebar';
 import {
   FaUserPlus, FaFileExcel, FaDownload, FaTrash,
-  FaCheckCircle, FaTimesCircle, FaArrowLeft,
+  FaCheckCircle, FaTimesCircle,
 } from 'react-icons/fa';
-import { FiUpload, FiSave, FiPlus, FiUsers, FiArrowUpRight } from 'react-icons/fi';
+import {
+  FiUpload, FiSave, FiPlus, FiUsers, FiArrowUpRight,
+  FiGrid, FiInbox, FiClipboard, FiTrendingUp, FiArchive,
+} from 'react-icons/fi';
 
-const INDIGO = '#212842';
-const CREAM = '#F0E7D5';
+const INDIGO = '#1E3A5F';
+const CREAM = '#FAF8F0';
 const FONT = "'Plus Jakarta Sans', -apple-system, sans-serif";
 
 const LOKASI_LIST = ['BNNP Sulsel', 'BNNK Palopo', 'BNNK Toraja', 'BNNK Bone', 'BNNK Sidrap'];
@@ -28,6 +32,7 @@ function genId() {
 
 export default function PembuatanAkunPegawaiPage() {
   const [role, setRole] = useState('');
+  const [namaAdmin, setNamaAdmin] = useState('Admin');
   const [existingNip, setExistingNip] = useState<Set<string>>(new Set());
   const [totalPegawai, setTotalPegawai] = useState(0);
   const [pending, setPending] = useState<PendingItem[]>([]);
@@ -62,10 +67,27 @@ export default function PembuatanAkunPegawaiPage() {
     const u = JSON.parse(raw);
     if (!['admin', 'superadmin'].includes(u.role)) { window.location.href = '/login'; return; }
     setRole(u.role);
+    setNamaAdmin(u.nama || u.email || 'Admin');
     loadExisting();
   }, [loadExisting]);
 
   const backUrl = role === 'superadmin' ? '/dashboard/superadmin' : '/dashboard/admin';
+
+  const sidebarItems: SidebarItem[] = [
+    { href: '/dashboard/admin', icon: <FiGrid size={17} />, label: 'Dashboard' },
+    { href: '/dashboard/hukum/akun-pegawai', icon: <FaUserPlus size={15} />, label: 'Pembuatan Akun Pegawai' },
+    { href: '/dashboard/hukum/pengajuan-akun', icon: <FiInbox size={17} />, label: 'Pengajuan Akun' },
+    { href: '/dashboard/hukum/pendampingan', icon: <FiClipboard size={17} />, label: 'Kelola Pendampingan' },
+    { href: '/dashboard/hukum/tindak-lanjut', icon: <FiTrendingUp size={17} />, label: 'Tindak Lanjut' },
+    { href: '/dashboard/hukum/arsip-penanganan', icon: <FiArchive size={17} />, label: 'Arsip Penanganan' },
+  ];
+
+  const logout = async () => {
+    try { await fetch('/api/auth/logout', { method: 'POST' }); } catch {}
+    localStorage.removeItem('paktasign_user');
+    window.location.href = '/login';
+  };
+
 
   const tambahManual = () => {
     setManualError('');
@@ -139,7 +161,7 @@ export default function PembuatanAkunPegawaiPage() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: CREAM, fontFamily: FONT }}>
+    <div style={{ minHeight: '100vh', background: 'radial-gradient(1100px 520px at 85% -8%, rgba(30,58,95,0.05) 0%, rgba(30,58,95,0) 55%), linear-gradient(180deg,#FCFAF4,#F5F1E8)', fontFamily: FONT }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
         @keyframes fadeUp { from{opacity:0;transform:translateY(18px);filter:blur(5px)} to{opacity:1;transform:none;filter:blur(0)} }
@@ -149,29 +171,37 @@ export default function PembuatanAkunPegawaiPage() {
         .btn-hover:active:not(:disabled) { transform: scale(0.97); }
         .arrow-circ { transition: transform 0.4s cubic-bezier(0.32,0.72,0,1); }
         .btn-hover:hover .arrow-circ { transform: translate(2px,-2px) scale(1.08); }
-        input::placeholder { color: rgba(33,40,66,0.3); }
+        input::placeholder { color: rgba(30,58,95,0.3); }
         .split-grid { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 4rem; }
         @media (max-width: 900px) {
           .split-grid { grid-template-columns: 1fr; gap: 2rem; }
           .split-left { position: static !important; }
         }
+        @media (min-width: 901px) {
+          .main-content-wrap { margin-left: 236px !important; width: calc(100% - 236px) !important; box-sizing: border-box !important; }
+        }
       `}</style>
 
-      <div style={{ maxWidth: 1180, margin: '0 auto', padding: '2.5rem 2rem 5rem' }}>
+      <Sidebar
+        items={sidebarItems}
+        activeHref="/dashboard/hukum/akun-pegawai"
+        brandLabel="SI-POKJA HUMKER"
+        brandSub="Modul Penegak Hukum"
+        navSectionTitle="Modul Hukum"
+        userName={namaAdmin}
+        userTag="Admin BNNP/BNNK"
+        accent="#2C5580"
+        onLogout={logout}
+      />
 
-        <a href={backUrl} className="btn-hover fld" style={{
-          display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600,
-          color: 'rgba(33,40,66,0.55)', textDecoration: 'none', marginBottom: 40,
-        }}>
-          <FaArrowLeft size={11} /> Dashboard
-        </a>
+      <div className="main-content-wrap" style={{ maxWidth: 1180, margin: '0 auto', padding: '2.5rem 2rem 5rem' }}>
 
         <div className="split-grid">
           {/* ── KIRI: Editorial heading, sticky di desktop ── */}
           <div className="split-left fld" style={{ position: 'sticky', top: 40, alignSelf: 'start' }}>
             <div style={{
               display: 'inline-block', fontSize: 10, color: INDIGO, textTransform: 'uppercase',
-              letterSpacing: '0.24em', fontWeight: 700, background: 'rgba(33,40,66,0.06)',
+              letterSpacing: '0.24em', fontWeight: 700, background: 'rgba(30,58,95,0.06)',
               padding: '7px 16px', borderRadius: 100, marginBottom: 22,
             }}>
               Modul Penegak Hukum
@@ -182,13 +212,13 @@ export default function PembuatanAkunPegawaiPage() {
             }}>
               Pembuatan<br />Akun Pegawai
             </h1>
-            <p style={{ fontSize: 14, color: 'rgba(33,40,66,0.6)', lineHeight: 1.75, maxWidth: 380, marginBottom: 32 }}>
+            <p style={{ fontSize: 14, color: 'rgba(30,58,95,0.6)', lineHeight: 1.75, maxWidth: 380, marginBottom: 32 }}>
               Daftarkan pegawai BNN satu-per-satu, atau impor sekaligus lewat berkas Excel. Semua entri masuk ke pratinjau lebih dulu — tidak ada yang tersimpan tanpa konfirmasi.
             </p>
 
             <div style={{
               display: 'inline-flex', alignItems: 'center', gap: 12, padding: '14px 20px',
-              borderRadius: 18, background: 'rgba(33,40,66,0.05)', border: '1px solid rgba(33,40,66,0.08)',
+              borderRadius: 18, background: 'rgba(30,58,95,0.05)', border: '1px solid rgba(30,58,95,0.08)',
             }}>
               <div style={{
                 width: 38, height: 38, borderRadius: 12, background: INDIGO,
@@ -198,7 +228,7 @@ export default function PembuatanAkunPegawaiPage() {
               </div>
               <div>
                 <div style={{ fontSize: 18, fontWeight: 800, color: INDIGO, letterSpacing: '-0.02em' }}>{totalPegawai}</div>
-                <div style={{ fontSize: 10.5, color: 'rgba(33,40,66,0.5)', fontWeight: 600 }}>Pegawai Terdaftar</div>
+                <div style={{ fontSize: 10.5, color: 'rgba(30,58,95,0.5)', fontWeight: 600 }}>Pegawai Terdaftar</div>
               </div>
             </div>
           </div>
@@ -243,7 +273,7 @@ export default function PembuatanAkunPegawaiPage() {
             <div style={{ ...outerShell, marginTop: 16 }} className="fld">
               <div style={{ ...innerCore, padding: '1.5rem 1.6rem' }}>
                 <div style={cardHeader}><FaFileExcel size={13} /> Impor dari Excel</div>
-                <p style={{ fontSize: 11.5, color: 'rgba(33,40,66,0.5)', margin: '0 0 14px', lineHeight: 1.6 }}>
+                <p style={{ fontSize: 11.5, color: 'rgba(30,58,95,0.5)', margin: '0 0 14px', lineHeight: 1.6 }}>
                   Kolom: <strong style={{ color: INDIGO }}>No, NIP/NRP Pegawai, Lokasi BNN</strong>. Lokasi harus salah satu dari daftar yang tersedia.
                 </p>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -254,7 +284,7 @@ export default function PembuatanAkunPegawaiPage() {
                     <FiUpload size={13} /> {parsingExcel ? 'Membaca file...' : 'Upload Excel'}
                     <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleFileChange} style={{ display: 'none' }} disabled={parsingExcel} />
                   </label>
-                  {fileName && <span style={{ fontSize: 11.5, color: 'rgba(33,40,66,0.45)' }}>{fileName}</span>}
+                  {fileName && <span style={{ fontSize: 11.5, color: 'rgba(30,58,95,0.45)' }}>{fileName}</span>}
                 </div>
                 {excelError && <div style={{ fontSize: 11.5, color: '#A32D2D', marginTop: 10 }}>{excelError}</div>}
               </div>
@@ -272,7 +302,7 @@ export default function PembuatanAkunPegawaiPage() {
                 </div>
 
                 {pending.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '2.4rem 1rem', color: 'rgba(33,40,66,0.3)', fontSize: 12.5 }}>
+                  <div style={{ textAlign: 'center', padding: '2.4rem 1rem', color: 'rgba(30,58,95,0.3)', fontSize: 12.5 }}>
                     Belum ada data. Tambah manual atau upload Excel di atas.
                   </div>
                 ) : (
@@ -281,14 +311,14 @@ export default function PembuatanAkunPegawaiPage() {
                       {pending.map(p => (
                         <div key={p.id} style={{
                           display: 'flex', alignItems: 'center', gap: 10, padding: '10px 13px',
-                          borderRadius: 12, background: p.valid ? 'rgba(33,40,66,0.03)' : 'rgba(163,45,45,0.06)',
-                          border: `1px solid ${p.valid ? 'rgba(33,40,66,0.07)' : 'rgba(163,45,45,0.18)'}`,
+                          borderRadius: 12, background: p.valid ? 'rgba(30,58,95,0.03)' : 'rgba(163,45,45,0.06)',
+                          border: `1px solid ${p.valid ? 'rgba(30,58,95,0.07)' : 'rgba(163,45,45,0.18)'}`,
                         }}>
                           {p.valid ? <FaCheckCircle size={12} color="#0a5c47" style={{ flexShrink: 0 }} /> : <FaTimesCircle size={12} color="#A32D2D" style={{ flexShrink: 0 }} />}
                           <span style={{ fontSize: 12.5, fontWeight: 700, color: INDIGO, minWidth: 140 }}>{p.nip || '—'}</span>
-                          <span style={{ fontSize: 11.5, color: 'rgba(33,40,66,0.55)', flex: 1 }}>{p.lokasi || '—'}</span>
+                          <span style={{ fontSize: 11.5, color: 'rgba(30,58,95,0.55)', flex: 1 }}>{p.lokasi || '—'}</span>
                           {!p.valid && <span style={{ fontSize: 10.5, color: '#A32D2D' }}>{p.error}</span>}
-                          <span style={{ fontSize: 9, color: 'rgba(33,40,66,0.3)', textTransform: 'uppercase', fontWeight: 700 }}>{p.source}</span>
+                          <span style={{ fontSize: 9, color: 'rgba(30,58,95,0.3)', textTransform: 'uppercase', fontWeight: 700 }}>{p.source}</span>
                           <button onClick={() => hapusItem(p.id)} className="btn-hover" style={miniDeleteBtn} title="Hapus">
                             <FaTrash size={10} />
                           </button>
@@ -322,20 +352,20 @@ export default function PembuatanAkunPegawaiPage() {
 }
 
 const outerShell: React.CSSProperties = {
-  background: 'rgba(33,40,66,0.03)', border: '1px solid rgba(33,40,66,0.08)',
+  background: 'rgba(30,58,95,0.03)', border: '1px solid rgba(30,58,95,0.08)',
   borderRadius: 26, padding: 6,
 };
 const innerCore: React.CSSProperties = {
   background: '#fff', borderRadius: 20,
-  boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.9), 0 1px 2px rgba(33,40,66,0.03)',
+  boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.9), 0 1px 2px rgba(30,58,95,0.03)',
 };
 const cardHeader: React.CSSProperties = {
   fontSize: 11.5, fontWeight: 700, color: INDIGO, textTransform: 'uppercase',
   letterSpacing: '0.1em', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14,
 };
 const inputStyle: React.CSSProperties = {
-  padding: '11px 14px', borderRadius: 12, border: '1px solid rgba(33,40,66,0.1)',
-  background: 'rgba(33,40,66,0.02)', color: INDIGO, fontSize: 12.5, fontFamily: FONT, outline: 'none',
+  padding: '11px 14px', borderRadius: 12, border: '1px solid rgba(30,58,95,0.1)',
+  background: 'rgba(30,58,95,0.02)', color: INDIGO, fontSize: 12.5, fontFamily: FONT, outline: 'none',
 };
 const btnPrimary: React.CSSProperties = {
   display: 'inline-flex', alignItems: 'center', gap: 6, padding: '11px 20px',
@@ -344,7 +374,7 @@ const btnPrimary: React.CSSProperties = {
 };
 const btnGhost: React.CSSProperties = {
   display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 18px',
-  borderRadius: 100, border: '1px solid rgba(33,40,66,0.12)', background: 'rgba(33,40,66,0.03)',
+  borderRadius: 100, border: '1px solid rgba(30,58,95,0.12)', background: 'rgba(30,58,95,0.03)',
   color: INDIGO, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: FONT, textDecoration: 'none',
 };
 const miniDeleteBtn: React.CSSProperties = {

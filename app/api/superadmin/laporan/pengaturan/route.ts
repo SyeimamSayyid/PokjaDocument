@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSheetData, updateCell } from '@/lib/sheet';
 import { formatTanggalWaktu } from '@/lib/utils';
+import { requireSession } from '@/lib/auth';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const rows = await getSheetData('Pengaturan Laporan');
     const row = rows[0] || [];
@@ -17,6 +23,11 @@ export async function GET() {
 }
 
 export async function PUT(req: NextRequest) {
+  const session = await requireSession(req, ['admin', 'superadmin']);
+  if (!session) {
+    return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
+  }
+
   try {
     const { namaKepala, pangkat, diubahOleh } = await req.json();
     if (!namaKepala?.trim() || !pangkat?.trim()) {

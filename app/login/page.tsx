@@ -414,9 +414,15 @@ export default function LoginPage() {
         )}
 
         {isPegawai ? (
-          <a href="/cek-nip" className="cek-nip-toggle">
-            <FiSearch size={13} /> Cek NIP / NRP
-          </a>
+          <>
+            <a href="/cek-nip" className="cek-nip-toggle">
+              <FiSearch size={13} /> Cek NIP / NRP
+            </a>
+            <div className="auth-footer" style={{ marginTop: 6 }}>
+              Belum punya akun?{' '}
+              <a href="/pengajuan-akun-pegawai">Ajukan akun di sini</a>
+            </div>
+          </>
         ) : (
           <div className="auth-footer">
             Anda mitra kerja sama?{' '}

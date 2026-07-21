@@ -137,6 +137,7 @@ interface Arsip {
   sumber: 'manual' | 'sistem';
   ttdTipe?: string; ttdTglFinal?: string; divisi?: string[];
   komentarUtama?: string;
+  mencurigakan?: boolean;
 }
 
 // Scan TTD Basah dan Snapshot (isi dokumen sebelum ditandatangani) itu 2 baris
@@ -203,6 +204,7 @@ export default function ArsipDokumenPage() {
   const [cari, setCari] = useState('');
   const [filterJenis, setFilterJenis] = useState('');
   const [filterSumber, setFilterSumber] = useState('');
+  const [hanyaMencurigakan, setHanyaMencurigakan] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -460,6 +462,7 @@ export default function ArsipDokumenPage() {
     { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
     { href: '/dashboard/dokumen/extract-poin', icon: <FiListSidebar size={17} />, label: 'Extract Poin Publik' },
     { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
+    { href: '/dashboard/superadmin/laporan', icon: <FiFileText size={17} />, label: 'Laporan' },
     { href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Kelola Admin' },
   ];
 
@@ -489,6 +492,15 @@ export default function ArsipDokumenPage() {
       <div style={{ fontSize:13 }}>Memuat arsip dokumen...</div>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
+  );
+
+  // Dihitung dari HASIL PENGELOMPOKAN (bukan baris mentah), biar angkanya
+  // sesuai jumlah KARTU yang bakal kelihatan (pasangan Scan+Snapshot TTD
+  // Basah dianggap 1), bukan jumlah baris sheet.
+  const kelompokMencurigakan = kelompokkanArsip(list).filter(entry =>
+    entry.tipe === 'normal'
+      ? entry.item.mencurigakan
+      : (entry.representative.mencurigakan || entry.snapshot?.mencurigakan || entry.scan?.mencurigakan)
   );
 
   return (
@@ -699,7 +711,7 @@ export default function ArsipDokumenPage() {
             ))}
           </div>
         </div>
-        <div style={{ display:'flex', gap:6, marginBottom:16, flexWrap:'wrap' }}>
+        <div style={{ display:'flex', gap:6, marginBottom:16, flexWrap:'wrap', alignItems:'center' }}>
           {[
             { key: '', label: 'Semua Asal' },
             { key: 'sistem', label: 'Dari Sistem' },
@@ -710,15 +722,36 @@ export default function ArsipDokumenPage() {
               {s.label}
             </button>
           ))}
+          <span style={{ width:1, height:18, background:'#e2e8f0', margin:'0 2px' }} />
+          <button onClick={() => setHanyaMencurigakan(v => !v)} className="btn-hover" style={{
+            ...filterPillSm,
+            ...(hanyaMencurigakan ? { background:'#FEE2E2', color:'#991B1B', borderColor:'#FCA5A5', fontWeight:700 } : {}),
+            display:'flex', alignItems:'center', gap:5,
+          }}>
+            ⚠️ Data Mencurigakan
+            {kelompokMencurigakan.length > 0 && (
+              <span style={{ fontSize:9.5, fontWeight:800, background: hanyaMencurigakan ? 'rgba(153,27,27,0.15)' : '#FEE2E2', color:'#991B1B', padding:'1px 6px', borderRadius:100 }}>
+                {kelompokMencurigakan.length}
+              </span>
+            )}
+          </button>
         </div>
 
         {loading ? (
           <div style={emptyBox}>Memuat arsip…</div>
         ) : list.length === 0 ? (
           <div style={emptyBox}>Belum ada dokumen yang diarsipkan.</div>
+        ) : hanyaMencurigakan && kelompokMencurigakan.length === 0 ? (
+          <div style={emptyBox}>✓ Tidak ada data mencurigakan saat ini.</div>
         ) : (
           <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-            {kelompokkanArsip(list).map((entry, idx) => {
+            {kelompokkanArsip(list)
+              .filter(entry => !hanyaMencurigakan || (
+                entry.tipe === 'normal'
+                  ? entry.item.mencurigakan
+                  : (entry.representative.mencurigakan || entry.snapshot?.mencurigakan || entry.scan?.mencurigakan)
+              ))
+              .map((entry, idx) => {
               if (entry.tipe === 'ttdBasah') {
                 const { representative: r, snapshot, scan, idDokumen } = entry;
                 const isOpen = expandedTtd.has(idDokumen);
@@ -806,6 +839,11 @@ export default function ArsipDokumenPage() {
                             const info = DIVISI_LABEL[dv] || { label: dv, color:'#64748b', bg:'#f1f5f9' };
                             return <span key={dv} style={{ ...pill, background: info.bg, color: info.color }}>{info.label}</span>;
                           })}
+                          {a.mencurigakan && (
+                            <span style={{ ...pill, background:'#FEE2E2', color:'#991B1B', fontWeight:700, display:'flex', alignItems:'center', gap:4 }} title="Nama institusi ini duplikat, bidang & masa berakhir kosong — kemungkinan data uji coba yang belum lengkap">
+                              ⚠️ Data Mencurigakan
+                            </span>
+                          )}
                         </div>
                         <div style={{ fontSize:14.5, fontWeight:700, color:'#0f1f3d' }}>{a.judul}</div>
                         <div style={{ fontSize:12.5, color:'#1D4ED8', fontWeight:600, marginTop:2, display:'flex', alignItems:'center', gap:6 }}><FaBuilding size={12} /> {a.namaInstitusi}</div>

@@ -240,7 +240,12 @@ export default function DashboardMitraPage() {
 
       {/* Nav ramping — cuma notif + avatar, brand & logout sudah di sidebar */}
       <Sidebar
-        items={[{ href: '/dashboard/mitra', icon: <FiGrid size={17} />, label: 'Dashboard' }]}
+        items={[
+          { href: '/dashboard/mitra', icon: <FiGrid size={17} />, label: 'Dashboard' },
+          { href: `/mitra/dokumen/${user.idDokumen}`, icon: <FiFileText size={17} />, label: 'Dokumen' },
+          { href: '/dashboard/mitra/notifikasi', icon: <FiBell size={17} />, label: 'Notifikasi', notifCount: belumDibaca },
+          { href: '/dashboard/mitra/riwayat', icon: <FiClock size={17} />, label: 'Riwayat' },
+        ]}
         activeHref="/dashboard/mitra"
         brandLabel="SI-POKJA HUMKER"
         brandSub="Akses Mitra"

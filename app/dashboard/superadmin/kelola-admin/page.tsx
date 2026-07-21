@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Sidebar, { SidebarItem } from '@/components/Sidebar';
 import {
-  FiGrid, FiCalendar, FiInbox, FiKey, FiFolder, FiActivity,
+  FiGrid, FiCalendar, FiInbox, FiKey, FiFolder, FiActivity, FiFileText,
   FiList as FiListSidebar, FiArchive,
 } from 'react-icons/fi';
 import {
@@ -173,6 +173,7 @@ export default function KelolaAdminPage() {
     { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
     { href: '/dashboard/dokumen/extract-poin', icon: <FiListSidebar size={17} />, label: 'Extract Poin Publik' },
     { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
+    { href: '/dashboard/superadmin/laporan', icon: <FiFileText size={17} />, label: 'Laporan' },
     { href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Kelola Admin' },
   ];
 

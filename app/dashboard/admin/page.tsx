@@ -9,7 +9,7 @@ import {
   FiFolder, FiAlertCircle, FiCheck, FiEye, FiKey,
   FiUsers, FiCalendar, FiUser, FiActivity, FiGrid,
   FiFile, FiPieChart, FiTrendingUp, FiList, FiArrowUpRight, FiArchive,
-  FiUserPlus, FiClipboard, FiShield, FiChevronDown,
+  FiUserPlus, FiClipboard, FiShield, FiChevronDown, FiSearch,
 } from 'react-icons/fi';
 import { FaFileSignature, FaFileAlt, FaBuilding, FaBalanceScale } from 'react-icons/fa';
 import NotifikasiAdminBell from '@/components/NotifikasiAdminBell';
@@ -141,6 +141,14 @@ function HukumCardSoon({ item, index, onClick }: { item: HukumFeature; index: nu
 export default function AdminDashboard() {
   const [nama, setNama] = useState('');
   const [hukumOn, setHukumOn] = useState(false);
+  const [hukumStats, setHukumStats] = useState<{
+    totalPegawai: number;
+    pegawaiPerLokasi: { lokasi: string; jumlah: number }[];
+    pengajuanMenunggu: number; pengajuanDisetujui: number; pengajuanDitolak: number;
+    pendampinganAktif: number; pendampinganArsip: number;
+  } | null>(null);
+  const [loadingHukumStats, setLoadingHukumStats] = useState(false);
+  const [quickSearch, setQuickSearch] = useState('');
   const [showPelaporanInfo, setShowPelaporanInfo] = useState(false);
   const [featureComingSoon, setFeatureComingSoon] = useState('');
   const [role, setRole] = useState('');
@@ -190,6 +198,39 @@ export default function AdminDashboard() {
       })
       .catch(() => { window.location.href = '/login'; });
   }, []);
+
+  // Ambil statistik modul Hukum sekali begitu toggle diaktifkan (bukan tiap
+  // render) — gabungkan 3 sumber data yang sudah ada (Pegawai, Pengajuan
+  // Akun, Pendampingan), bukan bikin endpoint agregat baru.
+  useEffect(() => {
+    if (!hukumOn || hukumStats || loadingHukumStats) return;
+    setLoadingHukumStats(true);
+    Promise.all([
+      fetch('/api/hukum/pegawai').then(r => r.json()).catch(() => ({ data: [] })),
+      fetch('/api/hukum/pengajuan-akun').then(r => r.json()).catch(() => ({ data: [] })),
+      fetch('/api/hukum/pendampingan').then(r => r.json()).catch(() => ({ data: [] })),
+    ]).then(([pegawaiRes, pengajuanRes, pendampinganRes]) => {
+      const pegawaiList: { lokasi?: string }[] = pegawaiRes.data || [];
+      const hitungLokasi = new Map<string, number>();
+      pegawaiList.forEach(p => {
+        const l = p.lokasi || 'Tidak diketahui';
+        hitungLokasi.set(l, (hitungLokasi.get(l) || 0) + 1);
+      });
+
+      const pengajuanList: { status?: string }[] = pengajuanRes.data || [];
+      const pendampinganList: { status?: string }[] = pendampinganRes.data || [];
+
+      setHukumStats({
+        totalPegawai: pegawaiList.length,
+        pegawaiPerLokasi: Array.from(hitungLokasi.entries()).map(([lokasi, jumlah]) => ({ lokasi, jumlah })),
+        pengajuanMenunggu: pengajuanList.filter(p => p.status === 'Menunggu').length,
+        pengajuanDisetujui: pengajuanList.filter(p => p.status === 'Disetujui').length,
+        pengajuanDitolak: pengajuanList.filter(p => p.status === 'Ditolak').length,
+        pendampinganAktif: pendampinganList.filter(p => !['Selesai', 'Ditolak'].includes(p.status || '')).length,
+        pendampinganArsip: pendampinganList.filter(p => p.status === 'Selesai').length,
+      });
+    }).finally(() => setLoadingHukumStats(false));
+  }, [hukumOn, hukumStats, loadingHukumStats]);
 
   const logout = async () => {
     try { await fetch('/api/auth/logout', { method: 'POST' }); } catch {}
@@ -257,6 +298,7 @@ export default function AdminDashboard() {
     { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
     { href: '/dashboard/dokumen/extract-poin', icon: <FiList size={17} />, label: 'Extract Poin Publik' },
     { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
+    { href: '/dashboard/superadmin/laporan', icon: <FiFileText size={17} />, label: 'Laporan' },
     ...(level === 'bnnp_bnnk' ? [{ href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Kelola Admin' }] : []),
   ];
 
@@ -266,18 +308,20 @@ export default function AdminDashboard() {
   const sidebarItemsHukum: SidebarItem[] = [
     { href: '/dashboard/admin', icon: <FiGrid size={17} />, label: 'Dashboard' },
     { href: '/dashboard/hukum/akun-pegawai', icon: <FiUserPlus size={17} />, label: 'Akun Pegawai BNN' },
-    { href: '/dashboard/admin#pendampingan', icon: <FiClipboard size={17} />, label: 'Kelola Pendampingan' },
-    { href: '/dashboard/admin#tindak-lanjut', icon: <FiTrendingUp size={17} />, label: 'Tindak Lanjut' },
-    { href: '/dashboard/admin#arsip-penanganan', icon: <FiArchive size={17} />, label: 'Arsip Penanganan' },
+    { href: '/dashboard/hukum/pengajuan-akun', icon: <FiInbox size={17} />, label: 'Pengajuan Akun' },
+    { href: '/dashboard/hukum/pendampingan', icon: <FiClipboard size={17} />, label: 'Kelola Pendampingan' },
+    { href: '/dashboard/hukum/tindak-lanjut', icon: <FiTrendingUp size={17} />, label: 'Tindak Lanjut' },
+    { href: '/dashboard/hukum/arsip-penanganan', icon: <FiArchive size={17} />, label: 'Arsip Penanganan' },
   ];
 
   const sidebarItems: SidebarItem[] = hukumOn ? sidebarItemsHukum : sidebarItemsDokumen;
 
   const hukumFeatures: HukumFeature[] = [
     { label: 'Pembuatan Akun Pegawai BNN', icon: <FiUserPlus size={17} />, href: '/dashboard/hukum/akun-pegawai', active: true },
-    { label: 'Kelola Pendampingan/Pengajuan', icon: <FiClipboard size={16} />, active: false },
-    { label: 'Tindak Lanjut Pendampingan', icon: <FiTrendingUp size={16} />, active: false },
-    { label: 'Arsip Penanganan', icon: <FiArchive size={16} />, active: false },
+    { label: 'Pengajuan Akun Pegawai', icon: <FiInbox size={16} />, href: '/dashboard/hukum/pengajuan-akun', active: true },
+    { label: 'Kelola Pendampingan/Pengajuan', icon: <FiClipboard size={16} />, href: '/dashboard/hukum/pendampingan', active: true },
+    { label: 'Tindak Lanjut Pendampingan', icon: <FiTrendingUp size={16} />, href: '/dashboard/hukum/tindak-lanjut', active: true },
+    { label: 'Arsip Penanganan', icon: <FiArchive size={16} />, href: '/dashboard/hukum/arsip-penanganan', active: true },
   ];
 
   return (
@@ -365,14 +409,31 @@ export default function AdminDashboard() {
 
       <div className="main-content-wrap" style={{ maxWidth: 1180, margin: '0 auto', padding: '1.4rem 1.5rem 0' }}>
         <nav style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14,
           background: 'rgba(240,231,213,0.75)',
           backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
           border: '1px solid rgba(30,58,95,0.1)',
-          borderRadius: 100, padding: '10px 14px',
+          borderRadius: 100, padding: '10px 14px 10px 20px',
           boxShadow: '0 10px 30px -18px rgba(30,58,95,0.3)',
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+          <form onSubmit={e => {
+            e.preventDefault();
+            if (quickSearch.trim()) window.location.href = `/dashboard/dokumen?cari=${encodeURIComponent(quickSearch.trim())}`;
+          }} style={{ position: 'relative', flex: 1, maxWidth: 420 }}>
+            <FiSearch size={14} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: 'rgba(30,58,95,0.4)' }} />
+            <input
+              value={quickSearch}
+              onChange={e => setQuickSearch(e.target.value)}
+              placeholder="Cari dokumen, mitra, atau kode..."
+              style={{
+                width: '100%', padding: '9px 14px 9px 36px', borderRadius: 100, border: '1px solid rgba(30,58,95,0.1)',
+                background: 'rgba(255,255,255,0.7)', fontSize: 12.5, fontFamily: FONT, color: INDIGO,
+                outline: 'none', boxSizing: 'border-box',
+              }}
+            />
+          </form>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 9px', background: 'rgba(30,58,95,0.04)', borderRadius: 100, border: '1px solid rgba(30,58,95,0.08)' }} title="Dokumen (aktif) / Modul Hukum">
               <div className="toggle-icon" style={{
                 width: 24, height: 24, borderRadius: '50%',
@@ -449,6 +510,47 @@ export default function AdminDashboard() {
               <p style={{ fontSize: 13.5, color: 'rgba(30,58,95,0.55)', lineHeight: 1.7, maxWidth: 480, margin: '0 0 32px' }}>
                 Kelola akun pegawai, pendampingan hukum, dan arsip penanganan dalam satu ruang kerja terpisah dari modul kerja sama MOU/PKS.
               </p>
+
+              {/* ── Statistik ringkas modul Hukum ── */}
+              {loadingHukumStats && !hukumStats ? (
+                <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 24 }}>Memuat statistik...</div>
+              ) : hukumStats ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 12, marginBottom: 28 }}>
+                  <div style={hukumStatCard}>
+                    <div style={hukumStatVal}>{hukumStats.totalPegawai}</div>
+                    <div style={hukumStatLbl}>Pegawai Terdaftar</div>
+                    {hukumStats.pegawaiPerLokasi.length > 0 && (
+                      <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {hukumStats.pegawaiPerLokasi.slice(0, 4).map(l => (
+                          <div key={l.lokasi} style={{ fontSize: 9.5, color: 'rgba(30,58,95,0.5)', display: 'flex', justifyContent: 'space-between' }}>
+                            <span>{l.lokasi}</span><span style={{ fontWeight: 700 }}>{l.jumlah}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div style={hukumStatCard}>
+                    <div style={{ ...hukumStatVal, color: '#B5813F' }}>{hukumStats.pengajuanMenunggu}</div>
+                    <div style={hukumStatLbl}>Pengajuan Menunggu</div>
+                  </div>
+                  <div style={hukumStatCard}>
+                    <div style={{ ...hukumStatVal, color: '#0a5c47' }}>{hukumStats.pengajuanDisetujui}</div>
+                    <div style={hukumStatLbl}>Akun Disetujui</div>
+                  </div>
+                  <div style={hukumStatCard}>
+                    <div style={{ ...hukumStatVal, color: '#A32D2D' }}>{hukumStats.pengajuanDitolak}</div>
+                    <div style={hukumStatLbl}>Akun Ditolak</div>
+                  </div>
+                  <div style={hukumStatCard}>
+                    <div style={{ ...hukumStatVal, color: '#1D4ED8' }}>{hukumStats.pendampinganAktif}</div>
+                    <div style={hukumStatLbl}>Pendampingan Aktif</div>
+                  </div>
+                  <div style={hukumStatCard}>
+                    <div style={{ ...hukumStatVal, color: '#0a5c47' }}>{hukumStats.pendampinganArsip}</div>
+                    <div style={hukumStatLbl}>Masuk Arsip</div>
+                  </div>
+                </div>
+              ) : null}
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 14 }}>
                 {hukumFeatures.map((item, i) => (
@@ -768,6 +870,10 @@ export default function AdminDashboard() {
 }
 
 const shell: React.CSSProperties = { background: 'rgba(255,255,255,0.55)', border: '1px solid rgba(30,58,95,0.07)', borderRadius: 24, padding: 7, boxShadow: '0 1px 2px rgba(30,58,95,0.04), 0 30px 60px -38px rgba(30,58,95,0.18)' };
+
+const hukumStatCard: React.CSSProperties = { background: 'rgba(30,58,95,0.03)', border: '1px solid rgba(30,58,95,0.07)', borderRadius: 16, padding: '14px 16px' };
+const hukumStatVal: React.CSSProperties = { fontSize: 24, fontWeight: 800, color: '#1E3A5F', letterSpacing: '-0.02em', lineHeight: 1 };
+const hukumStatLbl: React.CSSProperties = { fontSize: 10.5, color: 'rgba(30,58,95,0.55)', fontWeight: 600, marginTop: 4 };
 const core: React.CSSProperties = { background: '#fff', borderRadius: 18, boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.9)' };
 const shellSm: React.CSSProperties = { ...shell, borderRadius: 20, padding: 6 };
 const coreSm: React.CSSProperties = { ...core, borderRadius: 15 };

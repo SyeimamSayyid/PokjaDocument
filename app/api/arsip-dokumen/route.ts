@@ -6,13 +6,46 @@ import { requireSession } from '@/lib/auth';
 
 const SHEET = 'Arsip Dokumen';
 
-// Kolom Arsip Dokumen (0-based, 17 kolom)
+// Kolom Arsip Dokumen (0-based, 19 kolom)
 const C = {
   ID: 0, NAMA: 1, JENIS: 2, JUDUL: 3, TGL_BERLAKU: 4, TGL_BERAKHIR: 5,
   FILE_ID: 6, FILE_URL: 7, NAMA_FILE: 8, PIC: 9, EMAIL: 10, WA: 11,
   CATATAN: 12, OLEH: 13, TGL_ARSIP: 14, STATUS_KS: 15, DIVISI: 16,
-  KOMENTAR_UTAMA: 17, // BARU — komentar BNN Utama, TERPISAH dari Catatan biasa (index 12)
+  KOMENTAR_UTAMA: 17, // komentar BNN Utama, TERPISAH dari Catatan biasa (index 12)
+  MENCURIGAKAN: 18, // BARU — "ya" kalau kena kriteria duplikat-kosong, kosong kalau normal
 };
+
+function normNamaDup(s: string): string {
+  return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+// ── Deteksi "duplikat kosong" — kriteria OBJEKTIF, bukan tebak-tebak teks:
+// institusi yang namanya MUNCUL LEBIH DARI SEKALI di arsip, DAN baris itu
+// bidang-nya kosong, DAN masa berakhir-nya kosong. Ini nunjukin baris hasil
+// input ulang/percobaan yang belum lengkap, bukan arsip resmi. Cuma DITANDAI,
+// tidak dihapus otomatis — admin yang putuskan lewat halaman Arsip Dokumen. ──
+function tandaiDuplikatKosong(rows: string[][]): Set<string> {
+  const hitungNama = new Map<string, number>();
+  rows.forEach(r => {
+    if (!r[C.ID]) return;
+    const nama = normNamaDup(String(r[C.NAMA] || ''));
+    if (!nama) return;
+    hitungNama.set(nama, (hitungNama.get(nama) || 0) + 1);
+  });
+
+  const idTerkena = new Set<string>();
+  rows.forEach(r => {
+    if (!r[C.ID]) return;
+    const nama = normNamaDup(String(r[C.NAMA] || ''));
+    const jumlahDuplikat = hitungNama.get(nama) || 0;
+    const bidangKosong = !String(r[C.DIVISI] || '').trim();
+    const berakhirKosong = !String(r[C.TGL_BERAKHIR] || '').trim() || String(r[C.TGL_BERAKHIR]).trim() === '-';
+    if (jumlahDuplikat > 1 && bidangKosong && berakhirKosong) {
+      idTerkena.add(String(r[C.ID]));
+    }
+  });
+  return idTerkena;
+}
 
 // Kolom Dokumen Kerja sama (0-based) — yang dipakai di sini saja
 const DOK_COL = {
@@ -35,6 +68,7 @@ interface ArsipItem {
   sumber: 'manual' | 'sistem';
   ttdTipe?: string; ttdTglFinal?: string; divisi?: string[];
   komentarUtama?: string;
+  mencurigakan?: boolean; // BARU — duplikat institusi + bidang kosong + masa berakhir kosong
 }
 
 // Resolve kontak PIC dari Pengajuan Mitra utk dokumen sistem (idMitra dulu, fallback nama)
@@ -69,6 +103,7 @@ export async function GET(req: NextRequest) {
     let dataManual: ArsipItem[] = [];
     try {
       const rows = await getSheetData(SHEET);
+      const barisMencurigakan = tandaiDuplikatKosong(rows);
       dataManual = rows
         .filter(r => r[C.ID])
         .map(r => ({
@@ -91,6 +126,7 @@ export async function GET(req: NextRequest) {
           komentarUtama:  String(r[C.KOMENTAR_UTAMA] || ''),
           sumber: 'manual' as const,
           divisi: String(r[C.DIVISI] || '').split(',').map(s => s.trim()).filter(Boolean),
+          mencurigakan: barisMencurigakan.has(String(r[C.ID])),
         }));
     } catch { dataManual = []; }
 

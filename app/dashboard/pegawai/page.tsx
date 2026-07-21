@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { FaBalanceScale, FaSignOutAlt } from 'react-icons/fa';
-import { FiClipboard, FiTrendingUp, FiArchive, FiMapPin } from 'react-icons/fi';
+import Sidebar, { SidebarItem } from '@/components/Sidebar';
+import { FiGrid, FiClipboard, FiTrendingUp, FiMapPin, FiArrowUpRight } from 'react-icons/fi';
+import { FaBalanceScale } from 'react-icons/fa';
 
-const INDIGO = '#00416A';
-const INDIGO_DEEP = '#002E4D';
-const EGGSHELL = '#F0EAD6';
+const INDIGO = '#1E3A5F';
+const CREAM = '#FAF8F0';
+const GOLD = '#B5813F';
 const FONT = "'Plus Jakarta Sans', -apple-system, sans-serif";
 
 interface PegawaiUser {
@@ -34,132 +35,90 @@ export default function DashboardPegawaiPage() {
 
   if (!user) return null;
 
+  // Sidebar pegawai — cuma yang relevan: Dashboard, Pendampingan/Pengajuan,
+  // dan Tindak Lanjut (BACA SAJA — pegawai boleh tau progres lengkap kasusnya,
+  // tapi TIDAK boleh menambah catatan; itu wewenang admin). TIDAK ADA Arsip —
+  // itu murni internal admin (Arsip Penanganan lintas semua kasus).
+  const sidebarItems: SidebarItem[] = [
+    { href: '/dashboard/pegawai', icon: <FiGrid size={17} />, label: 'Dashboard' },
+    { href: '/dashboard/pegawai/pendampingan', icon: <FiClipboard size={17} />, label: 'Pendampingan / Pengajuan' },
+    { href: '/dashboard/pegawai/tindak-lanjut', icon: <FiTrendingUp size={17} />, label: 'Tindak Lanjut' },
+  ];
+
+  const cards = [
+    { icon: <FiClipboard size={19} />, label: 'Pendampingan / Pengajuan', href: '/dashboard/pegawai/pendampingan', desc: 'Ajukan permohonan & lihat riwayat pengajuan Anda', active: true },
+    { icon: <FiTrendingUp size={19} />, label: 'Tindak Lanjut', href: '/dashboard/pegawai/tindak-lanjut', desc: 'Lihat progres lengkap penanganan kasus Anda', active: true },
+  ];
+
   return (
-    <div style={{ minHeight: '100vh', background: EGGSHELL, fontFamily: FONT }}>
+    <div style={{ minHeight: '100dvh', background: 'radial-gradient(1100px 520px at 85% -8%, rgba(30,58,95,0.05) 0%, rgba(30,58,95,0) 55%), linear-gradient(180deg,#FCFAF4,#F5F1E8)', fontFamily: FONT }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
-        @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); filter: blur(6px); } to { opacity: 1; transform: none; filter: blur(0); } }
-        @keyframes floatSlow { 0%, 100% { transform: translateY(0) rotate(var(--rot, 0deg)); } 50% { transform: translateY(-8px) rotate(var(--rot, 0deg)); } }
-        .fld { animation: fadeUp 0.7s cubic-bezier(0.32,0.72,0,1) both; }
-        .cascade-card { transition: all 0.5s cubic-bezier(0.32,0.72,0,1); animation: floatSlow 6s ease-in-out infinite; }
-        .cascade-card:hover { transform: translateY(-5px) rotate(0deg) !important; }
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); filter: blur(4px); } to { opacity: 1; transform: none; filter: blur(0); } }
+        .fld { animation: fadeUp 0.6s cubic-bezier(0.32,0.72,0,1) both; }
+        .card-hover { transition: all 0.4s cubic-bezier(0.32,0.72,0,1); }
+        .card-hover:hover { transform: translateY(-4px); box-shadow: 0 30px 60px -30px rgba(30,58,95,0.3) !important; }
         .btn-hover { transition: all 0.3s cubic-bezier(0.32,0.72,0,1); }
-        .btn-hover:hover { transform: translateY(-2px); }
-        @media (max-width: 768px) {
-          .cascade-card { animation: none !important; transform: none !important; }
+        .btn-hover:hover { transform: translateY(-1px); }
+        @media (min-width: 901px) {
+          .main-content-wrap { margin-left: 236px !important; width: calc(100% - 236px) !important; box-sizing: border-box !important; }
         }
       `}</style>
 
-      {/* ── Hero — Indigo Dye ── */}
-      <div style={{
-        position: 'relative',
-        background: `linear-gradient(160deg, ${INDIGO} 0%, ${INDIGO_DEEP} 100%)`,
-        paddingBottom: 90,
-      }}>
-        <nav style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '1.2rem 2rem', maxWidth: 900, margin: '0 auto',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: EGGSHELL, fontWeight: 800, fontSize: 14 }}>
-            <FaBalanceScale size={17} />
-            Pokja Hukum
-          </div>
-          <button onClick={handleLogout} className="btn-hover" style={{
-            display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, fontWeight: 600, color: EGGSHELL,
-            background: 'rgba(240,234,214,0.1)', border: '1px solid rgba(240,234,214,0.2)',
-            borderRadius: 100, padding: '9px 18px', cursor: 'pointer', fontFamily: FONT,
-          }}>
-            <FaSignOutAlt size={12} /> Keluar
-          </button>
-        </nav>
+      <Sidebar
+        items={sidebarItems}
+        activeHref="/dashboard/pegawai"
+        brandLabel="SI-POKJA HUMKER"
+        brandSub="Modul Penegak Hukum"
+        navSectionTitle="Menu"
+        userName={`Pegawai ${user.nip}`}
+        userTag={user.lokasi || 'Pegawai BNN'}
+        accent="#2C5580"
+        onLogout={handleLogout}
+      />
 
-        <div style={{
-          maxWidth: 640, margin: '0 auto', padding: '3rem 2rem 0',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center',
-        }}>
-          <div style={{
-            display: 'inline-block', fontSize: 10, color: EGGSHELL, textTransform: 'uppercase',
-            letterSpacing: '0.26em', fontWeight: 700, background: 'rgba(240,234,214,0.12)',
-            padding: '7px 18px', borderRadius: 100, marginBottom: 26,
-          }} className="fld">
+      <div className="main-content-wrap" style={{ maxWidth: 820, margin: '0 auto', padding: '2rem 1.5rem 4rem' }}>
+        <div style={{ marginBottom: 28 }} className="fld">
+          <span style={{ fontSize: 9.5, color: INDIGO, textTransform: 'uppercase', letterSpacing: '0.22em', fontWeight: 700, background: 'rgba(30,58,95,0.08)', padding: '6px 14px', borderRadius: 100 }}>
             Modul Penegak Hukum
-          </div>
-
-          <h1 style={{
-            fontSize: 42, fontWeight: 900, color: EGGSHELL, margin: '0 0 14px',
-            letterSpacing: '-0.03em', lineHeight: 1.05,
-          }} className="fld">
-            Selamat datang,<br />{user.nip}
+          </span>
+          <h1 style={{ fontSize: 30, fontWeight: 800, color: INDIGO, letterSpacing: '-0.03em', margin: '12px 0 6px' }}>
+            Selamat datang, {user.nip}
           </h1>
-          <p style={{ fontSize: 14.5, color: 'rgba(240,234,214,0.65)', margin: '0 0 18px', maxWidth: 420, lineHeight: 1.7 }} className="fld">
-            ke dalam sistem Pengajuan/Pendampingan Hukum Pokja
+          <p style={{ fontSize: 13, color: 'rgba(30,58,95,0.55)', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+            {user.lokasi ? (<><FiMapPin size={13} /> {user.lokasi}</>) : 'Sistem Pengajuan/Pendampingan Hukum Pokja'}
           </p>
-          {user.lokasi ? (
-            <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: 8,
-              fontSize: 12, color: EGGSHELL, background: 'rgba(240,234,214,0.1)',
-              padding: '8px 18px', borderRadius: 100, border: '1px solid rgba(240,234,214,0.18)',
-              fontWeight: 600,
-            }} className="fld">
-              <FiMapPin size={12} /> {user.lokasi}
-            </div>
-          ) : null}
         </div>
 
-        {/* Transisi lengkung ke eggshell */}
-        <svg
-          viewBox="0 0 1440 90"
-          preserveAspectRatio="none"
-          style={{ position: 'absolute', bottom: -1, left: 0, width: '100%', height: 90, display: 'block' }}
-        >
-          <path d="M0,90 C360,10 1080,10 1440,90 L1440,90 L0,90 Z" fill={EGGSHELL} />
-        </svg>
-      </div>
-
-      {/* ── Konten — Eggshell ── */}
-      <div style={{ maxWidth: 900, margin: '0 auto', padding: '2rem 2rem 6rem' }}>
-
-        <div style={{
-          textAlign: 'center', fontSize: 12.5, fontWeight: 700, color: INDIGO,
-          textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 28,
-        }} className="fld">
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'rgba(30,58,95,0.5)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }} className="fld">
           Silakan pilih apa yang ingin Anda lakukan
         </div>
 
-        <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', justifyContent: 'center' }}>
-          {[
-            { icon: <FiClipboard size={19} />, label: 'Pendampingan / Pengajuan', rot: -3 },
-            { icon: <FiTrendingUp size={19} />, label: 'Tindak Lanjut', rot: 2 },
-            { icon: <FiArchive size={19} />, label: 'Arsip Penanganan', rot: -1.5 },
-          ].map((c, i) => (
-            <div
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 16 }}>
+          {cards.map((c, i) => (
+            <a
               key={c.label}
-              className="cascade-card fld"
+              href={c.href}
+              className="card-hover fld"
               style={{
-                ['--rot' as any]: `${c.rot}deg`,
-                transform: `rotate(${c.rot}deg)`,
-                animationDelay: `${0.15 + i * 0.1}s`,
-                width: 196, padding: '1.8rem 1.4rem', borderRadius: 24,
-                background: '#fff',
-                border: '1px solid rgba(0,65,106,0.08)',
-                boxShadow: '0 30px 60px -40px rgba(0,65,106,0.35)',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
+                animationDelay: `${0.1 + i * 0.08}s`,
+                display: 'block', textDecoration: 'none', padding: '1.6rem 1.5rem', borderRadius: 22,
+                background: '#fff', border: '1px solid rgba(30,58,95,0.07)',
+                boxShadow: '0 20px 45px -30px rgba(30,58,95,0.25)', position: 'relative',
               }}
             >
-              <div style={{
-                width: 46, height: 46, borderRadius: 14, background: 'rgba(0,65,106,0.06)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', color: INDIGO,
-              }}>
+              <FiArrowUpRight size={16} style={{ position: 'absolute', top: 20, right: 20, color: GOLD }} />
+              <div style={{ width: 46, height: 46, borderRadius: 14, background: 'rgba(30,58,95,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: INDIGO, marginBottom: 14 }}>
                 {c.icon}
               </div>
-              <div style={{ fontSize: 12.5, fontWeight: 700, color: INDIGO, textAlign: 'center', lineHeight: 1.4 }}>{c.label}</div>
-              <div style={{ fontSize: 9, fontWeight: 700, color: '#B5813F', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Segera Hadir</div>
-            </div>
+              <div style={{ fontSize: 14.5, fontWeight: 700, color: INDIGO, marginBottom: 4 }}>{c.label}</div>
+              <div style={{ fontSize: 12, color: 'rgba(30,58,95,0.55)', lineHeight: 1.5 }}>{c.desc}</div>
+            </a>
           ))}
         </div>
 
-        <p style={{ fontSize: 11.5, color: 'rgba(0,65,106,0.4)', marginTop: 48, textAlign: 'center' }} className="fld">
-          Modul ini sedang dalam tahap pengembangan bertahap.
+        <p style={{ fontSize: 11.5, color: 'rgba(30,58,95,0.35)', marginTop: 40, textAlign: 'center' }} className="fld">
+          Fitur lain sedang dalam tahap pengembangan bertahap.
         </p>
       </div>
     </div>

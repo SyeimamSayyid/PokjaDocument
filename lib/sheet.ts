@@ -292,3 +292,37 @@ export async function deleteRow(sheetName: string, rowIndex: number): Promise<vo
     },
   });
 }
+
+// ── BATCH REPLACE — ganti SELURUH isi sebuah sheet (dari baris 2, sisakan
+// header baris 1) dalam CUMA 2 panggilan API (1x clear + 1x write banyak
+// baris sekaligus), bukan 1 panggilan per sel/baris seperti updateCell/
+// appendRow. Dipakai buat kasus "replace semua data" seperti import Excel —
+// appendRow/updateCell yang dipanggil ratusan kali itu LAMBAT (bisa menitan)
+// dan berisiko timeout, sementara ini cuma butuh 1-2 detik. ──────────────
+export async function replaceSheetData(sheetName: string, values: unknown[][]): Promise<void> {
+  try {
+    const auth = getAuth();
+    const sheets = google.sheets({ version: 'v4', auth });
+
+    // Kosongkan dulu semua data lama (baris 2 ke bawah, sisakan header).
+    // Range dibuat cukup lebar (A:Z) dan panjang (sampai baris 20000) biar
+    // aman menampung sisa data lama walau lebih banyak dari data baru.
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      range: `${sheetName}!A2:Z20000`,
+    });
+
+    if (values.length === 0) return;
+
+    // Tulis SEMUA baris baru sekaligus — 1 panggilan API, bukan looping.
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      range: `${sheetName}!A2`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values },
+    });
+  } catch (error) {
+    console.error(`Error replacing data in ${sheetName}:`, error);
+    throw error;
+  }
+}

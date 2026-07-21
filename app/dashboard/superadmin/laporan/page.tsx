@@ -1,18 +1,21 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Sidebar, { SidebarItem } from '@/components/Sidebar';
 import {
-  FiArrowLeft, FiFileText, FiEdit2, FiSave, FiX,
+  FiFileText, FiEdit2, FiSave, FiX,
   FiCalendar, FiInbox, FiEye,
+  FiGrid, FiInbox as FiInboxNav, FiKey, FiFolder, FiActivity,
+  FiUsers, FiList, FiArchive, FiShield,
 } from 'react-icons/fi';
 import { FaFilePdf, FaFileWord } from 'react-icons/fa';
 
 const FONT = "'Plus Jakarta Sans', -apple-system, sans-serif";
-const INDIGO = '#212842';
-const CREAM = '#F0E7D5';
+const INDIGO = '#1E3A5F';
+const CREAM = '#FAF8F0';
 
 interface BaristData {
-  no: number; tglBerlaku: string; jenis: string; instansi: string; judul: string;
+  no: number; sumber: 'Sistem' | 'Arsip'; tglBerlaku: string; jenis: string; instansi: string; judul: string;
   namaPIC: string; noPIC: string; emailPIC: string;
   bidang: { pemberantasan: boolean; rehabilitasi: boolean; pencegahan: boolean; pemberdayaan: boolean };
   durasi: string; tglBerakhir: string;
@@ -21,9 +24,14 @@ interface BaristData {
 export default function LaporanKerjasamaPage() {
   const now = new Date();
   const [tahun, setTahun] = useState(now.getFullYear());
+  const [sumberFilter, setSumberFilter] = useState<'semua' | 'sistem' | 'arsip'>('semua');
   const [data, setData] = useState<BaristData[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const [namaAdmin, setNamaAdmin] = useState('Admin');
+  const [level, setLevel] = useState<'utama' | 'bnnp_bnnk' | ''>('');
+  const [checking, setChecking] = useState(true);
 
   const [namaKepala, setNamaKepala] = useState('');
   const [pangkat, setPangkat] = useState('');
@@ -34,21 +42,48 @@ export default function LaporanKerjasamaPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
 
   useEffect(() => {
-    const raw = localStorage.getItem('paktasign_user');
-    if (!raw) { window.location.href = '/login'; return; }
-    const u = JSON.parse(raw);
-    if (u.role !== 'superadmin') { window.location.href = '/login'; return; }
+    fetch('/api/auth/me')
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(u => {
+        if (!['admin', 'superadmin'].includes(u.role)) { window.location.href = '/login'; return; }
+        // Laporan resmi ini khusus urusan BNNP/BNNK (tanda tangan Kepala BNNP)
+        // — BNN Utama punya struktur laporan sendiri, jadi tidak relevan di sini.
+        if (u.level === 'utama') { window.location.href = '/dashboard/bnn-utama'; return; }
+        setNamaAdmin(u.nama || u.email || 'Admin');
+        setLevel(u.level === 'utama' ? 'utama' : 'bnnp_bnnk');
+        setChecking(false);
 
-    fetch('/api/superadmin/laporan/pengaturan')
-      .then(r => r.json())
-      .then(d => { setNamaKepala(d.namaKepala || ''); setPangkat(d.pangkat || ''); })
-      .catch(() => {});
+        fetch('/api/superadmin/laporan/pengaturan')
+          .then(r => r.json())
+          .then(d => { setNamaKepala(d.namaKepala || ''); setPangkat(d.pangkat || ''); })
+          .catch(() => {});
+      })
+      .catch(() => { window.location.href = '/login'; });
   }, []);
+
+  const sidebarItems: SidebarItem[] = [
+    { href: '/dashboard/admin', icon: <FiGrid size={17} />, label: 'Dashboard' },
+    { href: '/dashboard/rencana', icon: <FiCalendar size={17} />, label: 'E-Planning' },
+    { href: '/dashboard/pengajuan', icon: <FiInboxNav size={17} />, label: 'Kelola Pengajuan' },
+    { href: '/dashboard/superadmin/generate-kode', icon: <FiKey size={17} />, label: 'Generate Kode' },
+    { href: '/dashboard/dokumen', icon: <FiFolder size={17} />, label: 'Daftar Dokumen' },
+    { href: '/dashboard/kelola-kegiatan', icon: <FiActivity size={17} />, label: 'Kelola Kegiatan' },
+    { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
+    { href: '/dashboard/dokumen/extract-poin', icon: <FiList size={17} />, label: 'Extract Poin Publik' },
+    { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
+    { href: '/dashboard/superadmin/laporan', icon: <FiFileText size={17} />, label: 'Laporan' },
+    { href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Kelola Admin' },
+  ];
+
+  const logout = async () => {
+    try { await fetch('/api/auth/logout', { method: 'POST' }); } catch {}
+    window.location.href = '/login';
+  };
 
   const tampilkan = async () => {
     setLoading(true); setError(''); setData(null);
     try {
-      const res = await fetch(`/api/superadmin/laporan/kerjasama?tahun=${tahun}`);
+      const res = await fetch(`/api/superadmin/laporan/kerjasama?tahun=${tahun}&sumber=${sumberFilter}`);
       const d = await res.json();
       if (!res.ok) { setError(d.message || 'Gagal memuat laporan.'); return; }
       setData(d.data || []);
@@ -63,12 +98,10 @@ export default function LaporanKerjasamaPage() {
     if (!namaKepala.trim() || !pangkat.trim()) { setError('Nama dan pangkat Kepala wajib diisi.'); return; }
     setSavingPengaturan(true); setError('');
     try {
-      const raw = localStorage.getItem('paktasign_user');
-      const u = raw ? JSON.parse(raw) : null;
       const res = await fetch('/api/superadmin/laporan/pengaturan', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ namaKepala: namaKepala.trim(), pangkat: pangkat.trim(), diubahOleh: u?.nama || '' }),
+        body: JSON.stringify({ namaKepala: namaKepala.trim(), pangkat: pangkat.trim(), diubahOleh: namaAdmin }),
       });
       const d = await res.json();
       if (!res.ok) { setError(d.message || 'Gagal menyimpan.'); return; }
@@ -81,13 +114,13 @@ export default function LaporanKerjasamaPage() {
   };
 
   const download = (format: 'docx' | 'pdf') => {
-    window.location.href = `/api/superadmin/laporan/kerjasama/download?tahun=${tahun}&format=${format}`;
+    window.location.href = `/api/superadmin/laporan/kerjasama/download?tahun=${tahun}&format=${format}&sumber=${sumberFilter}`;
   };
 
   const bukaPreview = async () => {
     setPreviewLoading(true); setError('');
     try {
-      const res = await fetch(`/api/superadmin/laporan/kerjasama/download?tahun=${tahun}&format=pdf&mode=inline`);
+      const res = await fetch(`/api/superadmin/laporan/kerjasama/download?tahun=${tahun}&format=pdf&mode=inline&sumber=${sumberFilter}`);
       if (!res.ok) { setError('Gagal membuat preview.'); return; }
       const blob = await res.blob();
       setPreviewUrl(URL.createObjectURL(blob));
@@ -103,8 +136,16 @@ export default function LaporanKerjasamaPage() {
     setPreviewUrl('');
   };
 
+  if (checking) return (
+    <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(180deg,#FCFAF4,#F5F1E8)', fontFamily: FONT, color: '#64748b', gap: 16 }}>
+      <div style={{ width: 40, height: 40, border: '3px solid rgba(30,58,95,0.1)', borderTop: `3px solid ${INDIGO}`, borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+      <div style={{ fontSize: 13 }}>Memuat laporan...</div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+
   return (
-    <div style={{ minHeight: '100dvh', fontFamily: FONT, background: 'radial-gradient(1100px 520px at 85% -8%, rgba(33,40,66,0.05) 0%, rgba(33,40,66,0) 55%), linear-gradient(180deg,#F3ECDD,#EDE4D0)' }}>
+    <div style={{ minHeight: '100dvh', fontFamily: FONT, background: 'radial-gradient(1100px 520px at 85% -8%, rgba(30,58,95,0.05) 0%, rgba(30,58,95,0) 55%), linear-gradient(180deg,#FCFAF4,#F5F1E8)' }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
         @keyframes fadeUp { from { opacity:0; transform:translateY(16px); filter:blur(4px); } to { opacity:1; transform:none; filter:blur(0); } }
@@ -112,25 +153,35 @@ export default function LaporanKerjasamaPage() {
         .btn-hover { transition: all 0.3s cubic-bezier(0.32,0.72,0,1); }
         .btn-hover:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.05); }
         .btn-hover:active:not(:disabled) { transform: scale(0.97); }
-        input::placeholder { color: rgba(33,40,66,0.3); }
+        input::placeholder { color: rgba(30,58,95,0.3); }
+        @media (min-width: 901px) {
+          .main-content-wrap { margin-left: 236px !important; width: calc(100% - 236px) !important; box-sizing: border-box !important; }
+        }
       `}</style>
 
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '1.4rem 1.5rem 0' }}>
+      <Sidebar
+        items={sidebarItems}
+        activeHref="/dashboard/superadmin/laporan"
+        brandLabel="SI-POKJA HUMKER"
+        brandSub="Admin BNNP/BNNK"
+        userName={namaAdmin}
+        userTag="Admin BNNP/BNNK"
+        accent="#B5813F"
+        onLogout={logout}
+      />
+
+      <div className="main-content-wrap" style={{ maxWidth: 1100, margin: '0 auto', padding: '1.4rem 1.5rem 0' }}>
         <nav style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          background: 'rgba(240,231,213,0.75)', backdropFilter: 'blur(12px)',
-          border: '1px solid rgba(33,40,66,0.1)', borderRadius: 100, padding: '10px 14px 10px 18px',
-          boxShadow: '0 10px 30px -18px rgba(33,40,66,0.3)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(250,248,240,0.75)', backdropFilter: 'blur(12px)',
+          border: '1px solid rgba(30,58,95,0.1)', borderRadius: 100, padding: '10px 14px',
+          boxShadow: '0 10px 30px -18px rgba(30,58,95,0.3)',
         }} className="rise">
-          <a href="/dashboard/superadmin" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: INDIGO, textDecoration: 'none', fontWeight: 600 }}>
-            <FiArrowLeft size={13} /> Dashboard
-          </a>
           <div style={{ fontWeight: 800, fontSize: 14, color: INDIGO }}>Laporan Data Arsip Kerja Sama</div>
-          <div style={{ width: 90 }} />
         </nav>
       </div>
 
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '1.4rem 1.5rem 3rem' }}>
+      <div className="main-content-wrap" style={{ maxWidth: 1100, margin: '0 auto', padding: '1.4rem 1.5rem 3rem' }}>
 
         {error && <div style={{ ...msgBox('#A32D2D', '#FCEBEB'), marginBottom: 16 }} className="rise">{error}</div>}
 
@@ -148,7 +199,7 @@ export default function LaporanKerjasamaPage() {
 
             {editPengaturan ? (
               <>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
                   <div style={{ flex: 1, minWidth: 200 }}>
                     <label style={fieldLabel}>Nama Kepala</label>
                     <input style={fieldInput} value={namaKepala} onChange={e => setNamaKepala(e.target.value)} placeholder="Drs. Nama Kepala" />
@@ -168,17 +219,17 @@ export default function LaporanKerjasamaPage() {
                 </div>
               </>
             ) : (
-              <div style={{ fontSize: 12.5, color: 'rgba(33,40,66,0.6)' }}>
-                {namaKepala || <span style={{ fontStyle: 'italic', color: 'rgba(33,40,66,0.35)' }}>Belum diisi</span>}
+              <div style={{ fontSize: 12.5, color: 'rgba(30,58,95,0.6)' }}>
+                {namaKepala || <span style={{ fontStyle: 'italic', color: 'rgba(30,58,95,0.35)' }}>Belum diisi</span>}
                 {pangkat && <span> — {pangkat}</span>}
               </div>
             )}
           </div>
         </div>
 
-        {/* Pilih tahun */}
+        {/* Pilih tahun + sumber */}
         <div style={{ ...shell, marginBottom: 16 }} className="rise">
-          <div style={{ ...core, padding: '1.2rem 1.4rem', display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div style={{ ...core, padding: '1.2rem 1.4rem', display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <div>
               <label style={fieldLabel}><FiCalendar size={11} style={{ marginRight: 4, verticalAlign: 'middle' }} />Tahun</label>
               <input
@@ -188,6 +239,31 @@ export default function LaporanKerjasamaPage() {
                 onChange={e => setTahun(parseInt(e.target.value) || now.getFullYear())}
               />
             </div>
+            <div>
+              <label style={fieldLabel}><FiArchive size={11} style={{ marginRight: 4, verticalAlign: 'middle' }} />Sumber Data</label>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {[
+                  { key: 'semua' as const, label: 'Semua' },
+                  { key: 'sistem' as const, label: 'Sistem' },
+                  { key: 'arsip' as const, label: 'Arsip' },
+                ].map(o => (
+                  <button
+                    key={o.key}
+                    onClick={() => setSumberFilter(o.key)}
+                    className="btn-hover"
+                    style={{
+                      ...btnGhostSm,
+                      background: sumberFilter === o.key ? INDIGO : 'rgba(30,58,95,0.03)',
+                      color: sumberFilter === o.key ? CREAM : INDIGO,
+                      borderColor: sumberFilter === o.key ? INDIGO : 'rgba(30,58,95,0.12)',
+                      fontWeight: sumberFilter === o.key ? 700 : 600,
+                    }}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <button onClick={tampilkan} disabled={loading} className="btn-hover" style={btnPrimarySm}>
               {loading ? 'Memuat...' : 'Tampilkan'}
             </button>
@@ -195,6 +271,20 @@ export default function LaporanKerjasamaPage() {
         </div>
 
         {data !== null && (
+          <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12, marginBottom: 16 }} className="rise">
+            {[
+              { lbl: 'Total Kerja Sama', val: data.length, bg: INDIGO },
+              { lbl: 'MOU', val: data.filter(d => d.jenis.toUpperCase() === 'MOU').length, bg: '#4A7FB5' },
+              { lbl: 'PKS', val: data.filter(d => d.jenis.toUpperCase() === 'PKS').length, bg: '#4A7FB5' },
+              { lbl: 'Dari Arsip', val: data.filter(d => d.sumber === 'Arsip').length, bg: '#8C5F27' },
+            ].map(c => (
+              <div key={c.lbl} style={{ background: c.bg, borderRadius: 16, padding: '14px 16px', textAlign: 'center' }}>
+                <div style={{ fontSize: 26, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>{c.val}</div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.85)', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: 2 }}>{c.lbl}</div>
+              </div>
+            ))}
+          </div>
           <div style={shell} className="rise">
             <div style={{ ...core, padding: '1.3rem 1.4rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
@@ -215,7 +305,7 @@ export default function LaporanKerjasamaPage() {
               </div>
 
               {data.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '2.5rem', color: 'rgba(33,40,66,0.4)' }}>
+                <div style={{ textAlign: 'center', padding: '2.5rem', color: 'rgba(30,58,95,0.4)' }}>
                   <FiInbox size={30} style={{ marginBottom: 8, opacity: 0.5 }} />
                   <div style={{ fontSize: 13, fontWeight: 600 }}>Data PKS/MOU saat itu tidak ditemukan</div>
                 </div>
@@ -224,7 +314,7 @@ export default function LaporanKerjasamaPage() {
                   <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse', minWidth: 900 }}>
                     <thead>
                       <tr>
-                        {['No', 'Tgl Berlaku', 'Jenis', 'Instansi', 'Judul', 'Nama PIC', 'Bidang', 'Durasi', 'Berakhir'].map(h => (
+                        {['No', 'Sumber', 'Tgl Berlaku', 'Jenis', 'Instansi', 'Judul', 'Nama PIC', 'Bidang', 'Durasi', 'Berakhir'].map(h => (
                           <th key={h} style={th}>{h}</th>
                         ))}
                       </tr>
@@ -238,8 +328,11 @@ export default function LaporanKerjasamaPage() {
                           d.bidang.pemberdayaan && 'Pemberdayaan',
                         ].filter(Boolean).join(', ');
                         return (
-                          <tr key={d.no} style={{ borderBottom: '1px solid rgba(33,40,66,0.06)' }}>
+                          <tr key={d.no} style={{ borderBottom: '1px solid rgba(30,58,95,0.06)' }}>
                             <td style={td}>{d.no}</td>
+                            <td style={td}>
+                              <span style={{ fontSize: 9.5, fontWeight: 700, padding: '2px 8px', borderRadius: 100, background: d.sumber === 'Arsip' ? '#F5EFE0' : '#EAF2FC', color: d.sumber === 'Arsip' ? '#8C5F27' : '#1D4ED8' }}>{d.sumber}</span>
+                            </td>
                             <td style={td}>{d.tglBerlaku}</td>
                             <td style={td}>{d.jenis}</td>
                             <td style={td}>{d.instansi}</td>
@@ -257,20 +350,21 @@ export default function LaporanKerjasamaPage() {
               )}
             </div>
           </div>
+          </>
         )}
       </div>
 
       {/* Modal Preview PDF */}
       {previewUrl && (
         <div onClick={tutupPreview} style={{
-          position: 'fixed', inset: 0, background: 'rgba(33,40,66,0.65)', backdropFilter: 'blur(6px)',
+          position: 'fixed', inset: 0, background: 'rgba(30,58,95,0.65)', backdropFilter: 'blur(6px)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: '2rem',
         }}>
           <div onClick={e => e.stopPropagation()} style={{
             background: '#fff', borderRadius: 20, width: '100%', maxWidth: 1000, height: '90vh',
-            display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 40px 90px -30px rgba(33,40,66,0.5)',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 40px 90px -30px rgba(30,58,95,0.5)',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', borderBottom: '1px solid rgba(33,40,66,0.08)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', borderBottom: '1px solid rgba(30,58,95,0.08)' }}>
               <div style={{ fontSize: 13, fontWeight: 800, color: INDIGO, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <FiEye size={14} /> Preview Laporan Tahun {tahun}
               </div>
@@ -286,13 +380,13 @@ export default function LaporanKerjasamaPage() {
   );
 }
 
-const shell: React.CSSProperties = { background: 'rgba(255,255,255,0.55)', border: '1px solid rgba(33,40,66,0.07)', borderRadius: 24, padding: 7, boxShadow: '0 1px 2px rgba(33,40,66,0.04), 0 30px 60px -38px rgba(33,40,66,0.18)' };
+const shell: React.CSSProperties = { background: 'rgba(255,255,255,0.55)', border: '1px solid rgba(30,58,95,0.07)', borderRadius: 24, padding: 7, boxShadow: '0 1px 2px rgba(30,58,95,0.04), 0 30px 60px -38px rgba(30,58,95,0.18)' };
 const core: React.CSSProperties = { background: '#fff', borderRadius: 18, boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.9)' };
 const fieldLabel: React.CSSProperties = { display: 'block', fontSize: 10.5, fontWeight: 700, color: INDIGO, marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.05em' };
-const fieldInput: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: 10, border: '1.5px solid rgba(33,40,66,0.1)', background: 'rgba(33,40,66,0.02)', fontSize: 12.5, fontFamily: FONT, outline: 'none', color: INDIGO, boxSizing: 'border-box' };
+const fieldInput: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: 10, border: '1.5px solid rgba(30,58,95,0.1)', background: 'rgba(30,58,95,0.02)', fontSize: 12.5, fontFamily: FONT, outline: 'none', color: INDIGO, boxSizing: 'border-box' };
 const btnPrimarySm: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 18px', borderRadius: 100, border: 'none', background: INDIGO, color: CREAM, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: FONT };
-const btnGhostSm: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 100, border: '1px solid rgba(33,40,66,0.12)', background: 'rgba(33,40,66,0.03)', color: INDIGO, fontSize: 11.5, fontWeight: 600, cursor: 'pointer', fontFamily: FONT };
+const btnGhostSm: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 100, border: '1px solid rgba(30,58,95,0.12)', background: 'rgba(30,58,95,0.03)', color: INDIGO, fontSize: 11.5, fontWeight: 600, cursor: 'pointer', fontFamily: FONT };
 const btnDownload: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 100, border: 'none', background: INDIGO, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: FONT };
-const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontWeight: 700, color: 'rgba(33,40,66,0.45)', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid rgba(33,40,66,0.1)' };
+const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontWeight: 700, color: 'rgba(30,58,95,0.45)', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid rgba(30,58,95,0.1)' };
 const td: React.CSSProperties = { padding: '8px 10px', color: INDIGO };
 const msgBox = (color: string, bg: string): React.CSSProperties => ({ fontSize: 12.5, color, background: bg, padding: '10px 14px', borderRadius: 10 });

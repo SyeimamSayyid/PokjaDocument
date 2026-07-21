@@ -5,7 +5,7 @@ import Sidebar, { SidebarItem } from '@/components/Sidebar';
 import {
   FiSearch, FiMail, FiPhone, FiCopy, FiCheck,
   FiMessageCircle, FiUsers, FiFilter, FiChevronDown, FiEdit2, FiX,
-  FiGrid, FiCalendar, FiInbox, FiKey, FiFolder, FiActivity,
+  FiGrid, FiCalendar, FiInbox, FiKey, FiFolder, FiActivity, FiFileText,
   FiList, FiArchive, FiShield,
 } from 'react-icons/fi';
 import { FaBuilding, FaGraduationCap, FaUserCheck } from 'react-icons/fa';
@@ -154,6 +154,7 @@ export default function KontakMitraPage() {
     { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
     { href: '/dashboard/dokumen/extract-poin', icon: <FiList size={17} />, label: 'Extract Poin Publik' },
     { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
+    { href: '/dashboard/superadmin/laporan', icon: <FiFileText size={17} />, label: 'Laporan' },
     { href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Kelola Admin' },
   ];
 
