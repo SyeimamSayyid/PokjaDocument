@@ -8,24 +8,28 @@ const BLUE  = '#C8D9E6';
 const INK   = '#1E293B';
 
 export default function LoginMitraPage() {
+  const [metode, setMetode]   = useState<'kode' | 'email'>('kode');
   const [kode, setKode]       = useState('');
+  const [email, setEmail]     = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!kode.trim()) return;
+    const isiKosong = metode === 'kode' ? !kode.trim() : !email.trim();
+    if (isiKosong) return;
 
     setLoading(true); setError('');
     try {
+      const body = metode === 'kode' ? { kode: kode.trim() } : { email: email.trim() };
       const res = await fetch('/api/auth/login-mitra', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kode: kode.trim() }),
+        body: JSON.stringify(body),
       });
       const d = await res.json();
 
-      if (!res.ok) { setError(d.message || 'Kode tidak valid.'); setLoading(false); return; }
+      if (!res.ok) { setError(d.message || 'Login gagal.'); setLoading(false); return; }
 
       // Cookie sesi (httpOnly, JWT) sudah di-set otomatis oleh server.
       // localStorage HANYA untuk kebutuhan tampilan di halaman mitra.
@@ -198,21 +202,58 @@ export default function LoginMitraPage() {
         <div className="auth-title">Akses Dokumen Mitra</div>
         <div className="auth-subtitle">SI-POKJA HUMKER</div>
 
-        <div className="auth-field" style={{ marginTop: 10 }}>
-          <input suppressHydrationWarning
-            type="text"
-            value={kode}
-            onChange={e => setKode(e.target.value.toUpperCase())}
-            maxLength={12}
-            required
-            autoFocus
-          />
-          <label>Kode Akses</label>
+        <div style={{ display: 'flex', gap: 4, marginTop: 14, background: 'rgba(30,41,59,0.06)', borderRadius: 100, padding: 3 }}>
+          {(['kode', 'email'] as const).map(m => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => { setMetode(m); setError(''); }}
+              style={{
+                flex: 1, padding: '7px 0', borderRadius: 100, border: 'none', cursor: 'pointer',
+                fontFamily: 'inherit', fontSize: 11, fontWeight: 700, letterSpacing: '0.02em',
+                background: metode === m ? INK : 'transparent',
+                color: metode === m ? '#fff' : 'rgba(30,41,59,0.55)',
+                transition: 'all 0.25s ease',
+              }}
+            >
+              {m === 'kode' ? 'Kode Akses' : 'Email'}
+            </button>
+          ))}
         </div>
+
+        {metode === 'kode' ? (
+          <div className="auth-field" style={{ marginTop: 10 }}>
+            <input suppressHydrationWarning
+              type="text"
+              value={kode}
+              onChange={e => setKode(e.target.value.toUpperCase())}
+              maxLength={12}
+              required
+              autoFocus
+            />
+            <label>Kode Akses</label>
+          </div>
+        ) : (
+          <div className="auth-field" style={{ marginTop: 10 }}>
+            <input suppressHydrationWarning
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              required
+              autoFocus
+            />
+            <label>Email Pengajuan</label>
+          </div>
+        )}
+        {metode === 'email' && (
+          <div style={{ fontSize: 10.5, color: 'rgba(30,41,59,0.45)', marginTop: 6, textAlign: 'center', lineHeight: 1.5 }}>
+            Pakai email yang sama waktu mengajukan kerja sama. Kalau institusi Anda punya beberapa dokumen, otomatis masuk ke yang paling baru.
+          </div>
+        )}
 
         {error && <div className="auth-error">{error}</div>}
 
-        <button className="auth-submit" type="submit" disabled={loading || !kode.trim()} suppressHydrationWarning>
+        <button className="auth-submit" type="submit" disabled={loading || (metode === 'kode' ? !kode.trim() : !email.trim())} suppressHydrationWarning>
           {loading && <span className="auth-spinner" />}
           {loading ? 'Memverifikasi' : 'Akses Dokumen Saya'}
         </button>
