@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'SI-POKJA HUMKER | Manajemen Data Hukum & Kerja Sama',
+  title: 'E-POKJA HUKER | Hubungan & Kerja Sama',
   description: 'Platform digital untuk mengelola MOU, MOA, dan dokumen kerja sama antar institusi',
 };
 

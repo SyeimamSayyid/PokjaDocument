@@ -8,13 +8,18 @@ const CREAM = '#F0E7D5';
 const ESPRESSO = '#6B4A32';
 const SUNBURST = '#F8C61E';
 const MIDNIGHT = '#252C37';
-const GOLD_UTAMA = '#B5813F'; // pensil BNN Utama — beda dari SUNBURST (khusus animasi TTD Basah)
+const BIRU_UTAMA = '#1D4ED8';  // pensil BNN Utama — biru, bentuk diamond
+const GOLD_BNNP = '#B5813F';   // pensil BNNP/BNNK — golden, bentuk lingkaran (seperti sebelumnya)
 const FONT = "'Plus Jakarta Sans', -apple-system, sans-serif";
 
 interface Props {
   /** Format dari server: "role|nama|waktu|level", mis. "admin|Admin1|2026-07-15 10:30:00|utama".
    *  Field 'level' opsional, cuma relevan kalau role === 'admin' ('utama' = BNN Utama, selain itu = BNNP/BNNK). */
   manualLog?: string;
+  /** Format SAMA seperti manualLog, tapi buat "siapa terakhir BUKA/AKSES" (bukan
+   *  edit) — bisa beda orang/waktu dari manualLog. Opsional, ditampilkan sebagai
+   *  baris tambahan di tooltip kalau ada dan berbeda dari manualLog. */
+  terakhirDiakses?: string;
   size?: number;
   /** true kalau mitra memilih TTD Basah dan masih menunggu dokumen fisik diterima admin */
   ttdBasahPending?: boolean;
@@ -40,7 +45,7 @@ function waktuRelatif(waktuStr: string): string {
 // Label nama/waktu muncul sebagai tooltip "position: absolute" yang MELAYANG
 // di atas konten lain (z-index tinggi) — jadi aman dipasang di tempat sempit
 // kayak sel tabel, tanpa mendorong/merusak elemen di sampingnya.
-export default function EditPencilIndicator({ manualLog, size = 26, ttdBasahPending = false }: Props) {
+export default function EditPencilIndicator({ manualLog, terakhirDiakses, size = 26, ttdBasahPending = false }: Props) {
   const [hover, setHover] = useState(false);
   if (!manualLog && !ttdBasahPending) return null;
 
@@ -49,13 +54,25 @@ export default function EditPencilIndicator({ manualLog, size = 26, ttdBasahPend
   const isMitra = role === 'mitra';
   const isUtama = isAdmin && level === 'utama';
 
-  const bg = ttdBasahPending ? undefined : (isUtama ? GOLD_UTAMA : isAdmin ? INDIGO : isMitra ? CREAM : '#CBD5E1');
+  const bg = ttdBasahPending ? undefined : (isUtama ? BIRU_UTAMA : isAdmin ? GOLD_BNNP : isMitra ? CREAM : '#CBD5E1');
   const iconColor = ttdBasahPending ? MIDNIGHT : (isAdmin ? CREAM : isMitra ? ESPRESSO : '#475569');
   const label = ttdBasahPending ? 'Menunggu TTD Basah' : (isUtama ? 'BNN Utama' : isAdmin ? 'BNNP/BNNK' : isMitra ? 'Mitra' : 'Tidak dikenali');
   const waktuLabel = waktu ? waktuRelatif(waktu) : '';
-  const teksTooltip = ttdBasahPending
+  const baris1 = ttdBasahPending
     ? 'Menunggu dokumen fisik TTD Basah diterima admin'
-    : `${nama || label} (${label})${waktuLabel ? ` · ${waktuLabel}` : ''}`;
+    : `Terakhir diedit: ${nama || label} (${label})${waktuLabel ? ` · ${waktuLabel}` : ''}`;
+
+  // Baris kedua (siapa terakhir BUKA/AKSES) — cuma ditampilkan kalau ADA dan
+  // BEDA dari info edit (biar tidak redundant kalau orang & waktunya sama).
+  const [roleAkses, namaAkses, waktuAkses, levelAkses] = terakhirDiakses ? terakhirDiakses.split('|') : ['', '', '', ''];
+  const sama = namaAkses === nama && waktuAkses === waktu;
+  let baris2 = '';
+  if (namaAkses && !sama && !ttdBasahPending) {
+    const labelAkses = roleAkses === 'admin' ? (levelAkses === 'utama' ? 'BNN Utama' : 'BNNP/BNNK') : roleAkses === 'mitra' ? 'Mitra' : 'Tidak dikenali';
+    const waktuAksesLabel = waktuAkses ? waktuRelatif(waktuAkses) : '';
+    baris2 = `Terakhir dibuka: ${namaAkses} (${labelAkses})${waktuAksesLabel ? ` · ${waktuAksesLabel}` : ''}`;
+  }
+  const teksTooltip = baris2 ? `${baris1}\n${baris2}` : baris1;
 
   return (
     <span
@@ -78,7 +95,7 @@ export default function EditPencilIndicator({ manualLog, size = 26, ttdBasahPend
         @keyframes pencilTooltipIn { from { opacity: 0; transform: translateX(-50%) translateY(3px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
       `}</style>
 
-      {/* Lingkaran dasar — ukuran TETAP, tidak pernah melebar */}
+      {/* Lingkaran dasar (atau diamond khusus BNN Utama) — ukuran TETAP, tidak pernah melebar */}
       <span
         className={ttdBasahPending ? 'pencil-ttd-pulse' : undefined}
         style={{
@@ -87,14 +104,14 @@ export default function EditPencilIndicator({ manualLog, size = 26, ttdBasahPend
           justifyContent: 'center',
           width: size,
           height: size,
-          borderRadius: '50%',
+          borderRadius: isUtama && !ttdBasahPending ? '22%' : '50%',
           flexShrink: 0,
           ...(bg ? { background: bg } : {}),
           border: ttdBasahPending ? 'none' : (isAdmin ? 'none' : '1px solid rgba(33,40,66,0.14)'),
           boxShadow: ttdBasahPending ? `0 2px 14px -2px ${SUNBURST}80` : '0 2px 10px -2px rgba(33,40,66,0.25)',
           cursor: 'default',
           transition: 'transform 0.3s cubic-bezier(0.32,0.72,0,1)',
-          transform: hover ? 'scale(1.08)' : 'scale(1)',
+          transform: `${isUtama && !ttdBasahPending ? 'rotate(45deg) ' : ''}${hover ? 'scale(1.08)' : 'scale(1)'}`,
         }}
       >
         <svg
@@ -103,7 +120,10 @@ export default function EditPencilIndicator({ manualLog, size = 26, ttdBasahPend
             width: size * 0.5,
             height: size * 0.5,
             flexShrink: 0,
-            transform: hover ? 'rotate(360deg)' : 'rotate(0deg)',
+            // Diamond BNN Utama diputar 45° di elemen luar — SVG icon di dalam
+            // dikembalikan tegak lurus (counter-rotate) biar pensilnya tidak
+            // ikut miring, tetap enak dilihat.
+            transform: `${isUtama && !ttdBasahPending ? 'rotate(-45deg) ' : ''}${hover ? 'rotate(360deg)' : 'rotate(0deg)'}`,
             transition: 'transform 0.4s cubic-bezier(0.32,0.72,0,1)',
           }}
         >
@@ -131,7 +151,8 @@ export default function EditPencilIndicator({ manualLog, size = 26, ttdBasahPend
             fontFamily: FONT,
             padding: '6px 10px',
             borderRadius: 8,
-            whiteSpace: 'nowrap',
+            whiteSpace: 'pre-line',
+            textAlign: 'left',
             boxShadow: '0 8px 20px -6px rgba(15,23,42,0.4)',
             zIndex: 9999,
             pointerEvents: 'none',

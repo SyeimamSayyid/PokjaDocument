@@ -1,10 +1,12 @@
 'use client';
 
 import { useState } from 'react';
+import ChatbotWidget from '@/components/ChatbotWidget';
 import {
   Search, Check, X, Clock, FileText, Building, Calendar, Send, Eye,
   CheckCircle, AlertCircle, ArrowRight, RefreshCw, FilePlus, Key,
   GraduationCap, FileCheck, FileX, Info, Lock, ExternalLink, Mail,
+  ArrowLeft,
 } from 'lucide-react';
 
 interface HasilCek {
@@ -70,6 +72,9 @@ export default function CekPengajuanPage() {
   return (
     <div style={pageStyle}>
       <GlobalStyle />
+      <a href="/" style={backHomeBtn} className="back-home-btn">
+        <ArrowLeft size={14} /> Kembali ke Beranda
+      </a>
       <div style={containerStyle} className="fld">
 
         <div style={{ textAlign:'center', marginBottom:26 }}>
@@ -248,6 +253,8 @@ export default function CekPengajuanPage() {
           </div>
         )}
       </div>
+
+      <ChatbotWidget tema="biru" sumberLabel="Cek Status Pengajuan" />
     </div>
   );
 }
@@ -261,12 +268,20 @@ function GlobalStyle() {
       .fld { animation: fadeUp 0.5s cubic-bezier(0.32,0.72,0,1) both; }
       .btn-hover { transition: all 0.3s cubic-bezier(0.32,0.72,0,1); }
       .btn-hover:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.05); }
+      .back-home-btn { transition: all 0.25s ease; }
+      .back-home-btn:hover { background: rgba(29,78,216,0.08); transform: translateY(-1px); }
     `}</style>
   );
 }
-
 const pageStyle: React.CSSProperties = { minHeight:'100vh', background:'linear-gradient(180deg,#f7f9fc,#eef2f8)', fontFamily: FONT, padding:'1.5rem', display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:'2.5rem' };
 const containerStyle: React.CSSProperties = { width:'100%', maxWidth:520, background:'#fff', borderRadius:24, padding:'1.9rem', border:'1px solid rgba(29,78,216,0.08)', boxShadow:'0 20px 60px -30px rgba(15,23,42,0.25)' };
+const backHomeBtn: React.CSSProperties = {
+  position:'fixed', top:20, left:20, zIndex:50,
+  display:'flex', alignItems:'center', gap:7,
+  background:'#fff', border:'1px solid rgba(29,78,216,0.12)', borderRadius:100,
+  padding:'9px 16px', color:'#334155', fontSize:12, fontWeight:600,
+  textDecoration:'none', fontFamily:FONT, boxShadow:'0 6px 18px -10px rgba(15,23,42,0.15)',
+};
 const shellStyle: React.CSSProperties = { background:'rgba(255,255,255,0.65)', border:'1px solid rgba(29,78,216,0.08)', borderRadius:17, padding:5 };
 const coreStyle: React.CSSProperties = { background:'#f8fafc', borderRadius:13 };
 const pillTag = (bg: string, color: string): React.CSSProperties => ({ fontSize:10, fontWeight:700, padding:'4px 12px', borderRadius:100, background:bg, color, display:'flex', alignItems:'center', gap:5 });

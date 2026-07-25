@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSheetData } from '@/lib/sheet';
+import { getSheetData, updateCell } from '@/lib/sheet';
 import { google } from 'googleapis';
 import { requireSession } from '@/lib/auth';
 
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_WEBAPP_URL!;
 
-const DOK_COL = { ID: 0, NAMA_MITRA: 4, TEMPLATE_MITRA: 19 };
+const DOK_COL = { ID: 0, JENIS: 1, NAMA_MITRA: 4, TEMPLATE_MITRA: 19, SUMBER_TEMPLATE_AKTIF: 35 };
 
 function getAuth() {
   return new google.auth.GoogleAuth({
@@ -17,9 +17,10 @@ function getAuth() {
   });
 }
 
-interface Kandidat { fileId: string; namaFile: string; fileUrl: string; namaInstansi: string; sumber: 'dashboard'; }
+interface Kandidat { fileId: string; namaFile: string; fileUrl: string; namaInstansi: string; sumber: 'dashboard' | 'resmi'; }
 
-// ── GET: satu-satunya sumber = upload mitra khusus untuk dokumen INI ──
+// ── GET: kandidat template — upload mitra untuk dokumen INI, DAN template
+// resmi BNN (MOU/PKS, dari env) sebagai opsi buat "kembali ke resmi". ──
 export async function GET(req: NextRequest) {
   const session = await requireSession(req, ['admin', 'superadmin']);
   if (!session) {
@@ -35,8 +36,17 @@ export async function GET(req: NextRequest) {
     const dok = dokRows.find(r => String(r[DOK_COL.ID] || '').trim() === idDokumen);
     if (!dok) return NextResponse.json({ message: 'Dokumen tidak ditemukan.' }, { status: 404 });
 
+    const jenisDok = String(dok[DOK_COL.JENIS] || '').trim().toUpperCase();
     const namaInstansiDok = String(dok[DOK_COL.NAMA_MITRA] || '').trim();
     const templateFileId  = String(dok[DOK_COL.TEMPLATE_MITRA] || '').trim();
+
+    // ID template resmi BNN — dari env, dipisah per jenis (MOU/PKS), SAMA
+    // dengan yang dipakai saat dokumen digenerate pertama kali. Cuma dikirim
+    // ID-nya ke response (bukan di-hardcode di frontend), biar env var tetap
+    // server-side only.
+    const templateResmiId = jenisDok === 'PKS'
+      ? process.env.GOOGLE_TEMPLATE_PKS_ID
+      : process.env.GOOGLE_TEMPLATE_MOU_ID;
 
     const kandidat: Kandidat[] = [];
 
@@ -53,13 +63,15 @@ export async function GET(req: NextRequest) {
       kandidat.push({ fileId: templateFileId, namaFile, fileUrl, namaInstansi: namaInstansiDok, sumber: 'dashboard' });
     }
 
-    return NextResponse.json({ data: kandidat });
+    return NextResponse.json({ data: kandidat, templateResmiId: templateResmiId || null });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }
 
-// ── POST: eksekusi ganti dokumen kerja ke template mitra ──────
+// ── POST: eksekusi ganti dokumen kerja ke template mitra ATAU kembali ke
+// template resmi BNN — sama-sama dikirim sebagai templateFileId, endpoint
+// & Apps Script action-nya sudah generic, tidak perlu dibedakan. ──────────
 export async function POST(req: NextRequest) {
   const session = await requireSession(req, ['admin', 'superadmin']);
   if (!session) {
@@ -82,6 +94,21 @@ export async function POST(req: NextRequest) {
     if (!d.success) {
       return NextResponse.json({ message: d.message || 'Gagal mengganti template.' }, { status: 400 });
     }
+
+    // Catat mana yang SEDANG dipakai sekarang ("resmi" atau "mitra") — dipakai
+    // frontend buat tentukan kartu mana yang tampil sebagai "aktif", biar
+    // tidak hardcode salah satu selalu terlihat aktif.
+    try {
+      const dokRows = await getSheetData('Dokumen Kerja sama');
+      const rowIdx = dokRows.findIndex(r => String(r[DOK_COL.ID] || '').trim() === idDokumen);
+      if (rowIdx !== -1) {
+        const jenisDok = String(dokRows[rowIdx][DOK_COL.JENIS] || '').trim().toUpperCase();
+        const idResmiSesuaiJenis = jenisDok === 'PKS' ? process.env.GOOGLE_TEMPLATE_PKS_ID : process.env.GOOGLE_TEMPLATE_MOU_ID;
+        const sumberBaru = templateFileId === idResmiSesuaiJenis ? 'resmi' : 'mitra';
+        await updateCell('Dokumen Kerja sama', rowIdx + 2, DOK_COL.SUMBER_TEMPLATE_AKTIF + 1, sumberBaru);
+      }
+    } catch (e) { console.error('[CATAT SUMBER TEMPLATE]', e); }
+
     return NextResponse.json({ docsId: d.docsId, docsUrl: d.docsUrl, message: d.message });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });

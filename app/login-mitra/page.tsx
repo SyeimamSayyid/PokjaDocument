@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { FaBuilding } from 'react-icons/fa';
+import { FiArrowLeft } from 'react-icons/fi';
 
 const CREAM = '#FBF9E4';
 const BLUE  = '#C8D9E6';
@@ -21,7 +22,9 @@ export default function LoginMitraPage() {
 
     setLoading(true); setError('');
     try {
-      const body = metode === 'kode' ? { kode: kode.trim() } : { email: email.trim() };
+      const body = metode === 'kode'
+        ? { kode: kode.trim() }
+        : { email: email.trim(), ...(kode.trim() ? { kode: kode.trim() } : {}) };
       const res = await fetch('/api/auth/login-mitra', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -43,7 +46,19 @@ export default function LoginMitraPage() {
 
   return (
     <div className="auth-page">
+      <a href="/" style={{
+        position: 'fixed', top: 20, left: 20, zIndex: 50,
+        display: 'flex', alignItems: 'center', gap: 7,
+        background: 'rgba(255,255,255,0.12)', backdropFilter: 'blur(8px)',
+        border: '1px solid rgba(255,255,255,0.18)', borderRadius: 100,
+        padding: '9px 16px', color: '#fff', fontSize: 12, fontWeight: 600,
+        textDecoration: 'none', fontFamily: 'inherit',
+      }} className="back-home-btn">
+        <FiArrowLeft size={14} /> Kembali ke Beranda
+      </a>
       <style>{`
+        .back-home-btn { transition: all 0.25s ease; }
+        .back-home-btn:hover { background: rgba(255,255,255,0.2); transform: translateY(-1px); }
         @keyframes glowDrift1 {
           0%, 100% { transform: translate(0, 0) scale(1); }
           33% { transform: translate(40px, -30px) scale(1.1); }
@@ -200,7 +215,7 @@ export default function LoginMitraPage() {
       <form className="auth-card" onSubmit={handleLogin} noValidate>
         <div className="auth-brand-icon"><FaBuilding size={26} /></div>
         <div className="auth-title">Akses Dokumen Mitra</div>
-        <div className="auth-subtitle">SI-POKJA HUMKER</div>
+        <div className="auth-subtitle">E-POKJA HUKER</div>
 
         <div style={{ display: 'flex', gap: 4, marginTop: 14, background: 'rgba(30,41,59,0.06)', borderRadius: 100, padding: 3 }}>
           {(['kode', 'email'] as const).map(m => (
@@ -234,20 +249,33 @@ export default function LoginMitraPage() {
             <label>Kode Akses</label>
           </div>
         ) : (
-          <div className="auth-field" style={{ marginTop: 10 }}>
-            <input suppressHydrationWarning
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              required
-              autoFocus
-            />
-            <label>Email Pengajuan</label>
-          </div>
+          <>
+            <div className="auth-field" style={{ marginTop: 10 }}>
+              <input suppressHydrationWarning
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                required
+                autoFocus
+              />
+              <label>Email Pengajuan</label>
+            </div>
+            <div className="auth-field" style={{ marginTop: 10 }}>
+              <input suppressHydrationWarning
+                type="text"
+                value={kode}
+                onChange={e => setKode(e.target.value.toUpperCase())}
+                maxLength={12}
+              />
+              <label>Kode Akses (opsional)</label>
+            </div>
+          </>
         )}
         {metode === 'email' && (
           <div style={{ fontSize: 10.5, color: 'rgba(30,41,59,0.45)', marginTop: 6, textAlign: 'center', lineHeight: 1.5 }}>
-            Pakai email yang sama waktu mengajukan kerja sama. Kalau institusi Anda punya beberapa dokumen, otomatis masuk ke yang paling baru.
+            {kode.trim()
+              ? 'Email + kode akan dicocokkan bersamaan — pastikan keduanya milik institusi yang sama.'
+              : 'Institusi punya beberapa dokumen (MOU/PKS)? Isi juga kode akses dokumen yang ingin diakses, biar tidak salah masuk ke dokumen lain. Kalau kode dikosongkan, otomatis masuk ke yang paling baru dibuat.'}
           </div>
         )}
 

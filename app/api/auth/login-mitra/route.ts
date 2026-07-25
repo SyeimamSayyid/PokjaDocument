@@ -58,7 +58,53 @@ export async function POST(req: NextRequest) {
   try {
     const { kode, email } = await req.json();
 
-    // ── Login via EMAIL — opsi tambahan buat kasus kode akses tidak mau
+    // ── Login via EMAIL + KODE AKSES (gabungan) — buat institusi yang punya
+    // BEBERAPA dokumen (misal 7 MOU/PKS berbeda). Kode menentukan dokumen
+    // SPESIFIK mana yang diakses (tidak auto-pilih terbaru lagi), email jadi
+    // verifikasi tambahan memastikan mitra memang dari institusi pemilik
+    // kode itu — jadi tidak keliru/nyasar ke dokumen institusi lain. ──
+    if (email?.trim() && kode?.trim()) {
+      const emailBersih = String(email).trim().toLowerCase();
+      const kodeBersih = String(kode).trim().toUpperCase();
+
+      const rows = await getSheetData('Dokumen Kerja sama');
+      const idx = rows.findIndex(r => String(r[COL.KODE]).trim().toUpperCase() === kodeBersih);
+      if (idx === -1) {
+        return NextResponse.json({ message: 'Kode akses tidak ditemukan.' }, { status: 404 });
+      }
+
+      const row = rows[idx];
+      const namaMitraRow = String(row[COL.NAMA_MITRA]);
+
+      const pjRows = await getSheetData('Pengajuan Mitra');
+      const emailCocokInstitusi = pjRows.some(r =>
+        String(r[PJ_COL.EMAIL] || '').trim().toLowerCase() === emailBersih &&
+        normNama(r[PJ_COL.NAMA]) === normNama(namaMitraRow)
+      );
+      if (!emailCocokInstitusi) {
+        return NextResponse.json({
+          message: 'Email tidak sesuai dengan institusi pemilik kode akses ini. Periksa kembali email dan kode yang Anda masukkan.',
+        }, { status: 403 });
+      }
+
+      const rowNumber = idx + 2;
+      const kodeExpireStr = String(row[COL.KODE_EXP]);
+      const kodeExpire = new Date(kodeExpireStr);
+      const now = new Date();
+      if (!isNaN(kodeExpire.getTime()) && now > kodeExpire) {
+        return NextResponse.json({
+          message: 'Kode akses sudah kedaluwarsa. Hubungi Pokja Kerja Sama untuk kode baru.',
+        }, { status: 410 });
+      }
+
+      await updateCell('Dokumen Kerja sama', rowNumber, COL.TERAKHIR_DIAKSES + 1,
+        `${formatTanggalWaktu(now)} oleh Mitra (${namaMitraRow}) — login via email+kode`
+      );
+
+      return await responDenganSesi(bentukUser(row, kodeExpireStr));
+    }
+
+    // ── Login via EMAIL saja — opsi tambahan buat kasus kode akses tidak mau
     // terbaca/kepencet salah walau datanya sama persis di spreadsheet. Mitra
     // cukup masukkan email yang dipakai waktu pengajuan kerja sama. ──
     if (email?.trim() && !kode?.trim()) {

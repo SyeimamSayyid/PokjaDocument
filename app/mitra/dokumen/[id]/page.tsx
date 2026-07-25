@@ -8,7 +8,7 @@ import {
   FiArrowLeft, FiBell, FiLogOut, FiLock, FiFileText, FiClock, FiInfo,
   FiCheckCircle, FiAlertCircle, FiCalendar, FiCamera, FiUpload, FiTrash2,
   FiDownload, FiPaperclip, FiExternalLink, FiEyeOff, FiEye, FiEdit2,
-  FiCheck, FiX, FiHome, FiPenTool, FiSend,
+  FiCheck, FiX, FiHome, FiPenTool, FiSend, FiMessageSquare, FiStar,
 } from 'react-icons/fi';
 
 interface Dokumen {
@@ -24,6 +24,7 @@ interface Dokumen {
   sudahDipublikasi: boolean;
   manualLog?: string;
   scanTtdId?: string;
+  masaBerlakuDiisiOleh?: string;
 }
 
 interface Notif { id: string; tipe: string; judul: string; pesan: string; dibaca: boolean; tglDibuat: string; }
@@ -414,6 +415,12 @@ export default function MitraDokumenDetailPage({ params }: { params: Promise<{ i
         <a href="/dashboard/mitra" style={backLink}><FiArrowLeft size={13} /> Dashboard Saya</a>
         <div style={{ fontWeight:700, fontSize:13.5, color:'#0f1f3d' }}>Detail Dokumen</div>
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+          <a href="/panduan/mitra.docx" download style={{ ...btnSm, textDecoration:'none', display:'flex', alignItems:'center', gap:5 }} className="btn-hover">
+            <FiDownload size={13} /> Panduan
+          </a>
+          <a href="/dashboard/mitra/saran" style={{ ...btnSm, textDecoration:'none', display:'flex', alignItems:'center', gap:5 }} className="btn-hover">
+            <FiMessageSquare size={13} /> Saran
+          </a>
           <button onClick={bukaNotif} style={{ ...btnSm, position:'relative', padding:'8px 11px' }} className="btn-hover" title="Notifikasi">
             <FiBell size={14} />
             {belumDibaca > 0 && <span style={notifBadge}>{belumDibaca}</span>}
@@ -484,6 +491,25 @@ export default function MitraDokumenDetailPage({ params }: { params: Promise<{ i
               <div style={infoNoteBlue}><FiInfo size={13} style={{ marginRight:6, flexShrink:0, marginTop:1 }} />{STATUS_DESC[dok.status] || ''}</div>
             </div>
           </div>
+
+          {dok.status === 'Selesai' && (
+            <div style={{ ...shellStyle, marginBottom:14, borderColor:'rgba(217,119,6,0.25)' }} className="fld">
+              <div style={{ ...coreStyle, background:'linear-gradient(135deg,#FFFBEB,#FEF3C7)', display:'flex', alignItems:'flex-start', gap:12 }}>
+                <FiMessageSquare size={22} style={{ color:'#92400E', flexShrink:0, marginTop:2 }} />
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:13, fontWeight:700, color:'#78350F', marginBottom:6 }}>
+                    Bagaimana pengalaman {dok.namaMitra} menggunakan E-Pokja Huker?
+                  </div>
+                  <div style={{ fontSize:12, color:'#92400E', lineHeight:1.6, marginBottom:12 }}>
+                    Silahkan beri masukan, saran, atau perbaikan kepada kami sebagai pengembangan lanjutan sistem ini.
+                  </div>
+                  <a href="/dashboard/mitra/saran" style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'8px 16px', borderRadius:10, border:'none', background:'#92400E', color:'#fff', fontSize:12, fontWeight:700, textDecoration:'none' }} className="btn-hover">
+                    <FiStar size={13} /> Beri Masukan Sekarang
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div style={{ ...shellStyle, marginBottom:14 }} className="fld">
             <div style={coreStyle}>
@@ -706,6 +732,22 @@ export default function MitraDokumenDetailPage({ params }: { params: Promise<{ i
                   </div>
                 </div>
               )}
+              {dok.masaBerlakuDiisiOleh && (() => {
+                const [roleIsi, namaIsi, waktuIsi, levelIsi] = dok.masaBerlakuDiisiOleh.split('|');
+                if (!namaIsi) return null;
+                const labelIsi = roleIsi === 'admin' ? (levelIsi === 'utama' ? 'Admin BNN Utama' : 'Admin BNNP/BNNK') : roleIsi === 'mitra' ? 'Anda (Mitra)' : 'Tidak dikenali';
+                let waktuLabel = waktuIsi;
+                try {
+                  const w = new Date(waktuIsi.replace(' ', 'T'));
+                  if (!isNaN(w.getTime())) waktuLabel = w.toLocaleString('id-ID', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+                } catch {}
+                return (
+                  <div style={{ fontSize:10.5, color:'#94a3b8', marginTop:8, display:'flex', alignItems:'center', gap:5 }}>
+                    <FiClock size={11} />
+                    Terakhir diisi oleh: <strong style={{ color:'#64748b' }}>{namaIsi}</strong> ({labelIsi}) · {waktuLabel}
+                  </div>
+                );
+              })()}
             </div>
           </div>
 

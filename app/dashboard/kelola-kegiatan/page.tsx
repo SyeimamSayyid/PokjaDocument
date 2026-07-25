@@ -6,7 +6,7 @@ import {
   FiClock, FiRadio, FiCheckCircle, FiCamera, FiTrash2,
   FiCalendar, FiInbox, FiX, FiArrowRight,
   FiGrid, FiInbox as FiInboxNav, FiKey, FiFolder, FiActivity, FiFileText,
-  FiUsers, FiList, FiArchive, FiShield,
+  FiUsers, FiList, FiArchive, FiShield, FiMessageCircle, FiMessageSquare, FiDroplet,
 } from 'react-icons/fi';
 
 interface FotoItem { fileId: string; nama: string; ukuran: number; thumbnailUrl: string; }
@@ -109,11 +109,14 @@ export default function KelolaKegiatanPage() {
     { href: '/dashboard/pengajuan', icon: <FiInboxNav size={17} />, label: 'Kelola Pengajuan' },
     { href: '/dashboard/superadmin/generate-kode', icon: <FiKey size={17} />, label: 'Generate Kode' },
     { href: '/dashboard/dokumen', icon: <FiFolder size={17} />, label: 'Daftar Dokumen' },
+    { href: '/dashboard/dokumen-basah', icon: <FiDroplet size={17} />, label: 'Dokumen Basah' },
     { href: '/dashboard/kelola-kegiatan', icon: <FiActivity size={17} />, label: 'Kelola Kegiatan' },
     { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
     { href: '/dashboard/dokumen/extract-poin', icon: <FiList size={17} />, label: 'Extract Poin Publik' },
     { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
     { href: '/dashboard/superadmin/laporan', icon: <FiFileText size={17} />, label: 'Laporan' },
+    { href: '/dashboard/kelola-chatbot', icon: <FiMessageCircle size={17} />, label: 'Kelola Chatbot' },
+    { href: '/dashboard/kotak-saran', icon: <FiMessageSquare size={17} />, label: 'Kotak Saran' },
     { href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Kelola Admin' },
   ];
 
@@ -166,7 +169,7 @@ export default function KelolaKegiatanPage() {
       <Sidebar
         items={sidebarItems}
         activeHref="/dashboard/kelola-kegiatan"
-        brandLabel="SI-POKJA HUMKER"
+        brandLabel="E-POKJA HUKER"
         brandSub={level === 'utama' ? 'BNN Utama' : 'Admin BNNP/BNNK'}
         userName={namaAdmin}
         userTag={level === 'utama' ? 'Admin BNN Utama' : 'Admin BNNP/BNNK'}

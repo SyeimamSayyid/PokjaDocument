@@ -12,7 +12,7 @@ import {
   FiX, FiSave, FiArrowLeft, FiImage, FiDatabase,
   FiFileText, FiActivity, FiChevronDown, FiChevronRight, FiMessageCircle,
   FiUser, FiBookOpen, FiInfo, FiArchive, FiHome,
-  FiInbox, FiKey, FiUsers, FiList, FiShield,
+  FiInbox, FiKey, FiUsers, FiList, FiShield, FiMessageSquare, FiDroplet,
 } from 'react-icons/fi';
 import { FaFileSignature, FaFileAlt, FaBuilding, FaFolderOpen } from 'react-icons/fa';
 import { SiGoogledocs } from 'react-icons/si';
@@ -24,6 +24,7 @@ interface DokumenItem {
   durasi: string; status: string; kode: string; kodeExpire: string;
   docsId: string; docsUrl: string; folderId: string; dibuatOleh: string;
   catatan?: string; divisi?: string[]; manualLog?: string; flagRevisi?: boolean;
+  terakhirDiakses?: string; // format "role|nama|waktu|level"
 }
 interface KontakInfo { namaPIC: string; jurusan: string; }
 interface NotifInfo { count: number; hasUnread: boolean; }
@@ -78,6 +79,25 @@ const DIVISI_LABEL: Record<string, { label: string; color: string; bg: string }>
   pemberdayaan:  { label: 'Pemberdayaan',  color: '#92400E', bg: '#FEF3C7' },
 };
 
+// Parse format "role|nama|waktu|level" (sama pola dengan manualLog/EditPencilIndicator)
+// jadi info siap-tampil + Date buat keperluan sorting.
+const ROLE_LABEL: Record<string, string> = {
+  admin: 'Admin', mitra: 'Mitra', unknown: 'Anonim',
+};
+function parseAkses(raw?: string): { role: string; roleLabel: string; nama: string; waktu: Date | null; level: string } | null {
+  if (!raw) return null;
+  const [role, nama, waktuStr, level] = raw.split('|');
+  if (!role || !nama) return null;
+  const waktu = waktuStr ? new Date(waktuStr.replace(' ', 'T')) : null;
+  return {
+    role,
+    roleLabel: role === 'admin' ? (level === 'utama' ? 'Admin BNN Utama' : 'Admin BNNP/BNNK') : (ROLE_LABEL[role] || role),
+    nama,
+    waktu: waktu && !isNaN(waktu.getTime()) ? waktu : null,
+    level: level || '',
+  };
+}
+
 function normNama(s: string): string {
   return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -115,6 +135,7 @@ function DokumenPageContent() {
   const searchParams = useSearchParams();
   const [filterJenis, setFilterJenis] = useState('');
   const [hanyaFlag, setHanyaFlag] = useState(false);
+  const [urutkanAkses, setUrutkanAkses] = useState(false);
   const [filterStage, setFilterStage] = useState('');
   const [viewMode, setViewMode] = useState<'folder' | 'table'>('folder');
   const [sumberTab, setSumberTab] = useState<'sistem' | 'arsip'>('sistem');
@@ -230,11 +251,14 @@ function DokumenPageContent() {
     { href: '/dashboard/pengajuan', icon: <FiInbox size={17} />, label: 'Kelola Pengajuan' },
     { href: '/dashboard/superadmin/generate-kode', icon: <FiKey size={17} />, label: 'Generate Kode' },
     { href: '/dashboard/dokumen', icon: <FiFolder size={17} />, label: 'Daftar Dokumen' },
+    { href: '/dashboard/dokumen-basah', icon: <FiDroplet size={17} />, label: 'Dokumen Basah' },
     { href: '/dashboard/kelola-kegiatan', icon: <FiActivity size={17} />, label: 'Kelola Kegiatan' },
     { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
     { href: '/dashboard/dokumen/extract-poin', icon: <FiList size={17} />, label: 'Extract Poin Publik' },
     { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
     { href: '/dashboard/superadmin/laporan', icon: <FiFileText size={17} />, label: 'Laporan' },
+    { href: '/dashboard/kelola-chatbot', icon: <FiMessageCircle size={17} />, label: 'Kelola Chatbot' },
+    { href: '/dashboard/kotak-saran', icon: <FiMessageSquare size={17} />, label: 'Kotak Saran' },
     { href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Kelola Admin' },
   ];
 
@@ -297,7 +321,7 @@ function DokumenPageContent() {
   };
 
   const stageStatuses = STAGE_FILTER.find(f => f.key === filterStage)?.statuses || [];
-  const filtered = data.filter(d => {
+  const filteredBase = data.filter(d => {
     const matchSearch =
       d.namaMitra?.toLowerCase().includes(search.toLowerCase()) ||
       d.judul?.toLowerCase().includes(search.toLowerCase()) ||
@@ -307,6 +331,15 @@ function DokumenPageContent() {
     const matchStage = filterStage ? stageStatuses.includes(d.status) : true;
     const matchFlag = hanyaFlag ? !!d.flagRevisi : true;
     return matchSearch && matchJenis && matchStage && matchFlag;
+  });
+
+  // Urutkan berdasarkan siapa/kapan TERAKHIR AKSES (buka halaman) — paling
+  // atas = paling baru diakses. Dokumen yang belum pernah diakses siapa pun
+  // (field kosong) ditaruh di paling bawah, bukan ikut tercampur di atas.
+  const filtered = !urutkanAkses ? filteredBase : [...filteredBase].sort((a, b) => {
+    const waktuA = parseAkses(a.terakhirDiakses)?.waktu?.getTime() ?? -1;
+    const waktuB = parseAkses(b.terakhirDiakses)?.waktu?.getTime() ?? -1;
+    return waktuB - waktuA;
   });
 
   const countPerStage = STAGE_FILTER.map(f => ({ ...f, count: data.filter(d => f.statuses.includes(d.status)).length }));
@@ -323,7 +356,7 @@ function DokumenPageContent() {
       <Sidebar
         items={sidebarItems}
         activeHref="/dashboard/dokumen"
-        brandLabel="SI-POKJA HUMKER"
+        brandLabel="E-POKJA HUKER"
         brandSub={level === 'utama' ? 'BNN Utama' : 'Admin BNNP/BNNK'}
         userName={namaAdmin}
         userTag={level === 'utama' ? 'Admin BNN Utama' : 'Admin BNNP/BNNK'}
@@ -405,6 +438,11 @@ function DokumenPageContent() {
               <button onClick={() => setHanyaFlag(v => !v)}
                 style={{ ...pillBtn, ...(hanyaFlag ? { background:'#FEF3C7', color:'#92400E', borderColor:'#FBBF24' } : {}) }} className="btn-hover">
                 🚩 Perlu Revisi
+              </button>
+              <button onClick={() => setUrutkanAkses(v => !v)}
+                style={{ ...pillBtn, ...(urutkanAkses ? { background:'#DBEAFE', color: BLUE_DARK, borderColor: BLUE } : {}) }} className="btn-hover"
+                title="Urutkan dari yang paling baru dibuka (admin BNNP/BNNK, BNN Utama, atau mitra)">
+                <FiClock size={11} /> Akses Terbaru
               </button>
             </div>
             <div style={{ display:'flex', border:'1.5px solid rgba(29,78,216,0.10)', borderRadius:11, overflow:'hidden' }}>
@@ -588,7 +626,7 @@ function DokumenPageContent() {
                             </span>
                           </td>
                           <td style={{ ...td, fontFamily:'monospace', color: BLUE, fontWeight:700 }}>{d.kode}</td>
-                          <td style={td}><EditPencilIndicator manualLog={d.manualLog} size={24} /></td>
+                          <td style={td}><EditPencilIndicator manualLog={d.manualLog} terakhirDiakses={d.terakhirDiakses} size={24} /></td>
                           <td style={td}>
                             <div style={{ display:'flex', gap:5, justifyContent:'flex-end', flexWrap:'nowrap' }}>
                               <a href={`/dashboard/dokumen/${d.id}`} style={iconLinkBtn} title="Detail" className="btn-hover"><FiEye size={13} /></a>
@@ -869,7 +907,7 @@ function DokFileRow({ d, kontak, notif, expanded, onToggle, onEdit, onHapus, lev
         {d.flagRevisi && (
           <span title="Ditandai perlu revisi oleh BNN Utama" style={{ fontSize:9.5, fontWeight:700, padding:'3px 8px', borderRadius:100, background:'#FEF3C7', color:'#92400E', flexShrink:0 }}>🚩 Perlu Revisi</span>
         )}
-        <EditPencilIndicator manualLog={d.manualLog} size={22} />
+        <EditPencilIndicator manualLog={d.manualLog} terakhirDiakses={d.terakhirDiakses} size={22} />
         <span style={{ fontSize:9.5, fontWeight:600, padding:'3px 9px', borderRadius:100, background:sc.bg, color:sc.color, flexShrink:0, display:'inline-flex', alignItems:'center', gap:4 }}>
           {STATUS_ICON[d.status]}
           {d.status}
@@ -885,6 +923,17 @@ function DokFileRow({ d, kontak, notif, expanded, onToggle, onEdit, onHapus, lev
             <span style={{ opacity:0.4 }}>·</span>
             Kode: <strong style={{ color: BLUE }}>{d.kode}</strong>
           </div>
+          {(() => {
+            const akses = parseAkses(d.terakhirDiakses);
+            if (!akses) return null;
+            return (
+              <div style={{ fontSize:10.5, color:'#94a3b8', display:'flex', alignItems:'center', gap:5 }}>
+                <FiClock size={11} />
+                Terakhir diakses: <strong style={{ color:'#64748b' }}>{akses.nama}</strong> ({akses.roleLabel})
+                {akses.waktu && <span>· {akses.waktu.toLocaleString('id-ID', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })}</span>}
+              </div>
+            );
+          })()}
           {(kontak?.namaPIC || (d.jenis === 'PKS' && kontak?.jurusan)) && (
             <div style={{ fontSize:11, color:'#64748b', display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
               {kontak?.namaPIC && <span style={{ display:'flex', alignItems:'center', gap:4 }}><FiUser size={11} /> {kontak.namaPIC}</span>}

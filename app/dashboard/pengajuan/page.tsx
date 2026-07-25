@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Sidebar, { SidebarItem } from '@/components/Sidebar';
 import {
   FiGrid, FiCalendar, FiInbox, FiKey, FiFolder, FiActivity, FiFileText,
-  FiUsers, FiList, FiArchive, FiShield,
+  FiUsers, FiList, FiArchive, FiShield, FiMessageCircle, FiMessageSquare, FiDroplet,
 } from 'react-icons/fi';
 import {
   FileText, Search, Filter, Eye, Check, X, Edit, Save, Send,
@@ -105,6 +105,8 @@ export default function PengajuanPage() {
   const [mitraList, setMitraList]     = useState<{id:string;nama:string}[]>([]);
   const [idMitraAcc, setIdMitraAcc]   = useState('');
   const [previewMitra, setPreviewMitra] = useState(false);
+  const [templateResmiId, setTemplateResmiId] = useState<string | null>(null);
+  const [previewBnnPenuh, setPreviewBnnPenuh] = useState(false);
   const [kirimEmailLoading, setKirimEmailLoading] = useState(false);
   const [emailTerkirim, setEmailTerkirim] = useState(false);
   const [showPlaneAnimation, setShowPlaneAnimation] = useState(false);
@@ -194,11 +196,14 @@ export default function PengajuanPage() {
     { href: '/dashboard/pengajuan', icon: <FiInbox size={17} />, label: 'Kelola Pengajuan' },
     { href: '/dashboard/superadmin/generate-kode', icon: <FiKey size={17} />, label: 'Generate Kode' },
     { href: '/dashboard/dokumen', icon: <FiFolder size={17} />, label: 'Daftar Dokumen' },
+    { href: '/dashboard/dokumen-basah', icon: <FiDroplet size={17} />, label: 'Dokumen Basah' },
     { href: '/dashboard/kelola-kegiatan', icon: <FiActivity size={17} />, label: 'Kelola Kegiatan' },
     { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
     { href: '/dashboard/dokumen/extract-poin', icon: <FiList size={17} />, label: 'Extract Poin Publik' },
     { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
     { href: '/dashboard/superadmin/laporan', icon: <FiFileText size={17} />, label: 'Laporan' },
+    { href: '/dashboard/kelola-chatbot', icon: <FiMessageCircle size={17} />, label: 'Kelola Chatbot' },
+    { href: '/dashboard/kotak-saran', icon: <FiMessageSquare size={17} />, label: 'Kotak Saran' },
     ...(level === 'bnnp_bnnk' ? [{ href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Kelola Admin' }] : []),
   ];
 
@@ -260,6 +265,11 @@ export default function PengajuanPage() {
     setHasilGenerate(null);
     setError('');
     setJudulDok(item.deskripsi?.slice(0, 60) || '');
+    setTemplateResmiId(null);
+    fetch(`/api/template-resmi?jenis=${item.jenis}`)
+      .then(r => r.json())
+      .then(d => setTemplateResmiId(d.templateId || null))
+      .catch(() => setTemplateResmiId(null));
     const cocok = mitraList.find(m => m.nama.toLowerCase() === item.namaInstitusi.toLowerCase());
     setIdMitraAcc(cocok?.id || '');
     setShowAcc(true);
@@ -402,7 +412,7 @@ export default function PengajuanPage() {
       <Sidebar
         items={sidebarItems}
         activeHref="/dashboard/pengajuan"
-        brandLabel="SI-POKJA HUMKER"
+        brandLabel="E-POKJA HUKER"
         brandSub={level === 'utama' ? 'BNN Utama' : 'Admin BNNP/BNNK'}
         userName={namaAdmin}
         userTag={level === 'utama' ? 'Admin BNN Utama' : 'Admin BNNP/BNNK'}
@@ -894,7 +904,29 @@ export default function PengajuanPage() {
                     </button>
                   </div>
 
-                  {accItem.fileDokumenId && (
+                  {pilihanTemplate === 'bnn' && (
+                    <div style={{ marginTop:10, border:'1px solid rgba(29,78,216,0.10)', borderRadius:12, overflow:'hidden', background:'#fff' }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 12px', background:'#EFF6FF', borderBottom:'1px solid rgba(29,78,216,0.08)' }}>
+                        <span style={{ fontSize:11, fontWeight:700, color:BLUE_DARK, display:'flex', alignItems:'center', gap:6 }}>
+                          <Eye size={14} />
+                          Preview Template Resmi BNN
+                        </span>
+                        {templateResmiId && (
+                          <button type="button" onClick={() => setPreviewBnnPenuh(true)} style={{ ...btnSm, padding:'4px 10px', fontSize:11, display:'flex', alignItems:'center', gap:4 }} className="btn-hover">
+                            <ExternalLink size={12} />
+                            Buka Penuh
+                          </button>
+                        )}
+                      </div>
+                      {templateResmiId ? (
+                        <iframe src={`https://docs.google.com/document/d/${templateResmiId}/preview`} style={{ width:'100%', height:200, border:'none', display:'block' }} title="Preview template resmi BNN" />
+                      ) : (
+                        <div style={{ padding:'20px 12px', textAlign:'center', fontSize:11, color:'#94a3b8' }}>Memuat template resmi…</div>
+                      )}
+                    </div>
+                  )}
+
+                  {pilihanTemplate === 'mitra' && accItem.fileDokumenId && (
                     <div style={{ marginTop:10, border:'1px solid rgba(29,78,216,0.10)', borderRadius:12, overflow:'hidden', background:'#fff' }}>
                       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 12px', background:'#F5F1E8', borderBottom:'1px solid rgba(29,78,216,0.08)' }}>
                         <span style={{ fontSize:11, fontWeight:700, color:BLUE_DARK, display:'flex', alignItems:'center', gap:6 }}>
@@ -974,6 +1006,27 @@ export default function PengajuanPage() {
               </div>
             </div>
             <iframe src={`https://docs.google.com/document/d/${accItem.fileDokumenId}/preview`} style={{ width:'100%', flex:1, border:'none' }} title="Preview penuh dokumen mitra" />
+          </div>
+        </div>
+      )}
+
+      {previewBnnPenuh && templateResmiId && (
+        <div style={{ ...overlay, zIndex:300 }} onClick={() => setPreviewBnnPenuh(false)}>
+          <div style={{ background:'#fff', borderRadius:18, padding:0, width:'100%', maxWidth:840, height:'90vh', display:'flex', flexDirection:'column', overflow:'hidden', animation: 'scaleIn 0.3s ease-out', boxShadow:'0 30px 70px -20px rgba(15,23,42,0.35)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'14px 20px', borderBottom:'1px solid rgba(29,78,216,0.08)', flexShrink:0, background:'#f8fafc' }}>
+              <div>
+                <div style={{ fontSize:14, fontWeight:800, display:'flex', alignItems:'center', gap:8 }}>
+                  <Landmark size={18} />
+                  Template Resmi BNN — {accItem?.jenis}
+                </div>
+                <div style={{ fontSize:11, color:'#64748b' }}>Template standar BNN Provinsi</div>
+              </div>
+              <button onClick={() => setPreviewBnnPenuh(false)} style={{ ...btnSm, padding:'6px 12px', display:'flex', alignItems:'center', gap:4 }} className="btn-hover">
+                <X size={14} />
+                Tutup
+              </button>
+            </div>
+            <iframe src={`https://docs.google.com/document/d/${templateResmiId}/preview`} style={{ width:'100%', flex:1, border:'none' }} title="Preview penuh template resmi BNN" />
           </div>
         </div>
       )}

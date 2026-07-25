@@ -7,8 +7,10 @@ import {
   Upload, Trash2, User, Tag, Paperclip, MessageSquare,
   KeyRound, Building2, FileSignature, File as FileIcon,
   Handshake, GraduationCap, Loader2, UserCheck, Home,
+  ArrowLeft,
 } from 'lucide-react';
 import { STATUS_DOKUMEN } from '@/lib/constants';
+import ChatbotWidget from '@/components/ChatbotWidget';
 
 interface HasilPengajuan {
   kodeTracking: string; kodeExpire: string;
@@ -73,7 +75,6 @@ export default function FormPengajuanPage() {
   const handleWaChange = (v: string) => {
     setNoWa(v.replace(/\D/g, '').slice(0, WA_MAX));
   };
-
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     setFileError('');
@@ -142,8 +143,7 @@ export default function FormPengajuanPage() {
     navigator.clipboard.writeText(hasil.kodeTracking);
     setCopied(true); setTimeout(() => setCopied(false), 1500);
   };
-
-  if (step === 'konfirmasi' && hasil) {
+ if (step === 'konfirmasi' && hasil) {
     return (
       <div style={{ ...pageStyle, fontFamily: FONT }}>
         <GlobalStyle />
@@ -185,6 +185,14 @@ export default function FormPengajuanPage() {
             <div style={infoCard('#92400E', 'rgba(217,119,6,0.07)', 'rgba(217,119,6,0.16)')}>
               <AlertCircle size={17} strokeWidth={1.6} style={{ flexShrink:0, marginTop:1 }} />
               <div><strong>Simpan kode ini.</strong> Kode tidak dapat ditampilkan ulang — gunakan untuk melacak status.</div>
+            </div>
+
+            <div style={infoCard(BLUE_DARK, 'rgba(37,99,235,0.07)', 'rgba(37,99,235,0.15)')}>
+              <Mail size={17} strokeWidth={1.6} style={{ flexShrink:0, marginTop:1 }} />
+              <div>
+                <strong>Mitra Terhormat,</strong> apabila pengajuan Anda disetujui, kode akses akan dikirimkan
+                melalui email yang telah Anda daftarkan. Jika tidak ditemukan di kotak masuk, silakan periksa folder <strong>Spam</strong>.
+              </div>
             </div>
 
             <div style={{ margin:'22px 0' }}>
@@ -240,6 +248,9 @@ export default function FormPengajuanPage() {
   return (
     <div style={{ ...pageStyle, fontFamily: FONT }}>
       <GlobalStyle />
+      <a href="/" style={backHomeBtn} className="back-home-btn">
+        <ArrowLeft size={14} /> Kembali ke Beranda
+      </a>
       <div style={shellStyle} className={mounted ? 'reveal' : ''}>
         <div style={coreStyle}>
 
@@ -396,6 +407,8 @@ export default function FormPengajuanPage() {
           </form>
         </div>
       </div>
+
+      <ChatbotWidget tema="emas" sumberLabel="Form Pengajuan Kerja Sama" />
     </div>
   );
 }
@@ -417,6 +430,8 @@ function GlobalStyle() {
       .cta:hover .cta-ic { transform: translate(2px,-1px) scale(1.08); }
       .cta-ic { transition: transform 0.45s cubic-bezier(0.32,0.72,0,1); }
       input::placeholder, textarea::placeholder { color:#aab4b0; }
+      .back-home-btn { transition: all 0.25s ease; }
+      .back-home-btn:hover { background: rgba(29,78,216,0.08); transform: translateY(-1px); }
     `}</style>
   );
 }
@@ -425,6 +440,13 @@ const pageStyle: React.CSSProperties = {
   minHeight: '100dvh',
   background: 'radial-gradient(1200px 600px at 50% -10%, #dbeafe 0%, rgba(219,234,254,0) 60%), linear-gradient(180deg,#f7f9fc,#eef2f8)',
   padding: '3rem 1.25rem', display:'flex', alignItems:'flex-start', justifyContent:'center',
+};
+const backHomeBtn: React.CSSProperties = {
+  position:'fixed', top:20, left:20, zIndex:50,
+  display:'flex', alignItems:'center', gap:7,
+  background:'#fff', border:'1px solid rgba(29,78,216,0.12)', borderRadius:100,
+  padding:'9px 16px', color:'#334155', fontSize:12, fontWeight:600,
+  textDecoration:'none', fontFamily:FONT, boxShadow:'0 6px 18px -10px rgba(15,23,42,0.15)',
 };
 const shellStyle: React.CSSProperties = {
   maxWidth: 600, width:'100%', background:'rgba(255,255,255,0.55)',

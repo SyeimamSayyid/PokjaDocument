@@ -1,10 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import ChatbotWidget from '@/components/ChatbotWidget';
 import {
   Calendar, Clock, PlayCircle, CheckCircle, Filter, Users, MapPin,
   CalendarDays, Tag, FileText, ChevronRight, AlertCircle, Check, X,
   Briefcase, Layers, PlusCircle, FileCheck, LogIn, Zap,
+  ArrowLeft, UserCheck2, ArrowRight,
 } from 'lucide-react';
 
 interface KegiatanPublik {
@@ -29,7 +32,6 @@ const BLUE_LIGHT = '#2563EB';
 const BLUE_DARK = '#1E3A8A';
 const GOLD = '#D97706';
 
-// key TETAP sama persis (dipakai cocokkan data API) — cuma label yang berubah
 const TABS = [
   { key: 'akan-datang',       label: 'Rencana PKS',         icon: Calendar,   color: BLUE_DARK, bg: '#DBEAFE' },
   { key: 'akan-berlangsung',  label: 'Aktif',                icon: Zap,        color: GOLD,      bg: '#FEF3C7' },
@@ -51,11 +53,13 @@ function formatTanggal(t: string) {
 }
 
 export default function BerandaPage() {
+  const router = useRouter();
   const [akanDatang, setAkanDatang]   = useState<AkanDatang[]>([]);
   const [data, setData]               = useState<Record<string, KegiatanPublik[]>>({});
   const [loading, setLoading]         = useState(true);
   const [activeTab, setActiveTab]     = useState('akan-datang');
   const [filterDivisi, setFilterDivisi] = useState('');
+  const [showLoginPicker, setShowLoginPicker] = useState(false);
 
   useEffect(() => {
     fetch('/api/beranda')
@@ -74,7 +78,6 @@ export default function BerandaPage() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
-
   const matchDivisi = (dv: string[] | string) => !filterDivisi || (Array.isArray(dv) ? dv.includes(filterDivisi) : dv === filterDivisi);
   const akanDatangFiltered = akanDatang.filter(k => matchDivisi(k.divisi));
   const tabListFiltered = (data[activeTab] || []).filter(item => matchDivisi(item.divisi));
@@ -95,12 +98,23 @@ export default function BerandaPage() {
       {/* Header — gradien biru-emas */}
       <div style={{
         background:`linear-gradient(135deg, ${BLUE_DARK} 0%, ${BLUE} 55%, ${BLUE_LIGHT} 100%)`,
-        color:'#fff', padding:'3rem 1.5rem 0', textAlign:'center', position:'relative', overflow:'hidden',
+        color:'#fff', padding:'1.3rem 1.5rem 0', textAlign:'center', position:'relative', overflow:'hidden',
       }}>
         <div style={{ position:'absolute', top:'-45%', right:'-15%', width:'55%', height:'190%', background:'rgba(255,255,255,0.05)', borderRadius:'50%', transform:'rotate(15deg)' }} />
         <div style={{ position:'absolute', bottom:'-20%', left:'-40px', width:220, height:220, background:`radial-gradient(circle, ${GOLD}33, transparent 70%)`, borderRadius:'50%' }} />
 
-        <div style={{ position:'relative', zIndex:1 }} className="fld">
+        {/* Tombol kembali ke dashboard */}
+        <div style={{ position:'relative', zIndex:1, display:'flex', justifyContent:'flex-start', marginBottom:'1.5rem' }} className="fld">
+          <button onClick={() => router.back()} style={{
+            display:'flex', alignItems:'center', gap:7, background:'rgba(255,255,255,0.14)', backdropFilter:'blur(8px)',
+            border:'1px solid rgba(255,255,255,0.18)', borderRadius:100, padding:'8px 16px', color:'#fff',
+            fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:FONT,
+          }} className="btn-hover">
+            <ArrowLeft size={14} /> Kembali ke Dashboard
+          </button>
+        </div>
+
+        <div style={{ position:'relative', zIndex:1, paddingBottom:'1.7rem' }} className="fld">
           <div style={{ fontSize:10.5, fontWeight:700, opacity:.85, marginBottom:10, letterSpacing:'0.2em', textTransform:'uppercase', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
             <Briefcase size={13} />
             BNN Provinsi Sulawesi Selatan
@@ -266,7 +280,7 @@ export default function BerandaPage() {
                               <div key={f.fileId} style={{ width:'100%', height:190, overflow:'hidden', position:'relative' }} className="img-zoom">
                                 <img src={f.thumbnailUrl} alt={f.nama} style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }} />
                               </div>
-                            ))}
+                           ))}
                             {item.foto.length > 3 && (
                               <div style={{ position:'absolute', bottom:14, right:14, background:'rgba(15,23,42,0.75)', color:'#fff', padding:'3px 11px', borderRadius:100, fontSize:11, fontWeight:700 }}>
                                 +{item.foto.length - 3}
@@ -305,14 +319,61 @@ export default function BerandaPage() {
       </div>
 
       {/* Footer */}
-      <div style={{ textAlign:'center', padding:'2.2rem 1.5rem', fontSize:11, color:'#94a3b8', borderTop:'1px solid rgba(29,78,216,0.08)', marginTop:'1.5rem', background:'#fff' }}>
-        <div style={{ fontWeight:600, marginBottom:4, color:'#334155' }}>SI-POKJA HUMKER — BNN Provinsi Sulawesi Selatan</div>
+     <div style={{ textAlign:'center', padding:'2.2rem 1.5rem', fontSize:11, color:'#94a3b8', borderTop:'1px solid rgba(29,78,216,0.08)', marginTop:'1.5rem', background:'#fff' }}>
+        <div style={{ fontWeight:600, marginBottom:4, color:'#334155' }}>E-POKJA HUKER — BNN Provinsi Sulawesi Selatan</div>
         <div style={{ display:'flex', justifyContent:'center', gap:12, marginTop:14, flexWrap:'wrap' }}>
           <a href="/pengajuan" style={footerLink('#EFF6FF', BLUE_DARK)} className="btn-hover"><PlusCircle size={13} /> Ajukan Kerja Sama</a>
           <a href="/cek-pengajuan" style={footerLink('#FFFBEB', GOLD)} className="btn-hover"><FileCheck size={13} /> Cek Status</a>
-          <a href="/login" style={footerLink('#f8fafc', '#64748b')} className="btn-hover"><LogIn size={13} /> Login Admin</a>
+          <button onClick={() => setShowLoginPicker(true)} style={{ ...footerLink('#f8fafc', '#64748b'), border:'none', cursor:'pointer', fontFamily:FONT }} className="btn-hover"><LogIn size={13} /> Masuk ke Sistem</button>
         </div>
       </div>
+
+      {/* Modal pilihan login — Admin atau Mitra */}
+      {showLoginPicker && (
+        <div
+          style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.55)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200, padding:'1.5rem' }}
+          onClick={() => setShowLoginPicker(false)}
+        >
+          <div
+            style={{ background:'#fff', borderRadius:24, padding:'1.8rem', width:'100%', maxWidth:420, boxShadow:'0 40px 90px -30px rgba(15,23,42,0.4)', animation:'scaleIn 0.3s cubic-bezier(0.32,0.72,0,1)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
+              <div style={{ fontSize:16, fontWeight:800, color:'#0f1f3d' }}>Masuk Sebagai</div>
+              <button onClick={() => setShowLoginPicker(false)} style={{ background:'rgba(15,23,42,0.05)', border:'none', borderRadius:100, width:28, height:28, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:'#64748b' }}>
+                <X size={15} />
+              </button>
+            </div>
+            <div style={{ fontSize:12.5, color:'#64748b', marginBottom:18 }}>Pilih jenis akses sesuai peran Anda di sistem.</div>
+
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              <a href="/login" style={loginPickBtn} className="btn-hover lift">
+                <div style={{ width:44, height:44, borderRadius:13, background:`linear-gradient(150deg,${BLUE_LIGHT},${BLUE_DARK})`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }} className="ic-wrap">
+                  <Briefcase size={18} color="#fff" />
+                </div>
+                <div style={{ flex:1, textAlign:'left' }}>
+                  <div style={{ fontSize:13.5, fontWeight:700, color:'#0f1f3d' }}>Login sebagai Admin</div>
+                  <div style={{ fontSize:11, color:'#94a3b8', marginTop:1 }}>Untuk pegawai Pokja Kerja Sama & BNN</div>
+                </div>
+                <ArrowRight size={16} style={{ color:'#94a3b8', flexShrink:0 }} />
+              </a>
+
+              <a href="/login-mitra" style={loginPickBtn} className="btn-hover lift">
+                <div style={{ width:44, height:44, borderRadius:13, background:'linear-gradient(150deg,#D97706,#92400E)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }} className="ic-wrap">
+                  <UserCheck2 size={20} color="#fff" />
+                </div>
+                <div style={{ flex:1, textAlign:'left' }}>
+                  <div style={{ fontSize:13.5, fontWeight:700, color:'#0f1f3d' }}>Login sebagai Mitra</div>
+                  <div style={{ fontSize:11, color:'#94a3b8', marginTop:1 }}>Untuk institusi yang bekerja sama dengan BNN</div>
+                </div>
+                <ArrowRight size={16} style={{ color:'#94a3b8', flexShrink:0 }} />
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ChatbotWidget tema="hijau" sumberLabel="Halaman Kegiatan (Beranda)" />
     </div>
   );
 }
@@ -351,13 +412,13 @@ function EmptyState({ icon: Icon, title, desc }: { icon: any; title: string; des
     </div>
   );
 }
-
 function GlobalStyle() {
   return (
     <style>{`
       @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
       @keyframes fadeUp { from { opacity:0; transform: translateY(16px); filter: blur(3px);} to { opacity:1; transform: translateY(0); filter: blur(0);} }
       @keyframes spin { to { transform: rotate(360deg); } }
+      @keyframes scaleIn { from { opacity:0; transform: scale(0.95) translateY(6px); } to { opacity:1; transform: scale(1) translateY(0); } }
       .fld { animation: fadeUp 0.55s cubic-bezier(0.32,0.72,0,1) both; }
       .btn-hover { transition: all 0.3s cubic-bezier(0.32,0.72,0,1); }
       .btn-hover:hover { filter: brightness(1.06); transform: translateY(-1px); }
@@ -367,6 +428,8 @@ function GlobalStyle() {
       .arr { transition: transform 0.3s cubic-bezier(0.32,0.72,0,1); }
       .img-zoom img { transition: transform 0.5s cubic-bezier(0.32,0.72,0,1); }
       .lift:hover .img-zoom img { transform: scale(1.06); }
+      .lift:hover .ic-wrap { transform: scale(1.08) rotate(-3deg); }
+      .ic-wrap { transition: transform 0.4s cubic-bezier(0.32,0.72,0,1); }
       .sk-block { background: #e7ecf3; }
       .skeleton-shimmer { position:absolute; inset:0; background: linear-gradient(110deg, rgba(231,236,243,0) 0%, rgba(231,236,243,0) 40%, rgba(219,234,254,0.7) 50%, rgba(231,236,243,0) 60%, rgba(231,236,243,0) 100%); animation: shimmerMove 1.3s linear infinite; }
       @keyframes shimmerMove { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
@@ -379,6 +442,7 @@ const coreStyle: React.CSSProperties = { background:'#fff', borderRadius:15, pad
 const pillTag = (bg: string, color: string): React.CSSProperties => ({ fontSize:10, fontWeight:700, padding:'4px 12px', borderRadius:100, background:bg, color, display:'flex', alignItems:'center', gap:5 });
 const footerLink = (bg: string, color: string): React.CSSProperties => ({ color, textDecoration:'none', display:'flex', alignItems:'center', gap:6, fontSize:12, fontWeight:600, padding:'6px 14px', borderRadius:100, background:bg });
 const mouBox: React.CSSProperties = { background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:11, padding:'10px 13px' };
+const loginPickBtn: React.CSSProperties = { display:'flex', alignItems:'center', gap:14, padding:'14px 16px', borderRadius:16, border:'1.5px solid rgba(29,78,216,0.1)', background:'#fff', cursor:'pointer', fontFamily:FONT, textAlign:'left', width:'100%', textDecoration:'none' };
 
 const chip = (active: boolean, color: string): React.CSSProperties => ({
   padding:'6px 15px', borderRadius:100, borderWidth:1.5, borderStyle:'solid', fontSize:11, cursor:'pointer', fontFamily:FONT,

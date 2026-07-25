@@ -9,7 +9,7 @@ import {
   FiFolder, FiAlertCircle, FiCheck, FiEye, FiKey,
   FiUsers, FiCalendar, FiUser, FiActivity, FiGrid,
   FiFile, FiPieChart, FiTrendingUp, FiList, FiArrowUpRight, FiArchive,
-  FiUserPlus, FiClipboard, FiShield, FiChevronDown, FiSearch,
+  FiUserPlus, FiClipboard, FiShield, FiChevronDown, FiSearch, FiDownload, FiMessageCircle, FiMessageSquare, FiDroplet,
 } from 'react-icons/fi';
 import { FaFileSignature, FaFileAlt, FaBuilding, FaBalanceScale } from 'react-icons/fa';
 import NotifikasiAdminBell from '@/components/NotifikasiAdminBell';
@@ -155,6 +155,9 @@ export default function AdminDashboard() {
   const [level, setLevel] = useState<'utama' | 'bnnp_bnnk'>('bnnp_bnnk');
   const [wilayah, setWilayah] = useState('');
   const [stats, setStats] = useState<Stats | null>(null);
+  const [chatbotMenunggu, setChatbotMenunggu] = useState(0);
+  const [dokumenBasahMenunggu, setDokumenBasahMenunggu] = useState(0);
+  const [saranBelumDibaca, setSaranBelumDibaca] = useState(0);
   const [dokumenTerbaru, setDokumenTerbaru] = useState<DokItem[]>([]);
   const [alertExpire, setAlertExpire] = useState<AlertItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -195,6 +198,22 @@ export default function AdminDashboard() {
             setLoading(false);
           })
           .catch(() => { setError('Gagal memuat data.'); setLoading(false); });
+
+        // Badge notifikasi sidebar — pertanyaan chatbot menunggu & masukan
+        // saran belum dibaca. Fetch terpisah (bukan bagian /api/dashboard/admin)
+        // karena datanya dari endpoint yang berbeda.
+        fetch('/api/chatbot/pertanyaan-masuk')
+          .then(r => r.json())
+          .then(d => setChatbotMenunggu((d.data || []).filter((p: { status: string }) => p.status === 'Menunggu').length))
+          .catch(() => {});
+        fetch('/api/masukan-saran')
+          .then(r => r.json())
+          .then(d => setSaranBelumDibaca(d.ringkasan?.belumDibaca || 0))
+          .catch(() => {});
+        fetch('/api/dokumen/dokumen-basah')
+          .then(r => r.json())
+          .then(d => setDokumenBasahMenunggu((d.data || []).filter((x: { ttdStatus: string }) => x.ttdStatus === 'Menunggu Basah').length))
+          .catch(() => {});
       })
       .catch(() => { window.location.href = '/login'; });
   }, []);
@@ -294,11 +313,14 @@ export default function AdminDashboard() {
     { href: '/dashboard/pengajuan', icon: <FiInbox size={17} />, label: 'Kelola Pengajuan', notifCount: stats.pengajuanMenunggu || 0 },
     { href: '/dashboard/superadmin/generate-kode', icon: <FiKey size={17} />, label: 'Generate Kode' },
     { href: '/dashboard/dokumen', icon: <FiFolder size={17} />, label: 'Daftar Dokumen' },
+    { href: '/dashboard/dokumen-basah', icon: <FiDroplet size={17} />, label: 'Dokumen Basah', notifCount: dokumenBasahMenunggu },
     { href: '/dashboard/kelola-kegiatan', icon: <FiActivity size={17} />, label: 'Kelola Kegiatan' },
     { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
     { href: '/dashboard/dokumen/extract-poin', icon: <FiList size={17} />, label: 'Extract Poin Publik' },
     { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
     { href: '/dashboard/superadmin/laporan', icon: <FiFileText size={17} />, label: 'Laporan' },
+    { href: '/dashboard/kelola-chatbot', icon: <FiMessageCircle size={17} />, label: 'Kelola Chatbot', notifCount: chatbotMenunggu },
+    { href: '/dashboard/kotak-saran', icon: <FiMessageSquare size={17} />, label: 'Kotak Saran', notifCount: saranBelumDibaca },
     ...(level === 'bnnp_bnnk' ? [{ href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Kelola Admin' }] : []),
   ];
 
@@ -366,7 +388,7 @@ export default function AdminDashboard() {
       <Sidebar
         items={sidebarItems}
         activeHref="/dashboard/admin"
-        brandLabel="SI-POKJA HUMKER"
+        brandLabel="E-POKJA HUKER"
         brandSub={hukumOn ? 'Modul Penegak Hukum' : `Admin BNNP/BNNK${wilayah ? ' · ' + wilayah : ''}`}
         navSectionTitle={hukumOn ? 'Modul Hukum' : 'Navigasi'}
         userName={nama}
@@ -434,6 +456,11 @@ export default function AdminDashboard() {
           </form>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
+            {/* Toggle Dokumen/Hukum DINONAKTIFKAN sesuai arahan (pembimbing
+                belum butuh modul Hukum) — un-comment blok di bawah buat
+                mengaktifkan lagi, semua logic hukumOn/hukumFeatures masih
+                utuh, tidak dihapus. */}
+            {false && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 9px', background: 'rgba(30,58,95,0.04)', borderRadius: 100, border: '1px solid rgba(30,58,95,0.08)' }} title="Dokumen (aktif) / Modul Hukum">
               <div className="toggle-icon" style={{
                 width: 24, height: 24, borderRadius: '50%',
@@ -461,6 +488,14 @@ export default function AdminDashboard() {
                 <FaBalanceScale size={12} style={{ color: hukumOn ? CREAM : 'rgba(30,58,95,0.35)' }} />
               </div>
             </div>
+            )}
+            <a href="/panduan/admin-bnnp-bnnk.docx" download style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 100,
+              background: 'rgba(30,58,95,0.06)', border: '1px solid rgba(30,58,95,0.1)', color: INDIGO,
+              fontSize: 11.5, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap',
+            }} className="btn-hover">
+              <FiDownload size={13} /> Unduh Panduan
+            </a>
             <NotifikasiAdminBell />
             <div style={{ width: 34, height: 34, borderRadius: '50%', background: `linear-gradient(150deg,${INDIGO},#0b1420)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12.5, fontWeight: 800, color: '#fff', boxShadow: '0 4px 10px -3px rgba(30,58,95,0.5)' }}>
               {nama.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}

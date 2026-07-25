@@ -2,15 +2,16 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import ChatbotWidget from '@/components/ChatbotWidget';
 import {
   FiHome, FiBookOpen, FiSearch, FiFileText, FiShield,
   FiKey, FiCloud, FiClock, FiEye, FiLock,
   FiGrid, FiUsers, FiArrowRight, FiInfo, FiLogIn,
   FiActivity, FiAlertCircle, FiChevronDown, FiChevronUp,
-  FiTarget, FiCheckCircle,
+  FiTarget, FiCheckCircle, FiUserCheck, FiX, FiDatabase,
+  FiRefreshCw, FiZap,
 } from 'react-icons/fi';
-import { FaBuilding, FaGoogleDrive, FaHandshake, FaFileSignature, FaFileAlt } from 'react-icons/fa';
-import { SiGoogledocs } from 'react-icons/si';
+import { FaBuilding, FaHandshake, FaFileSignature, FaFileAlt, FaUserTie } from 'react-icons/fa';
 
 const FONT = "'Plus Jakarta Sans', -apple-system, sans-serif";
 const BLUE = '#1D4ED8';
@@ -40,6 +41,7 @@ export default function HomePage() {
   const [activePage, setActivePage] = useState<'beranda' | 'panduan'>('beranda');
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [stats, setStats] = useState<Stats>({ totalMitra: 0, totalDokumen: 0, totalMOU: 0, totalPKS: 0 });
+  const [showLoginPicker, setShowLoginPicker] = useState(false);
 
   useEffect(() => {
     fetch('/api/stats-publik').then(r => r.json()).then(setStats).catch(() => {});
@@ -59,7 +61,7 @@ export default function HomePage() {
             <div style={{ width:34, height:34, borderRadius:11, background:`linear-gradient(150deg,${BLUE_LIGHT},${BLUE_DARK})`, display:'flex', alignItems:'center', justifyContent:'center', boxShadow:`0 8px 18px -8px ${BLUE}70` }}>
               <FiFileText size={16} color="#fff" />
             </div>
-            SI-POKJA HUMKER
+            E-POKJA HUKER
           </div>
           <div style={{ display:'flex', gap:4 }}>
             <button onClick={() => setActivePage('beranda')} style={{ ...tabBtn, ...(activePage==='beranda'?tabBtnActive:{}) }} className="btn-hover"><FiHome size={13} /> Beranda</button>
@@ -79,7 +81,7 @@ export default function HomePage() {
               <div style={{ position:'relative', zIndex:1, textAlign:'center', padding:'3.2rem 1.5rem' }}>
                 <div style={heroChip}><FiShield size={13} /> Manajemen Perjanjian Digital</div>
                 <h1 style={{ fontSize:'clamp(28px,4.5vw,46px)', fontWeight:800, lineHeight:1.15, margin:'0 0 14px', letterSpacing:'-0.03em', color:'#0f1f3d' }}>
-                  Kelola Kerja Sama & Dokumen<br/>Hukum dengan <span style={{ color: BLUE }}>Aman</span>
+                  Kelola Kerja Sama & Dokumen<br/>MOU/PKS dengan <span style={{ color: BLUE }}>Aman</span>
                 </h1>
                 <p style={{ fontSize:15, color:'#64748b', maxWidth:560, margin:'0 auto 28px', lineHeight:1.8 }}>
                   Sistem terintegrasi untuk mengelola MOU, PKS, dan dokumen kerja sama antar institusi —
@@ -88,10 +90,10 @@ export default function HomePage() {
                 <div style={{ display:'flex', gap:11, justifyContent:'center', flexWrap:'wrap', marginBottom:22 }}>
                   <button onClick={() => setActivePage('panduan')} style={btnMain} className="btn-hover"><FiBookOpen size={15} /> Lihat Panduan</button>
                   <button onClick={() => navigateTo('/pengajuan')} style={btnGhost} className="btn-hover"><FiFileText size={15} /> Ajukan Kerja Sama</button>
-                  <button onClick={() => navigateTo('/login')} style={btnGhost} className="btn-hover"><FiLogIn size={15} /> Masuk ke Sistem</button>
+                  <button onClick={() => setShowLoginPicker(true)} style={btnGhost} className="btn-hover"><FiLogIn size={15} /> Masuk ke Sistem</button>
                 </div>
                 <div style={{ display:'flex', gap:9, justifyContent:'center', flexWrap:'wrap' }}>
-                  {[{i:FiShield,l:'Akses terenkripsi'},{i:FiKey,l:'Verifikasi kode tracking'},{i:FiCloud,l:'Tersimpan di Google Cloud'},{i:FiClock,l:'Log aktivitas lengkap'}].map((t,i) => (
+                  {[{i:FiShield,l:'Akses terenkripsi'},{i:FiKey,l:'Verifikasi kode tracking'},{i:FiCloud,l:'Data tersimpan aman'},{i:FiClock,l:'Log aktivitas lengkap'}].map((t,i) => (
                     <span key={i} style={trustItem}><t.i size={12} style={{ color: BLUE }} /> {t.l}</span>
                   ))}
                 </div>
@@ -118,20 +120,19 @@ export default function HomePage() {
               ))}
             </div>
 
-            {/* Apa itu Pokja Humker */}
+            {/* Apa itu E-Pokja Huker */}
             <div style={{ ...shellStyle, margin:'20px 0' }} className="fld">
               <div style={{ ...coreStyle, padding:'2rem 1.75rem' }}>
                 <div style={eyebrow}>Tentang Kami</div>
-                <h2 style={{ fontSize:22, fontWeight:800, color:'#0f1f3d', margin:'10px 0 12px', letterSpacing:'-0.02em' }}>Apa itu Pokja Humker?</h2>
+                <h2 style={{ fontSize:22, fontWeight:800, color:'#0f1f3d', margin:'10px 0 12px', letterSpacing:'-0.02em' }}>Apa itu E-Pokja Huker?</h2>
                 <p style={{ fontSize:14, color:'#475569', lineHeight:1.85, margin:'0 0 14px' }}>
-                  <strong>Pokja Humker</strong> (Kelompok Kerja Hukum dan Kerja Sama) adalah unit di lingkungan
-                  BNN Provinsi Sulawesi Selatan yang bertanggung jawab menangani aspek hukum serta membangun
-                  dan mengelola kerja sama kelembagaan dengan berbagai institusi — kampus, sekolah, organisasi
-                  masyarakat, hingga instansi pemerintah — sebagai bagian dari program P4GN
-                  (Pencegahan, Pemberantasan, Penyalahgunaan, dan Peredaran Gelap Narkotika).
+                  <strong>Pokja Kerja Sama</strong> adalah unit di lingkungan BNN Provinsi Sulawesi Selatan yang
+                  bertanggung jawab membangun dan mengelola kerja sama kelembagaan dengan berbagai institusi —
+                  kampus, sekolah, organisasi masyarakat, hingga instansi pemerintah — sebagai bagian dari
+                  program P4GN (Pencegahan, Pemberantasan, Penyalahgunaan, dan Peredaran Gelap Narkotika).
                 </p>
                 <p style={{ fontSize:14, color:'#475569', lineHeight:1.85, margin:0 }}>
-                  <strong>SI-POKJA HUMKER</strong> adalah sistem informasi digital yang dibangun untuk mendukung
+                  <strong>E-POKJA HUKER</strong> adalah sistem informasi digital yang dibangun untuk mendukung
                   tugas tersebut — mengelola pengajuan, penyusunan, dan pemantauan dokumen MOU/PKS secara
                   terstruktur, transparan, dan dapat dipertanggungjawabkan.
                 </p>
@@ -160,13 +161,16 @@ export default function HomePage() {
               ))}
             </div>
 
-            {/* Integrasi */}
-            <SectionTitle icon={<FiGrid size={18} />}>Terintegrasi Dengan</SectionTitle>
+            {/* Keunggulan Sistem — pengganti "Terintegrasi Dengan" (dulu nyebut
+                Google Docs/Sheets/Drive secara eksplisit; sistem publik
+                pemerintahan sebaiknya tidak membeberkan detail infrastruktur
+                teknis ke pengunjung umum) */}
+            <SectionTitle icon={<FiZap size={18} />}>Keunggulan Sistem</SectionTitle>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))', gap:14, marginBottom:20 }}>
               {[
-                { icon: SiGoogledocs, name:'Google Docs', desc:'Template dokumen otomatis' },
-                { icon: FiGrid, name:'Google Sheets', desc:'Database & log akses' },
-                { icon: FaGoogleDrive, name:'Google Drive', desc:'Arsip folder otomatis' },
+                { icon: FiDatabase, name:'Data Terpusat', desc:'Semua dokumen tersimpan rapi dalam satu sistem' },
+                { icon: FiRefreshCw, name:'Sinkron Otomatis', desc:'Perubahan status ter-update secara real-time' },
+                { icon: FiShield, name:'Terenkripsi & Aman', desc:'Akses dokumen diproteksi verifikasi berlapis' },
               ].map((it, i) => (
                 <div key={i} style={{ ...shellStyle, animationDelay:`${i*0.04}s` }} className="fld lift">
                   <div style={{ ...coreStyle, textAlign:'center', padding:'1.5rem 1.3rem' }}>
@@ -185,7 +189,7 @@ export default function HomePage() {
               <div style={{ position:'relative', zIndex:1 }}>
                 <div style={{ fontSize:24, fontWeight:800, color:'#fff', marginBottom:8, letterSpacing:'-0.02em' }}>Siap Mengelola Kerja Sama?</div>
                 <div style={{ fontSize:13.5, color:'rgba(255,255,255,0.85)', maxWidth:480, margin:'0 auto 20px', lineHeight:1.7 }}>
-                  Bergabunglah dengan SI-POKJA HUMKER dan rasakan kemudahan mengelola dokumen hukum dan kerja sama secara digital.
+                  Bergabunglah dengan E-POKJA HUKER dan rasakan kemudahan mengelola dokumen kerja sama secara digital.
                 </div>
                 <button onClick={() => navigateTo('/pengajuan')} style={ctaBtn} className="btn-hover">
                   Ajukan Kerja Sama Sekarang <FiArrowRight size={17} />
@@ -199,7 +203,7 @@ export default function HomePage() {
             <div style={{ ...shellStyle, marginBottom:20 }} className="fld">
               <div style={{ ...coreStyle, textAlign:'center', padding:'2rem 1.5rem' }}>
                 <div style={heroChip}><FaHandshake size={13} /> Panduan Mitra</div>
-                <h1 style={{ fontSize:24, fontWeight:800, color:'#0f1f3d', margin:'12px 0 8px', letterSpacing:'-0.02em' }}>Cara Menggunakan SI-POKJA HUMKER</h1>
+                <h1 style={{ fontSize:24, fontWeight:800, color:'#0f1f3d', margin:'12px 0 8px', letterSpacing:'-0.02em' }}>Cara Menggunakan E-POKJA HUKER</h1>
                 <p style={{ fontSize:13.5, color:'#64748b', maxWidth:480, margin:'0 auto' }}>Panduan lengkap untuk mitra dalam mengajukan dan mengelola kerja sama dengan BNN Provinsi Sulawesi Selatan.</p>
               </div>
             </div>
@@ -218,8 +222,7 @@ export default function HomePage() {
                 </div>
               ))}
             </div>
-
-            {/* FAQ */}
+           {/* FAQ */}
             <SectionTitle icon={<FiAlertCircle size={18} />}>Pertanyaan yang Sering Diajukan</SectionTitle>
             <div style={{ display:'flex', flexDirection:'column', gap:9 }}>
               {faqs.map((faq, i) => (
@@ -243,9 +246,56 @@ export default function HomePage() {
       </div>
 
       <div style={{ textAlign:'center', padding:'2rem', borderTop:'1px solid rgba(29,78,216,0.08)', background:'#fff' }}>
-        <div style={{ fontWeight:700, fontSize:15, color: BLUE_DARK, marginBottom:4 }}>SI-POKJA HUMKER</div>
-        <div style={{ fontSize:11.5, color:'#94a3b8' }}>Sistem Manajemen Data Hukum & Kerja Sama | BNN Provinsi Sulawesi Selatan</div>
+        <div style={{ fontWeight:700, fontSize:15, color: BLUE_DARK, marginBottom:4 }}>E-POKJA HUKER</div>
+        <div style={{ fontSize:11.5, color:'#94a3b8' }}>Sistem Manajemen Kerja Sama MOU/PKS | BNN Provinsi Sulawesi Selatan</div>
       </div>
+
+      {/* Modal pilihan login — Admin atau Mitra */}
+      {showLoginPicker && (
+        <div
+          style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.55)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200, padding:'1.5rem' }}
+          onClick={() => setShowLoginPicker(false)}
+        >
+          <div
+            style={{ background:'#fff', borderRadius:24, padding:'1.8rem', width:'100%', maxWidth:420, boxShadow:'0 40px 90px -30px rgba(15,23,42,0.4)', animation:'scaleIn 0.3s cubic-bezier(0.32,0.72,0,1)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
+              <div style={{ fontSize:16, fontWeight:800, color:'#0f1f3d' }}>Masuk Sebagai</div>
+              <button onClick={() => setShowLoginPicker(false)} style={{ background:'rgba(15,23,42,0.05)', border:'none', borderRadius:100, width:28, height:28, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:'#64748b' }}>
+                <FiX size={15} />
+              </button>
+            </div>
+            <div style={{ fontSize:12.5, color:'#64748b', marginBottom:18 }}>Pilih jenis akses sesuai peran Anda di sistem.</div>
+
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              <button onClick={() => navigateTo('/login')} style={loginPickBtn} className="btn-hover lift">
+                <div style={{ width:44, height:44, borderRadius:13, background:`linear-gradient(150deg,${BLUE_LIGHT},${BLUE_DARK})`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }} className="ic-wrap">
+                  <FaUserTie size={18} color="#fff" />
+                </div>
+                <div style={{ flex:1, textAlign:'left' }}>
+                  <div style={{ fontSize:13.5, fontWeight:700, color:'#0f1f3d' }}>Login sebagai Admin</div>
+                  <div style={{ fontSize:11, color:'#94a3b8', marginTop:1 }}>Untuk pegawai Pokja Kerja Sama & BNN</div>
+                </div>
+                <FiArrowRight size={16} style={{ color:'#94a3b8', flexShrink:0 }} />
+              </button>
+
+              <button onClick={() => navigateTo('/login-mitra')} style={loginPickBtn} className="btn-hover lift">
+                <div style={{ width:44, height:44, borderRadius:13, background:'linear-gradient(150deg,#D97706,#92400E)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }} className="ic-wrap">
+                  <FiUserCheck size={20} color="#fff" />
+                </div>
+                <div style={{ flex:1, textAlign:'left' }}>
+                  <div style={{ fontSize:13.5, fontWeight:700, color:'#0f1f3d' }}>Login sebagai Mitra</div>
+                  <div style={{ fontSize:11, color:'#94a3b8', marginTop:1 }}>Untuk institusi yang bekerja sama dengan BNN</div>
+                </div>
+                <FiArrowRight size={16} style={{ color:'#94a3b8', flexShrink:0 }} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ChatbotWidget />
     </div>
   );
 }
@@ -263,6 +313,7 @@ function GlobalStyle() {
     <style>{`
       @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
       @keyframes fadeUp { from { opacity:0; transform: translateY(14px); filter: blur(3px);} to { opacity:1; transform: translateY(0); filter: blur(0);} }
+      @keyframes scaleIn { from { opacity:0; transform: scale(0.95) translateY(6px); } to { opacity:1; transform: scale(1) translateY(0); } }
       .fld { animation: fadeUp 0.55s cubic-bezier(0.32,0.72,0,1) both; }
       .btn-hover { transition: all 0.3s cubic-bezier(0.32,0.72,0,1); }
       .btn-hover:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.05); }
@@ -289,3 +340,4 @@ const ctaSection: React.CSSProperties = { background:`linear-gradient(135deg,${B
 const ctaBtn: React.CSSProperties = { padding:'13px 30px', borderRadius:100, border:'none', background:'#fff', color: BLUE_DARK, fontSize:13.5, fontWeight:700, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:8, fontFamily:FONT };
 const stepNumber: React.CSSProperties = { display:'inline-flex', alignItems:'center', justifyContent:'center', width:30, height:30, borderRadius:'50%', background:'#EFF6FF', color: BLUE, fontWeight:800, fontSize:11.5, marginBottom:11 };
 const faqQ: React.CSSProperties = { width:'100%', padding:'14px 18px', border:'none', background:'transparent', cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, fontFamily:FONT };
+const loginPickBtn: React.CSSProperties = { display:'flex', alignItems:'center', gap:14, padding:'14px 16px', borderRadius:16, border:'1.5px solid rgba(29,78,216,0.1)', background:'#fff', cursor:'pointer', fontFamily:FONT, textAlign:'left', width:'100%' };

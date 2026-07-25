@@ -124,8 +124,27 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => new Date(a.tglBerlaku).getTime() - new Date(b.tglBerlaku).getTime())
       .map((d, i) => ({ no: i + 1, ...d }));
 
+    // ── Tren per tahun — SEMUA data (bukan cuma tahun yang difilter), gabung
+    // Sistem + Arsip, dipakai buat chart garis di atas laporan. Sistem pakai
+    // Tanggal Berlaku, Arsip pakai Tanggal Masuk Arsip (konsisten dengan
+    // logika filter utama di atas). ──
+    const hitungTahun = new Map<number, number>();
+    dokRows.forEach(r => {
+      if (!r[DOK_COL.ID]) return;
+      const tgl = new Date(String(r[DOK_COL.TGL_BERLAKU]));
+      if (!isNaN(tgl.getTime())) hitungTahun.set(tgl.getFullYear(), (hitungTahun.get(tgl.getFullYear()) || 0) + 1);
+    });
+    (arsipRows || []).forEach(r => {
+      if (!r[ARS_COL.ID]) return;
+      const tgl = new Date(String(r[ARS_COL.TGL_ARSIP]));
+      if (!isNaN(tgl.getTime())) hitungTahun.set(tgl.getFullYear(), (hitungTahun.get(tgl.getFullYear()) || 0) + 1);
+    });
+    const tren = Array.from(hitungTahun.entries())
+      .map(([tahunItem, jumlah]) => ({ tahun: tahunItem, jumlah }))
+      .sort((a, b) => a.tahun - b.tahun);
+
     return NextResponse.json({
-      tahun, satker: 'BNNP SULSEL', data: gabungan,
+      tahun, satker: 'BNNP SULSEL', data: gabungan, tren,
       ringkasan: {
         totalSistem: dataSistem.length,
         totalArsip: dataArsip.length,

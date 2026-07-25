@@ -5,11 +5,12 @@ import { requireSession } from '@/lib/auth';
 const COL = {
   ID: 0, JENIS: 1, JUDUL: 2, ID_MITRA: 3, NAMA_MITRA: 4, TGL_DIBUAT: 5,
   TGL_BERLAKU: 6, TGL_BERAKHIR: 7, STATUS: 9,
+  LOG_EDIT: 30, // siapa terakhir edit dokumen ini, format "role|nama|waktu|level"
 };
 
 // Dashboard khusus Admin BNN Utama — lintas semua institusi/provinsi (BUKAN
 // per-mitra kayak dashboard BNNP/BNNK). Fokus utamanya: antrian dokumen
-// berstatus "Selesai" yang menunggu keputusan (setuju final / kembalikan).
+// berstatus "Draft" dari seluruh pengajuan sistem.
 export async function GET(req: NextRequest) {
   const session = await requireSession(req, ['admin', 'superadmin']);
   if (!session) return NextResponse.json({ message: 'Tidak diizinkan.' }, { status: 401 });
@@ -53,9 +54,10 @@ export async function GET(req: NextRequest) {
       mitraTerdaftar,
     };
 
-    // ── Antrian Review — dokumen berstatus "Selesai" menunggu BNN Utama ──
+    // ── Antrian Draft — seluruh dokumen dari pengajuan sistem yang masih
+    // berstatus "Draft" (belum diselesaikan mitra/admin BNNP/BNNK) ──
     const antrianReview = dokList
-      .filter(r => String(r[COL.STATUS]).trim() === 'Selesai')
+      .filter(r => String(r[COL.STATUS]).trim() === 'Draft')
       .map(r => ({
         id: String(r[COL.ID]),
         jenis: String(r[COL.JENIS]),
@@ -64,6 +66,7 @@ export async function GET(req: NextRequest) {
         tglBerlaku: String(r[COL.TGL_BERLAKU] || ''),
         tglBerakhir: String(r[COL.TGL_BERAKHIR] || ''),
         tglDibuat: String(r[COL.TGL_DIBUAT] || ''),
+        manualLog: String(r[COL.LOG_EDIT] || ''),
       }))
       .sort((a, b) => a.tglDibuat.localeCompare(b.tglDibuat)); // yang lama duluan (FIFO)
 
@@ -90,10 +93,27 @@ export async function GET(req: NextRequest) {
       };
     });
 
+    // ── Dokumen Baru Diacc — 5 dokumen TERBARU dibuat admin BNNP/BNNK, apa pun
+    // statusnya sekarang (bisa saja sudah lewat dari Draft) — dipakai buat
+    // card notifikasi ringkas di pojok atas dashboard, TERPISAH dari Antrian
+    // Draft (yang isinya SEMUA dokumen masih Draft, bisa banyak & lama). ──
+    const dokumenBaru = [...dokList]
+      .sort((a, b) => String(b[COL.TGL_DIBUAT] || '').localeCompare(String(a[COL.TGL_DIBUAT] || '')))
+      .slice(0, 5)
+      .map(r => ({
+        id: String(r[COL.ID]),
+        jenis: String(r[COL.JENIS]),
+        judul: String(r[COL.JUDUL]),
+        namaMitra: String(r[COL.NAMA_MITRA]),
+        status: String(r[COL.STATUS] || ''),
+        tglDibuat: String(r[COL.TGL_DIBUAT] || ''),
+      }));
+
     return NextResponse.json({
       ringkasan: { totalInstitusi, totalDokumen, mouCount, pksCount, statusCount, menungguReview: antrianReview.length },
       chartSumber, chartMitra,
       antrianReview,
+      dokumenBaru,
       riwayatKeputusan: riwayatLengkap,
     });
   } catch (err) {

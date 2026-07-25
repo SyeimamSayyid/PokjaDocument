@@ -2,14 +2,18 @@
 
 import { useState } from 'react';
 import { FaUserTie, FaUserShield, FaBuilding } from 'react-icons/fa';
-import { FiSearch } from 'react-icons/fi';
+import { FiSearch, FiArrowLeft } from 'react-icons/fi';
 
 type Tab = 'admin' | 'pegawai_bnn';
 type ActualRole = 'admin' | 'superadmin' | 'pegawai_bnn';
 
 const TABS: { value: Tab; label: string; icon: React.ReactNode }[] = [
   { value: 'admin',       label: 'Admin', icon: <FaUserTie size={16} /> },
-  { value: 'pegawai_bnn', label: 'Pegawai BNN', icon: <FaUserShield size={16} /> },
+  // Tab "Pegawai BNN" DINONAKTIFKAN sesuai arahan (modul Hukum belum
+  // dibutuhkan pembimbing) — tinggal un-comment baris di bawah buat
+  // mengaktifkan lagi kapan pun diperlukan, semua logic/redirect-nya
+  // masih utuh, tidak dihapus.
+  // { value: 'pegawai_bnn', label: 'Pegawai BNN', icon: <FaUserShield size={16} /> },
 ];
 
 const REDIRECT: Record<ActualRole, string> = {
@@ -72,6 +76,16 @@ export default function LoginPage() {
 
   return (
     <div className="auth-page">
+      <a href="/" style={{
+        position: 'fixed', top: 20, left: 20, zIndex: 50,
+        display: 'flex', alignItems: 'center', gap: 7,
+        background: 'rgba(255,255,255,0.12)', backdropFilter: 'blur(8px)',
+        border: '1px solid rgba(255,255,255,0.18)', borderRadius: 100,
+        padding: '9px 16px', color: '#fff', fontSize: 12, fontWeight: 600,
+        textDecoration: 'none', fontFamily: 'inherit',
+      }} className="back-home-btn">
+        <FiArrowLeft size={14} /> Kembali ke Beranda
+      </a>
       <style>{`
         @keyframes glowDrift1 {
           0%, 100% { transform: translate(0, 0) scale(1); }
@@ -111,6 +125,8 @@ export default function LoginPage() {
           50% { transform: scale(0.9); }
         }
 
+        .back-home-btn { transition: all 0.25s ease; }
+        .back-home-btn:hover { background: rgba(255,255,255,0.2); transform: translateY(-1px); }
         .auth-page {
           min-height: 100vh;
           display: flex;
@@ -349,7 +365,7 @@ export default function LoginPage() {
       <form className="auth-card" onSubmit={handleSubmit} noValidate>
         <div className="auth-brand">
           <div className="auth-brand-icon"><FaBuilding size={20} /></div>
-          <div className="auth-title">SI-POKJA HUMKER</div>
+          <div className="auth-title">E-POKJA HUKER</div>
           <div className="auth-subtitle">
             {isPegawai ? 'Pengajuan/Pendampingan Hukum' : 'Sistem Manajemen Kerja Sama'}
           </div>

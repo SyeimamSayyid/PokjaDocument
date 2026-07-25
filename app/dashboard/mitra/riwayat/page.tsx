@@ -69,6 +69,7 @@ export default function RiwayatMitraPage() {
     { href: `/mitra/dokumen/${user.idDokumen}`, icon: <FiFileText size={17} />, label: 'Dokumen' },
     { href: '/dashboard/mitra/notifikasi', icon: <FiBell size={17} />, label: 'Notifikasi' },
     { href: '/dashboard/mitra/riwayat', icon: <FiClock size={17} />, label: 'Riwayat' },
+    { href: '/dashboard/mitra/saran', icon: <FiMessageSquare size={17} />, label: 'Kotak Saran' },
   ];
 
   return (
@@ -84,7 +85,7 @@ export default function RiwayatMitraPage() {
       <Sidebar
         items={sidebarItems}
         activeHref="/dashboard/mitra/riwayat"
-        brandLabel="SI-POKJA HUMKER"
+        brandLabel="E-POKJA HUKER"
         brandSub="Akses Mitra"
         userName={user.namaMitra}
         userTag={user.judul || user.namaMitra}

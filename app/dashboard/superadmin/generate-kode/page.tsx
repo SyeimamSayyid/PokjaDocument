@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Sidebar, { SidebarItem } from '@/components/Sidebar';
 import {
   FiGrid, FiCalendar, FiInbox, FiKey, FiFolder, FiActivity, FiFileText,
-  FiUsers, FiList, FiArchive, FiShield,
+  FiUsers, FiList, FiArchive, FiShield, FiMessageCircle, FiMessageSquare,
 } from 'react-icons/fi';
 import {
   ArrowLeft, Key, Building, User, FileText, Tag, Calendar,
@@ -226,6 +226,8 @@ export default function GenerateKodePage() {
     { href: '/dashboard/dokumen/extract-poin', icon: <FiList size={17} />, label: 'Extract Poin Publik' },
     { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
     { href: '/dashboard/superadmin/laporan', icon: <FiFileText size={17} />, label: 'Laporan' },
+    { href: '/dashboard/kelola-chatbot', icon: <FiMessageCircle size={17} />, label: 'Kelola Chatbot' },
+    { href: '/dashboard/kotak-saran', icon: <FiMessageSquare size={17} />, label: 'Kotak Saran' },
     ...(level === 'bnnp_bnnk' ? [{ href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Kelola Admin' }] : []),
   ];
 

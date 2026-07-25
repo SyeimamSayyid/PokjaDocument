@@ -139,6 +139,29 @@ export default function KomentarRevisi({ idDokumen, pengirim, senderId, namaPeng
   const listAktivitas = list.filter(k => k.idPengirim === 'sistem');
   const listAktif = tab === 'diskusi' ? listDiskusi : listAktivitas;
 
+  // ── Bundaran merah di tab "Log Aktivitas" — muncul kalau ada komentar
+  // sistem (notifikasi otomatis) yang lebih baru dari terakhir kali user
+  // buka tab ini. Disimpan di localStorage per dokumen (client-side saja,
+  // tidak perlu ubah backend/kolom "dibaca" yang belum dipakai). ──
+  const keyTerakhirLihat = `krv_aktivitas_dilihat_${idDokumen}`;
+  const [terakhirLihat, setTerakhirLihat] = useState<string>('');
+  useEffect(() => {
+    try { setTerakhirLihat(localStorage.getItem(keyTerakhirLihat) || ''); } catch {}
+  }, [keyTerakhirLihat]);
+
+  const aktivitasTerbaru = listAktivitas.length > 0
+    ? listAktivitas.reduce((a, b) => (new Date(a.tglDibuat) > new Date(b.tglDibuat) ? a : b)).tglDibuat
+    : '';
+  const adaAktivitasBaru = !!aktivitasTerbaru && (!terakhirLihat || new Date(aktivitasTerbaru) > new Date(terakhirLihat));
+
+  const bukaTabAktivitas = () => {
+    setTab('aktivitas');
+    if (aktivitasTerbaru) {
+      try { localStorage.setItem(keyTerakhirLihat, aktivitasTerbaru); } catch {}
+      setTerakhirLihat(aktivitasTerbaru);
+    }
+  };
+
   // Kelompokkan bubble berurutan dari pengirim yang sama (rapatkan, sembunyikan label berulang)
   const grouped = listAktif.map((k, i) => {
     const prev = listAktif[i - 1];
@@ -174,8 +197,14 @@ export default function KomentarRevisi({ idDokumen, pengirim, senderId, namaPeng
         <button onClick={() => setTab('diskusi')} style={{ ...tabBtn, ...(tab === 'diskusi' ? tabBtnActive : {}) }}>
           Diskusi{listDiskusi.length > 0 ? ` (${listDiskusi.length})` : ''}
         </button>
-        <button onClick={() => setTab('aktivitas')} style={{ ...tabBtn, ...(tab === 'aktivitas' ? tabBtnActive : {}) }}>
+        <button onClick={bukaTabAktivitas} style={{ ...tabBtn, ...(tab === 'aktivitas' ? tabBtnActive : {}), position: 'relative' }}>
           Log Aktivitas{listAktivitas.length > 0 ? ` (${listAktivitas.length})` : ''}
+          {adaAktivitasBaru && (
+            <span style={{
+              position: 'absolute', top: -3, right: -3, width: 9, height: 9, borderRadius: '50%',
+              background: '#DC2626', border: '1.5px solid #fff', boxShadow: '0 0 0 1px rgba(220,38,38,0.3)',
+            }} />
+          )}
         </button>
       </div>
 

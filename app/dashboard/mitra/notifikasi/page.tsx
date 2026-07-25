@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Sidebar, { SidebarItem } from '@/components/Sidebar';
-import { FiGrid, FiFileText, FiBell, FiClock, FiCheckCircle, FiAlertCircle, FiInfo, FiInbox } from 'react-icons/fi';
+import { FiGrid, FiFileText, FiBell, FiClock, FiCheckCircle, FiAlertCircle, FiInfo, FiInbox, FiMessageSquare } from 'react-icons/fi';
 
 interface MitraUser { idDokumen: string; namaMitra: string; judul: string; jenis: string; }
 interface Notif { id: string; tipe: string; judul: string; pesan: string; dibaca: boolean; tglDibuat: string; }
@@ -71,6 +71,7 @@ export default function NotifikasiMitraPage() {
     { href: `/mitra/dokumen/${user.idDokumen}`, icon: <FiFileText size={17} />, label: 'Dokumen' },
     { href: '/dashboard/mitra/notifikasi', icon: <FiBell size={17} />, label: 'Notifikasi' },
     { href: '/dashboard/mitra/riwayat', icon: <FiClock size={17} />, label: 'Riwayat' },
+    { href: '/dashboard/mitra/saran', icon: <FiMessageSquare size={17} />, label: 'Kotak Saran' },
   ];
 
   return (
@@ -86,7 +87,7 @@ export default function NotifikasiMitraPage() {
       <Sidebar
         items={sidebarItems}
         activeHref="/dashboard/mitra/notifikasi"
-        brandLabel="SI-POKJA HUMKER"
+        brandLabel="E-POKJA HUKER"
         brandSub="Akses Mitra"
         userName={user.namaMitra}
         userTag={user.judul || user.namaMitra}

@@ -95,7 +95,7 @@ function TindakLanjutPegawaiContent() {
       <Sidebar
         items={sidebarItems}
         activeHref="/dashboard/pegawai/tindak-lanjut"
-        brandLabel="SI-POKJA HUMKER"
+        brandLabel="E-POKJA HUKER"
         brandSub="Modul Penegak Hukum"
         navSectionTitle="Menu"
         userName={`Pegawai ${user.nip}`}

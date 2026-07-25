@@ -9,12 +9,11 @@ const COL = { ID: 0, NAMA: 1, EMAIL: 2, PASSWORD: 3, STATUS: 4, DIBUAT_OLEH: 5, 
 
 const LOKASI_BNN_LIST = ['BNNP Sulsel', 'BNNK Palopo', 'BNNK Toraja', 'BNNK Bone', 'BNNK Sidrap'];
 
-// Kelola Admin sekarang bukan lagi superadmin-only — dipindah jadi milik
-// Admin level 'bnnp_bnnk' (menyatukan fitur yang dulu cuma superadmin bisa).
-// SENGAJA TIDAK dibuka utk level 'utama' (BNN Utama) — perannya itu
-// pengawasan/QC dokumen, bukan mengelola akun admin lain. Kalau ternyata BNN
-// Utama juga perlu ini, tinggal tambahkan 'utama' ke daftar levelDiizinkan.
-const levelDiizinkan = ['bnnp_bnnk'];
+// Kelola Admin — Admin BNNP/BNNK bisa tambah admin (khusus level BNNP/BNNK,
+// TIDAK BISA bikin akun BNN Utama). Admin BNN Utama JUGA bisa tambah admin,
+// TAPI cuma sesama level BNN Utama (tidak masuk campur tangan wilayah
+// BNNP/BNNK). Validasi kombinasi "siapa bikin siapa" ada di POST handler.
+const levelDiizinkan = ['bnnp_bnnk', 'utama'];
 
 async function cekAksesAdmin(req: NextRequest, butuhTulis: boolean) {
   const session = await requireSession(req, ['admin', 'superadmin']);
@@ -22,12 +21,10 @@ async function cekAksesAdmin(req: NextRequest, butuhTulis: boolean) {
   const s = session as Record<string, unknown>;
   // Token lama role:'superadmin' (masa transisi) otomatis dianggap 'bnnp_bnnk'.
   const level = session.role === 'superadmin' ? 'bnnp_bnnk' : (String(s.level || '') === 'utama' ? 'utama' : 'bnnp_bnnk');
-  // BNN Utama boleh LIHAT daftar admin (transparansi lintas wilayah), tapi
-  // tidak boleh menambah/mengubah/menonaktifkan — itu tetap kerjaan BNNP/BNNK.
   if (butuhTulis && !levelDiizinkan.includes(level)) {
-    return { ok: false as const, status: 403, message: 'Cuma Admin BNNP/BNNK yang bisa mengubah data admin.' };
+    return { ok: false as const, status: 403, message: 'Anda tidak memiliki akses untuk mengubah data admin.' };
   }
-  return { ok: true as const, session };
+  return { ok: true as const, session, level };
 }
 
 export async function GET(req: NextRequest) {
@@ -68,6 +65,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'Password minimal 6 karakter.' }, { status: 400 });
     }
     const levelBersih = level === 'BNN Utama' ? 'BNN Utama' : 'BNNP/BNNK';
+
+    // Validasi silang — Admin BNNP/BNNK cuma boleh bikin akun BNNP/BNNK
+    // (tidak boleh bikin BNN Utama). Admin BNN Utama cuma boleh bikin
+    // sesama BNN Utama (tidak ikut campur bikin akun wilayah BNNP/BNNK).
+    if (akses.level === 'bnnp_bnnk' && levelBersih === 'BNN Utama') {
+      return NextResponse.json({ message: 'Admin BNNP/BNNK tidak dapat membuat akun dengan level BNN Utama.' }, { status: 403 });
+    }
+    if (akses.level === 'utama' && levelBersih === 'BNNP/BNNK') {
+      return NextResponse.json({ message: 'Admin BNN Utama hanya dapat membuat akun sesama level BNN Utama.' }, { status: 403 });
+    }
+
     // Wilayah cuma wajib buat admin BNNP/BNNK — BNN Utama mengawasi semua wilayah.
     if (levelBersih === 'BNNP/BNNK' && !LOKASI_BNN_LIST.includes(String(wilayah || ''))) {
       return NextResponse.json({ message: 'Wilayah wajib dipilih untuk Admin BNNP/BNNK.' }, { status: 400 });
@@ -151,6 +159,12 @@ export async function PATCH(req: NextRequest) {
 
     if (action === 'ubahLevel') {
       const levelBersih = level === 'BNN Utama' ? 'BNN Utama' : 'BNNP/BNNK';
+      if (akses.level === 'bnnp_bnnk' && levelBersih === 'BNN Utama') {
+        return NextResponse.json({ message: 'Admin BNNP/BNNK tidak dapat mengubah level akun menjadi BNN Utama.' }, { status: 403 });
+      }
+      if (akses.level === 'utama' && levelBersih === 'BNNP/BNNK') {
+        return NextResponse.json({ message: 'Admin BNN Utama tidak dapat mengubah level akun menjadi BNNP/BNNK.' }, { status: 403 });
+      }
       await updateCell('Admin', found.rowNumber, COL.LEVEL + 1, levelBersih);
       return NextResponse.json({ message: `Level diubah menjadi ${levelBersih}.`, level: levelBersih });
     }

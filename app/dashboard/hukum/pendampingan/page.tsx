@@ -133,7 +133,7 @@ export default function KelolaPendampinganHukumPage() {
       <Sidebar
         items={sidebarItems}
         activeHref="/dashboard/hukum/pendampingan"
-        brandLabel="SI-POKJA HUMKER"
+        brandLabel="E-POKJA HUKER"
         brandSub="Modul Penegak Hukum"
         navSectionTitle="Modul Hukum"
         userName={namaAdmin}

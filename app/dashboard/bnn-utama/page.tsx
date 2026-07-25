@@ -4,9 +4,11 @@ import { useEffect, useState } from 'react';
 import LoaderPage from '@/components/LoaderPage';
 import Sidebar, { SidebarItem } from '@/components/Sidebar';
 import { DonutChart, BarChart } from '@/components/DashboardCharts';
+import EditPencilIndicator from '@/components/EditPencilIndicator';
 import {
   FiFolder, FiFileText, FiCheckCircle, FiClock, FiAlertCircle,
   FiArrowUpRight, FiInbox, FiClipboard, FiGrid, FiArchive, FiUsers, FiShield,
+  FiBell, FiDownload, FiDroplet,
 } from 'react-icons/fi';
 
 const FONT = "'Plus Jakarta Sans', -apple-system, sans-serif";
@@ -32,6 +34,11 @@ interface ChartMitra { totalInstitusi: number; mitraTerdaftar: number; }
 interface DokAntrian {
   id: string; jenis: string; judul: string; namaMitra: string;
   tglBerlaku: string; tglBerakhir: string; tglDibuat: string;
+  manualLog?: string;
+}
+interface DokBaru {
+  id: string; jenis: string; judul: string; namaMitra: string;
+  status: string; tglDibuat: string;
 }
 interface Riwayat {
   idDokumen: string; pesan: string; tglDibuat: string; judul: string; namaMitra: string;
@@ -40,6 +47,7 @@ interface Riwayat {
 const SIDEBAR_ITEMS: SidebarItem[] = [
   { href: '/dashboard/bnn-utama', icon: <FiGrid size={17} />, label: 'Dashboard' },
   { href: '/dashboard/dokumen', icon: <FiFolder size={17} />, label: 'Dokumen & Tata Kelola' },
+  { href: '/dashboard/dokumen-basah', icon: <FiDroplet size={17} />, label: 'Dokumen Basah' },
   { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
   { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
   { href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Daftar Admin' },
@@ -51,6 +59,10 @@ export default function BnnUtamaDashboard() {
   const [chartSumber, setChartSumber] = useState<ChartSumber>({ sistem: 0, arsip: 0 });
   const [chartMitra, setChartMitra] = useState<ChartMitra>({ totalInstitusi: 0, mitraTerdaftar: 0 });
   const [antrian, setAntrian] = useState<DokAntrian[]>([]);
+  const [dokumenBaru, setDokumenBaru] = useState<DokBaru[]>([]);
+  const [dokumenBasahMenunggu, setDokumenBasahMenunggu] = useState(0);
+  const [cardBaruTerbuka, setCardBaruTerbuka] = useState(false);
+  const [idTerakhirDilihat, setIdTerakhirDilihat] = useState<string>('');
   const [riwayat, setRiwayat] = useState<Riwayat[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -73,8 +85,15 @@ export default function BnnUtamaDashboard() {
         setChartSumber(d.chartSumber || { sistem: 0, arsip: 0 });
         setChartMitra(d.chartMitra || { totalInstitusi: 0, mitraTerdaftar: 0 });
         setAntrian(d.antrianReview || []);
+        setDokumenBaru(d.dokumenBaru || []);
+        try { setIdTerakhirDilihat(localStorage.getItem('bnnUtama_dokBaru_dilihat') || ''); } catch {}
         setRiwayat(d.riwayatKeputusan || []);
         setLoading(false);
+
+        fetch('/api/dokumen/dokumen-basah')
+          .then(r => r.json())
+          .then(dd => setDokumenBasahMenunggu((dd.data || []).filter((x: { ttdStatus: string }) => x.ttdStatus === 'Menunggu Basah').length))
+          .catch(() => {});
       })
       .catch(() => { setError('Gagal memuat data.'); setLoading(false); });
   }, []);
@@ -98,6 +117,21 @@ export default function BnnUtamaDashboard() {
   const totalSumber = chartSumber.sistem + chartSumber.arsip || 1;
   const persenSistem = Math.round((chartSumber.sistem / totalSumber) * 100);
 
+  // Jumlah dokumen "belum dilihat" — dihitung dari posisi idTerakhirDilihat di
+  // list (dokumenBaru sudah di-sort terbaru dulu). Kalau id itu tidak ketemu
+  // (belum pernah buka / ada dokumen jauh lebih baru), semua dianggap belum dilihat.
+  const idxTerakhirDilihat = dokumenBaru.findIndex(d => d.id === idTerakhirDilihat);
+  const jumlahBelumDilihat = idxTerakhirDilihat === -1 ? dokumenBaru.length : idxTerakhirDilihat;
+
+  const toggleCardBaru = () => {
+    const buka = !cardBaruTerbuka;
+    setCardBaruTerbuka(buka);
+    if (buka && dokumenBaru.length > 0) {
+      try { localStorage.setItem('bnnUtama_dokBaru_dilihat', dokumenBaru[0].id); } catch {}
+      setIdTerakhirDilihat(dokumenBaru[0].id);
+    }
+  };
+
   return (
     <div style={{ minHeight: '100dvh', fontFamily: FONT, background: `linear-gradient(180deg,${CLOUD},#F2F6F4)` }}>
       <style>{`
@@ -108,15 +142,17 @@ export default function BnnUtamaDashboard() {
         .lift:hover { transform: translateY(-3px); box-shadow: 0 24px 46px -26px rgba(47,84,73,0.28) !important; }
         .btn-hover { transition: all 0.25s ease; }
         .btn-hover:hover { filter: brightness(1.05); }
+        .notif-item { transition: background 0.2s ease; }
+        .notif-item:hover { background: rgba(171,209,198,0.15); }
         @media (min-width: 901px) {
           .main-content { margin-left: 236px !important; width: calc(100% - 236px) !important; box-sizing: border-box !important; }
         }
       `}</style>
 
       <Sidebar
-        items={SIDEBAR_ITEMS}
+        items={SIDEBAR_ITEMS.map(item => item.label === 'Dokumen Basah' ? { ...item, notifCount: dokumenBasahMenunggu } : item)}
         activeHref="/dashboard/bnn-utama"
-        brandLabel="SI-POKJA HUMKER"
+        brandLabel="E-POKJA HUKER"
         brandSub="BNN Utama"
         userName={nama}
         userTag="Admin BNN Utama"
@@ -125,17 +161,66 @@ export default function BnnUtamaDashboard() {
       />
 
       <div className="main-content" style={{ padding: '1.75rem 2rem 3rem', maxWidth: 1180 }}>
-        <div style={{ marginBottom: 26 }} className="rise">
-          <span style={{ fontSize: 9.5, color: JADE_DEEP, textTransform: 'uppercase', letterSpacing: '0.22em', fontWeight: 700, background: 'rgba(171,209,198,0.25)', padding: '6px 14px', borderRadius: 100 }}>
-            Pengawasan Lintas Wilayah
-          </span>
-          <h1 style={{ fontSize: 28, fontWeight: 800, color: JADE_DEEP, letterSpacing: '-0.03em', margin: '10px 0 4px' }}>
-            Selamat datang, {nama.split(' ')[0]}
-          </h1>
-          <p style={{ fontSize: 13, color: 'rgba(47,84,73,0.6)', margin: 0 }}>
-            Data langsung dari Google Sheets — seluruh institusi BNNP/BNNK
-          </p>
+        <div style={{ marginBottom: 26, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap', position: 'relative' }} className="rise">
+          <div>
+            <span style={{ fontSize: 9.5, color: JADE_DEEP, textTransform: 'uppercase', letterSpacing: '0.22em', fontWeight: 700, background: 'rgba(171,209,198,0.25)', padding: '6px 14px', borderRadius: 100 }}>
+              Pengawasan Lintas Wilayah
+            </span>
+            <h1 style={{ fontSize: 28, fontWeight: 800, color: JADE_DEEP, letterSpacing: '-0.03em', margin: '10px 0 4px' }}>
+              Selamat datang, {nama.split(' ')[0]}
+            </h1>
+            <p style={{ fontSize: 13, color: 'rgba(47,84,73,0.6)', margin: 0 }}>
+              Data langsung dari Google Sheets — seluruh institusi BNNP/BNNK
+            </p>
+          </div>
+          <a href="/panduan/admin-bnn-utama.docx" download style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 100,
+            background: '#fff', border: '1px solid rgba(47,84,73,0.12)', color: JADE_DEEP,
+            fontSize: 12, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0,
+            boxShadow: '0 6px 18px -10px rgba(47,84,73,0.25)',
+          }} className="btn-hover">
+            <FiDownload size={14} /> Unduh Panduan
+          </a>
         </div>
+
+        {/* Card Dokumen Baru — bagian tetap di layout dashboard, bisa dibuka/tutup */}
+        {dokumenBaru.length > 0 && (
+          <div style={{ ...shell, marginBottom: 18 }} className="rise">
+            <div style={{ ...core, padding: 0, overflow: 'hidden' }}>
+              <button onClick={toggleCardBaru} style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '1.1rem 1.3rem',
+                background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT, textAlign: 'left',
+              }}>
+                <FiBell size={15} style={{ color: JADE_DEEP, flexShrink: 0 }} />
+                <span style={{ fontSize: 13.5, fontWeight: 800, color: JADE_DEEP, flex: 1 }}>Dokumen Baru dari Sistem</span>
+                {jumlahBelumDilihat > 0 && (
+                  <span style={{ fontSize: 10, fontWeight: 800, background: '#DC2626', color: '#fff', borderRadius: 100, padding: '1px 8px' }}>{jumlahBelumDilihat}</span>
+                )}
+                <span style={{ fontSize: 11, color: '#94a3b8' }}>{cardBaruTerbuka ? 'Tutup' : 'Buka'}</span>
+              </button>
+
+              {cardBaruTerbuka && (
+                <div style={{ padding: '0 1.3rem 1.1rem' }} className="rise">
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 10 }}>
+                    {dokumenBaru.map(d => (
+                      <a key={d.id} href={`/dashboard/dokumen/${d.id}`} style={{
+                        display: 'block', padding: '12px 14px', borderRadius: 12, textDecoration: 'none',
+                        background: 'rgba(171,209,198,0.08)', border: '1px solid rgba(171,209,198,0.25)',
+                      }} className="notif-item">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+                          <span style={{ fontSize: 9.5, fontWeight: 700, padding: '1px 8px', borderRadius: 100, background: d.jenis === 'MOU' ? '#DBEAFE' : '#FEF3C7', color: d.jenis === 'MOU' ? '#1D4ED8' : '#92400E' }}>{d.jenis}</span>
+                          <span style={{ fontSize: 9.5, color: '#94a3b8' }}>{d.status}</span>
+                        </div>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: '#0f1f3d', marginBottom: 2 }}>{d.judul}</div>
+                        <div style={{ fontSize: 11, color: '#64748b' }}>{d.namaMitra} · {d.tglDibuat}</div>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Ringkasan stat cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12, marginBottom: 18 }}>
@@ -144,7 +229,7 @@ export default function BnnUtamaDashboard() {
             { lbl: 'Total Dokumen', val: ringkasan.totalDokumen, icon: <FiFileText size={14} /> },
             { lbl: 'MOU', val: ringkasan.mouCount, icon: <FiCheckCircle size={14} /> },
             { lbl: 'PKS', val: ringkasan.pksCount, icon: <FiClipboard size={14} /> },
-            { lbl: 'Menunggu Review', val: ringkasan.menungguReview, icon: <FiInbox size={14} />, warn: ringkasan.menungguReview > 0 },
+            { lbl: 'Menunggu Draft', val: ringkasan.menungguReview, icon: <FiInbox size={14} />, warn: ringkasan.menungguReview > 0 },
           ].map((s, i) => (
             <div key={s.lbl} style={{ ...shellSm, animationDelay: `${0.03 * i}s` }} className="rise">
               <div style={{ ...coreSm, padding: '1rem 1.1rem' }}>
@@ -224,17 +309,17 @@ export default function BnnUtamaDashboard() {
           </div>
         </div>
 
-        {/* Antrian Review */}
+        {/* Antrian Draft */}
         <div style={shell} className="rise">
           <div style={{ ...core, padding: '1.3rem 1.4rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
               <FiClipboard size={16} style={{ color: JADE_DEEP }} />
-              <span style={{ fontSize: 14.5, fontWeight: 800, color: JADE_DEEP }}>Antrian Review ({antrian.length})</span>
+              <span style={{ fontSize: 14.5, fontWeight: 800, color: JADE_DEEP }}>Antrian Draft ({antrian.length})</span>
             </div>
             {antrian.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '2rem', color: 'rgba(47,84,73,0.35)' }}>
                 <FiCheckCircle size={32} style={{ opacity: 0.5, marginBottom: 8 }} />
-                <div style={{ fontSize: 13, fontWeight: 600 }}>Tidak ada dokumen menunggu review saat ini</div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>Tidak ada dokumen berstatus draft saat ini</div>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -245,6 +330,7 @@ export default function BnnUtamaDashboard() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
                           <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 100, background: d.jenis === 'MOU' ? '#DBEAFE' : '#FEF3C7', color: d.jenis === 'MOU' ? '#1D4ED8' : '#92400E' }}>{d.jenis}</span>
                           <span style={{ fontWeight: 700, color: INK, fontSize: 13.5 }}>{d.judul}</span>
+                          <EditPencilIndicator manualLog={d.manualLog} size={20} />
                         </div>
                         <div style={{ fontSize: 11.5, color: 'rgba(47,84,73,0.6)' }}>{d.namaMitra} · Dibuat {d.tglDibuat}</div>
                       </div>

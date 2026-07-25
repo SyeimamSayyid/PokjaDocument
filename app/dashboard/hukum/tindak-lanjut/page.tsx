@@ -123,7 +123,7 @@ function TindakLanjutContent() {
       <Sidebar
         items={sidebarItems}
         activeHref="/dashboard/hukum/tindak-lanjut"
-        brandLabel="SI-POKJA HUMKER"
+        brandLabel="E-POKJA HUKER"
         brandSub="Modul Penegak Hukum"
         navSectionTitle="Modul Hukum"
         userName={namaAdmin}

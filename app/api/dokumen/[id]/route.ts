@@ -20,6 +20,8 @@ const COL = {
   DOC_SNAPSHOT:31, // BARU — cuplikan teks dokumen terakhir kali dicek, dipakai buat deteksi diff perubahan
   SCAN_TTD:32, // BARU — file ID scan hasil TTD Basah yang diupload admin (lihat Kode-tambahan-ScanTTD.gs)
   FLAG_REVISI:33, // BARU — flag "perlu revisi" dari BNN Utama, format "ya|waktu"
+  MASA_BERLAKU_DIISI_OLEH:34, // BARU — siapa TERAKHIR isi/ubah tgl berlaku atau berakhir, format "role|nama|waktu|level"
+  SUMBER_TEMPLATE_AKTIF:35, // BARU — "resmi" atau "mitra", nunjukin naskah kerja mana yang SEDANG dipakai
 };
 
 const URUTAN_STATUS = [
@@ -247,6 +249,33 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const status = String(row[COL.STATUS]);
     const tglBerakhir = String(row[COL.TGL_BERAKHIR] || '');
 
+    // ── Catat siapa+kapan TERAKHIR MEMBUKA dokumen ini (bukan mengedit) —
+    // resolve identitas dari sesi, sama pola dengan PATCH di bawah. Dicatat
+    // best-effort (gagal resolve sesi/gagal tulis TIDAK menggagalkan GET
+    // dokumen itu sendiri — halaman tetap harus bisa dibuka). ──
+    let terakhirDiakses = String(row[COL.TERAKHIR_DIAKSES] || '');
+    try {
+      const sesiAkses = await requireSession(req);
+      if (sesiAkses) {
+        let pelakuAkses = 'admin';
+        let namaAkses = '';
+        let levelAkses = '';
+        if (sesiAkses.role === 'mitra') {
+          pelakuAkses = 'mitra';
+          const picEmail = await resolvePicEmail(String(row[COL.ID_MITRA] || ''), String(row[COL.NAMA_MITRA] || ''));
+          namaAkses = picEmail || String(row[COL.NAMA_MITRA] || 'Mitra');
+        } else if (['admin', 'superadmin'].includes(String(sesiAkses.role))) {
+          const s = sesiAkses as Record<string, unknown>;
+          namaAkses = String(s.email || s.username || s.nama || 'Admin');
+          levelAkses = String(s.level || '') === 'utama' ? 'utama' : 'bnnp_bnnk';
+        }
+        if (namaAkses) {
+          terakhirDiakses = `${pelakuAkses}|${namaAkses}|${formatTanggalWaktu(new Date())}|${levelAkses}`;
+          await updateCell('Dokumen Kerja sama', rowNumber, COL.TERAKHIR_DIAKSES + 1, terakhirDiakses);
+        }
+      }
+    } catch (e) { console.error('[CATAT AKSES]', e); }
+
     // Cek dulu apakah ada edit Docs langsung sejak log terakhir — kalau ada,
     // manualLog di bawah pakai hasil terbaru (bisa jadi "unknown|Anonim|...").
     const { logBaru: manualLog } = await cekEditDocsAnonim(id, rowNumber, docsId, String(row[COL.LOG_EDIT] || ''), String(row[COL.DOC_SNAPSHOT] || ''));
@@ -272,6 +301,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       kode:         String(row[COL.KODE]),
       kodeExpire:   String(row[COL.KODE_EXP]),
       manualLog,
+      terakhirDiakses,
+      masaBerlakuDiisiOleh: String(row[COL.MASA_BERLAKU_DIISI_OLEH] || ''),
+      sumberTemplateAktif: String(row[COL.SUMBER_TEMPLATE_AKTIF] || ''),
       scanTtdId:  String(row[COL.SCAN_TTD] || ''),
       scanTtdUrl: row[COL.SCAN_TTD] ? `https://drive.google.com/file/d/${String(row[COL.SCAN_TTD])}/view` : '',
       flagRevisi: String(row[COL.FLAG_REVISI] || '').startsWith('ya'),
@@ -349,7 +381,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const body = await req.json();
     const {
       poin, status, catatan, tglKegiatanMulai, tglKegiatanSelesai, transisi, alasanKembali,
-      ttdAction, tglDiajukan, alasanTolak, tglFinal,
+      ttdAction, tglDiajukan, alasanTolak, tglFinal, tipeTtd,
       pelaku: pelakuBody, namaPelaku: namaPelakuBody,
       bnnUtamaAction, alasanKembaliUtama,
       tglBerlaku: tglBerlakuUsulan, tglBerakhir: tglBerakhirUsulan,
@@ -397,6 +429,46 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     // ── Alur Penandatanganan (TTD) ──────────────────────────
     if (ttdAction) {
+      // Jaga-jaga mitra lupa memilih tipe TTD — admin bisa pilih ATAS NAMA
+      // mitra, TAPI cuma boleh kalau masa berlaku (tglBerlaku & tglBerakhir)
+      // sudah lengkap terisi, dan mitra WAJIB diberi tahu lewat email.
+      if (ttdAction === 'adminPilihTipe') {
+        if (pelaku !== 'admin') {
+          return NextResponse.json({ message: 'Hanya admin yang bisa memilih TTD atas nama mitra.' }, { status: 403 });
+        }
+        const tipeDipilih = String(tipeTtd || '').trim();
+        if (!['basah', 'online'].includes(tipeDipilih)) {
+          return NextResponse.json({ message: 'Tipe TTD tidak valid.' }, { status: 400 });
+        }
+        const tglBerlakuDok = String(rows[idx][COL.TGL_BERLAKU] || '').trim();
+        const tglBerakhirDok = String(rows[idx][COL.TGL_BERAKHIR] || '').trim();
+        if (!tglBerlakuDok || !tglBerakhirDok) {
+          return NextResponse.json({ message: 'Masa berlaku (tanggal mulai & berakhir) harus diisi lengkap dulu sebelum memilih TTD atas nama mitra.' }, { status: 400 });
+        }
+
+        await updateCell('Dokumen Kerja sama', rowNumber, COL.TTD_TIPE + 1, tipeDipilih);
+        if (tipeDipilih === 'basah') {
+          await updateCell('Dokumen Kerja sama', rowNumber, COL.TTD_STATUS + 1, 'Menunggu Basah');
+        }
+        await catatKomentarSistem(id, `✒ Admin (${namaPelaku || 'Admin'}) memilih metode TTD ${tipeDipilih === 'basah' ? 'Basah' : 'Online'} atas nama mitra (mitra belum sempat memilih).`);
+        await catatLogEdit(rowNumber, pelaku, namaPelaku, levelPelaku);
+
+        // Email ke mitra — wajib, biar mitra tahu admin sudah pilihkan metode TTD.
+        try {
+          await fetch(APPS_SCRIPT_URL, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'kirimEmailAdminPilihTtd',
+              idDokumen: id, judul: judulDok, namaMitra: namaMitraRow,
+              tipeTtd: tipeDipilih, namaAdmin: namaPelaku || 'Admin',
+            }),
+            redirect: 'follow',
+          });
+        } catch (e) { console.error('[EMAIL ADMIN PILIH TTD]', e); }
+
+        return NextResponse.json({ message: `TTD ${tipeDipilih === 'basah' ? 'Basah' : 'Online'} dipilih atas nama mitra. Email pemberitahuan terkirim.` });
+      }
+
       if (ttdAction === 'pilihBasah') {
         await updateCell('Dokumen Kerja sama', rowNumber, COL.TTD_TIPE + 1, 'basah');
         await updateCell('Dokumen Kerja sama', rowNumber, COL.TTD_STATUS + 1, 'Menunggu Basah');
@@ -564,6 +636,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         await catatLogEdit(rowNumber, pelaku, namaPelaku, levelPelaku);
         await kirimNotifikasiAdmin(id, 'dikembalikan-bnn-utama', 'Dokumen dikembalikan BNN Utama',
           `Dokumen "${judulDok}" dikembalikan oleh BNN Utama ke tahap Dalam Proses. Alasan: ${alasanBersih}`);
+
+        // Email ke mitra + seluruh admin — best-effort, tidak menggagalkan
+        // aksi pengembalian itu sendiri kalau gagal kirim.
+        try {
+          await fetch(process.env.APPS_SCRIPT_WEBAPP_URL!, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'kirimEmailKembalikanDokumen',
+              idDokumen: id, jenis: String(rows[idx][COL.JENIS] || ''), judul: judulDok,
+              idMitra: idMitraRow, namaMitra: namaMitraRow,
+              alasan: alasanBersih, namaBnnUtama: namaPelaku,
+            }),
+            redirect: 'follow',
+          });
+        } catch (e) { console.error('[EMAIL KEMBALIKAN]', e); }
+
         return NextResponse.json({ message: 'Dokumen dikembalikan ke Admin BNNP/BNNK.' });
       }
 
@@ -582,6 +671,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
       if (tglBerlakuUsulan !== undefined) await updateCell('Dokumen Kerja sama', rowNumber, COL.TGL_BERLAKU + 1, String(tglBerlakuUsulan));
       if (tglBerakhirUsulan !== undefined) await updateCell('Dokumen Kerja sama', rowNumber, COL.TGL_BERAKHIR + 1, String(tglBerakhirUsulan));
+      {
+        const roleAttr = pelaku === 'mitra' ? 'mitra' : 'admin';
+        const namaAttr = String(namaPelaku || (roleAttr === 'mitra' ? 'Mitra' : 'Admin')).trim();
+        const levelAttr = roleAttr === 'admin' ? (levelPelaku === 'utama' ? 'utama' : 'bnnp_bnnk') : '';
+        await updateCell('Dokumen Kerja sama', rowNumber, COL.MASA_BERLAKU_DIISI_OLEH + 1, `${roleAttr}|${namaAttr}|${formatTanggalWaktu(new Date())}|${levelAttr}`);
+      }
       await catatKomentarSistem(id, `📅 Masa berlaku diajukan: ${tglBerlakuUsulan || rows[idx][COL.TGL_BERLAKU]} s.d. ${tglBerakhirUsulan || rows[idx][COL.TGL_BERAKHIR]} (oleh ${namaPelaku || (pelaku === 'mitra' ? 'Mitra' : 'Admin')}).`);
       await catatLogEdit(rowNumber, pelaku, namaPelaku, levelPelaku);
       return NextResponse.json({ message: 'Masa berlaku berhasil disimpan.' });

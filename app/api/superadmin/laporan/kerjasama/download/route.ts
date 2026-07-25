@@ -59,6 +59,29 @@ interface BarisLaporan {
   qrCode?: string; // data URL base64 QR code, diisi belakangan (di-generate async)
 }
 
+// Tren per tahun — SEMUA data (bukan cuma tahun yang difilter), gabung
+// Sistem + Arsip, dipakai buat chart garis di halaman cover laporan.
+async function ambilTren(): Promise<{ tahun: number; jumlah: number }[]> {
+  const [dokRows, arsipRows] = await Promise.all([
+    getSheetData('Dokumen Kerja sama'),
+    getSheetData('Arsip Dokumen').catch(() => []),
+  ]);
+  const hitungTahun = new Map<number, number>();
+  dokRows.forEach(r => {
+    if (!r[DOK_COL.ID]) return;
+    const tgl = new Date(String(r[DOK_COL.TGL_BERLAKU]));
+    if (!isNaN(tgl.getTime())) hitungTahun.set(tgl.getFullYear(), (hitungTahun.get(tgl.getFullYear()) || 0) + 1);
+  });
+  (arsipRows || []).forEach(r => {
+    if (!r[ARS_COL.ID]) return;
+    const tgl = new Date(String(r[ARS_COL.TGL_ARSIP]));
+    if (!isNaN(tgl.getTime())) hitungTahun.set(tgl.getFullYear(), (hitungTahun.get(tgl.getFullYear()) || 0) + 1);
+  });
+  return Array.from(hitungTahun.entries())
+    .map(([tahun, jumlah]) => ({ tahun, jumlah }))
+    .sort((a, b) => a.tahun - b.tahun);
+}
+
 async function ambilData(tahun: number, sumberFilter: 'semua' | 'sistem' | 'arsip' = 'semua'): Promise<BarisLaporan[]> {
   const [dokRows, pjRowsRaw, arsipRows] = await Promise.all([
     getSheetData('Dokumen Kerja sama'),
@@ -396,7 +419,10 @@ async function buatDocx(tahun: number, data: BarisLaporan[], pengaturan: { namaK
   return Packer.toBuffer(doc);
 }
 
-function buatPdf(tahun: number, data: BarisLaporan[], pengaturan: { namaKepala: string; pangkat: string }): Promise<Buffer> {
+function buatPdf(
+  tahun: number, data: BarisLaporan[], pengaturan: { namaKepala: string; pangkat: string },
+  tren: { tahun: number; jumlah: number }[], isi: 'ringkas' | 'lengkap'
+): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 40 });
     const chunks: Buffer[] = [];
@@ -417,6 +443,9 @@ function buatPdf(tahun: number, data: BarisLaporan[], pengaturan: { namaKepala: 
     doc.moveDown(1);
     doc.fillColor('#000').fontSize(11).text(`SATKER      : BNNP SULSEL`);
     doc.text(`TAHUN       : ${tahun}`);
+    doc.fontSize(9).fillColor('#64748b').text(
+      `Diunduh pada: ${new Date().toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Makassar' })} WITA · ${isi === 'ringkas' ? 'PDF Ringkas' : 'PDF Lengkap'}`
+    );
     doc.moveDown(2);
 
     const cardY = doc.y;
@@ -487,6 +516,110 @@ function buatPdf(tahun: number, data: BarisLaporan[], pengaturan: { namaKepala: 
       doc.fontSize(10).fillColor('#1E3A5F').text(String(b.val), x, barBaseY - h - 16, { width: barW, align: 'center' });
       doc.fontSize(8).fillColor('#64748b').text(b.label, x, barBaseY + 6, { width: barW, align: 'center' });
     });
+
+    // ── Halaman tren + keterangan — halaman TERSENDIRI, SELALU muncul (chart
+    // garisnya saja yang kondisional, minimal 2 titik data biar ada garis
+    // yang berarti; keterangan naratif TETAP tampil walau cuma 1 tahun). ──
+    {
+      doc.addPage({ size: 'A4', layout: 'landscape', margin: 40 });
+      doc.fillColor('#1E3A5F').fontSize(14).text('Tren Dokumen per Tahun (Sistem + Arsip)', { align: 'center' });
+      doc.moveDown(1.5);
+
+      const chW = 720, chH = 380;
+      const chX0 = (doc.page.width - chW) / 2, chY0 = doc.y;
+
+      if (tren.length > 1) {
+        // Bingkai kartu bulat di sekeliling chart — meniru tampilan referensi
+        // (rounded card putih dengan border tipis), bukan chart telanjang.
+        doc.roundedRect(chX0, chY0, chW, chH, 14).lineWidth(1.2).strokeColor('#cbd5e1').fillAndStroke('#ffffff', '#cbd5e1');
+
+        const padL = 40, padB = 30, padTop = 16;
+        const innerW = chW - padL - 20, innerH = chH - padB - padTop - 10;
+        const maxVal = Math.max(2, ...tren.map(t => t.jumlah));
+        const yMax = Math.ceil(maxVal / 5) * 5 || 5;
+        const yTicks = 5;
+
+        const xPos = (i: number) => chX0 + padL + (i / (tren.length - 1)) * innerW;
+        const yPos = (v: number) => chY0 + padTop + 10 + innerH - (v / yMax) * innerH;
+
+        // Gridlines + label sumbu Y
+        for (let i = 0; i <= yTicks; i++) {
+          const val = (yMax / yTicks) * i;
+          const yy = yPos(val);
+          doc.moveTo(chX0 + padL, yy).lineTo(chX0 + chW - 20, yy).strokeColor('#e2e8f0').lineWidth(1).stroke();
+          doc.fillColor('#94a3b8').fontSize(8).text(String(Math.round(val)), chX0 + 4, yy - 4, { width: padL - 8, align: 'right' });
+        }
+
+        // Garis tren
+        doc.strokeColor('#DC2626').lineWidth(2);
+        tren.forEach((t, i) => {
+          const px = xPos(i), py = yPos(t.jumlah);
+          if (i === 0) doc.moveTo(px, py); else doc.lineTo(px, py);
+        });
+        doc.stroke();
+
+        // Marker diamond + label angka + tahun
+        tren.forEach((t, i) => {
+          const px = xPos(i), py = yPos(t.jumlah);
+          doc.save();
+          doc.translate(px, py).rotate(45);
+          doc.rect(-4, -4, 8, 8).fill('#DC2626');
+          doc.restore();
+          doc.fillColor('#1E3A5F').fontSize(9).text(String(t.jumlah), px - 12, py - 20, { width: 24, align: 'center' });
+          doc.fillColor('#64748b').fontSize(8.5).text(String(t.tahun), px - 15, chY0 + chH - padB + 6, { width: 30, align: 'center' });
+        });
+
+        // Sumbu
+        doc.moveTo(chX0 + padL, chY0 + padTop + 10).lineTo(chX0 + padL, chY0 + chH - padB).strokeColor('#cbd5e1').lineWidth(1).stroke();
+        doc.moveTo(chX0 + padL, chY0 + chH - padB).lineTo(chX0 + chW - 20, chY0 + chH - padB).strokeColor('#cbd5e1').lineWidth(1).stroke();
+
+        doc.y = chY0 + chH + 24;
+      } else {
+        // Data cuma dari 1 tahun — chart garis tidak berarti (butuh
+        // minimal 2 titik), tampilkan catatan singkat sebagai gantinya.
+        doc.fillColor('#94a3b8').fontSize(10).font('Helvetica-Oblique').text(
+          'Data hanya mencakup 1 tahun, grafik tren belum bisa ditampilkan.',
+          chX0, chY0, { width: chW, align: 'center' }
+        );
+        doc.y = chY0 + 40;
+      }
+
+      // ── Keterangan naratif — SELALU tampil, tidak tergantung ada/tidaknya chart ──
+      const totalMouTren = data.filter(d => d.jenis.toUpperCase() === 'MOU').length;
+      const totalPksTren = data.filter(d => d.jenis.toUpperCase() === 'PKS').length;
+      const totalSistemTren = data.filter(d => d.sumber === 'Sistem').length;
+      const totalArsipTren = data.filter(d => d.sumber === 'Arsip').length;
+
+      doc.moveDown(1);
+      doc.fillColor('#1E3A5F').fontSize(12).font('Helvetica-Bold').text(
+        `Jumlah Kerja Sama BNNP Sulsel mencapai ${data.length} dokumen.`,
+        chX0, doc.y, { width: chW }
+      );
+      doc.moveDown(0.4);
+      doc.fillColor('#334155').fontSize(10.5).font('Helvetica').text(
+        `Sebanyak ${totalMouTren} dari MOU, sebanyak ${totalPksTren} dari PKS.`,
+        chX0, doc.y, { width: chW }
+      );
+      doc.moveDown(0.2);
+      doc.fillColor('#334155').fontSize(10.5).font('Helvetica').text(
+        `Terdiri dari ${totalSistemTren} dari pengajuan mitra melalui sistem dan ${totalArsipTren} dari yang telah diarsipkan.`,
+        chX0, doc.y, { width: chW }
+      );
+    }
+
+    // Mode "ringkas" — cukup cover + chart tren, TANPA tabel data lengkap.
+    // Langsung loncat ke halaman tanda tangan.
+    if (isi === 'ringkas') {
+      doc.addPage({ size: 'A4', layout: 'landscape', margin: 40 });
+      doc.fillColor('#000').fontSize(11).font('Helvetica').text(`Makassar, ${tahun}`, { align: 'right' });
+      doc.text('Kepala Badan Narkotika Nasional', { align: 'right' });
+      doc.text('Provinsi Sulawesi Selatan', { align: 'right' });
+      doc.moveDown(3);
+      doc.text(pengaturan.namaKepala, { align: 'right', underline: true });
+      doc.text(pengaturan.pangkat, { align: 'right' });
+      doc.end();
+      return;
+    }
 
     // Halaman 2 — tabel
     doc.addPage({ size: 'A4', layout: 'landscape', margin: 30 });
@@ -561,31 +694,23 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const tahun = parseInt(searchParams.get('tahun') || '0');
-    const format = (searchParams.get('format') || 'docx') as 'docx' | 'pdf';
     const mode = searchParams.get('mode') === 'inline' ? 'inline' : 'attachment';
     const sumberFilter = (searchParams.get('sumber') || 'semua') as 'semua' | 'sistem' | 'arsip';
+    // Format Word DIHAPUS dari pemakaian (tombolnya juga sudah tidak ada di
+    // UI) — sekarang selalu PDF apa pun parameter format yang dikirim.
+    const isi = (searchParams.get('isi') || 'lengkap') as 'ringkas' | 'lengkap';
 
     if (!tahun) {
       return NextResponse.json({ message: 'Parameter tahun wajib diisi.' }, { status: 400 });
     }
 
-    const [data, pengaturan] = await Promise.all([ambilData(tahun, sumberFilter), ambilPengaturan()]);
+    const [data, pengaturan, tren] = await Promise.all([ambilData(tahun, sumberFilter), ambilPengaturan(), ambilTren()]);
 
-    if (format === 'pdf') {
-      const buffer = await buatPdf(tahun, data, pengaturan);
-      return new NextResponse(new Uint8Array(buffer), {
-        headers: {
-          'Content-Type': 'application/pdf',
-          'Content-Disposition': `${mode}; filename="Laporan_Kerjasama_${tahun}.pdf"`,
-        },
-      });
-    }
-
-    const buffer = await buatDocx(tahun, data, pengaturan);
+    const buffer = await buatPdf(tahun, data, pengaturan, tren, isi);
     return new NextResponse(new Uint8Array(buffer), {
       headers: {
-        'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'Content-Disposition': `${mode}; filename="Laporan_Kerjasama_${tahun}.docx"`,
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `${mode}; filename="Laporan_Kerjasama_${tahun}${isi === 'ringkas' ? '_Ringkas' : ''}.pdf"`,
       },
     });
   } catch (err) {

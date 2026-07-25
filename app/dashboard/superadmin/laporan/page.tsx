@@ -6,9 +6,9 @@ import {
   FiFileText, FiEdit2, FiSave, FiX,
   FiCalendar, FiInbox, FiEye,
   FiGrid, FiInbox as FiInboxNav, FiKey, FiFolder, FiActivity,
-  FiUsers, FiList, FiArchive, FiShield,
+  FiUsers, FiList, FiArchive, FiShield, FiMessageCircle, FiMessageSquare, FiDroplet,
 } from 'react-icons/fi';
-import { FaFilePdf, FaFileWord } from 'react-icons/fa';
+import { FaFilePdf } from 'react-icons/fa';
 
 const FONT = "'Plus Jakarta Sans', -apple-system, sans-serif";
 const INDIGO = '#1E3A5F';
@@ -26,6 +26,7 @@ export default function LaporanKerjasamaPage() {
   const [tahun, setTahun] = useState(now.getFullYear());
   const [sumberFilter, setSumberFilter] = useState<'semua' | 'sistem' | 'arsip'>('semua');
   const [data, setData] = useState<BaristData[] | null>(null);
+  const [tren, setTren] = useState<{ tahun: number; jumlah: number }[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -67,11 +68,14 @@ export default function LaporanKerjasamaPage() {
     { href: '/dashboard/pengajuan', icon: <FiInboxNav size={17} />, label: 'Kelola Pengajuan' },
     { href: '/dashboard/superadmin/generate-kode', icon: <FiKey size={17} />, label: 'Generate Kode' },
     { href: '/dashboard/dokumen', icon: <FiFolder size={17} />, label: 'Daftar Dokumen' },
+    { href: '/dashboard/dokumen-basah', icon: <FiDroplet size={17} />, label: 'Dokumen Basah' },
     { href: '/dashboard/kelola-kegiatan', icon: <FiActivity size={17} />, label: 'Kelola Kegiatan' },
     { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
     { href: '/dashboard/dokumen/extract-poin', icon: <FiList size={17} />, label: 'Extract Poin Publik' },
     { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
     { href: '/dashboard/superadmin/laporan', icon: <FiFileText size={17} />, label: 'Laporan' },
+    { href: '/dashboard/kelola-chatbot', icon: <FiMessageCircle size={17} />, label: 'Kelola Chatbot' },
+    { href: '/dashboard/kotak-saran', icon: <FiMessageSquare size={17} />, label: 'Kotak Saran' },
     { href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Kelola Admin' },
   ];
 
@@ -87,6 +91,7 @@ export default function LaporanKerjasamaPage() {
       const d = await res.json();
       if (!res.ok) { setError(d.message || 'Gagal memuat laporan.'); return; }
       setData(d.data || []);
+      setTren(d.tren || []);
     } catch {
       setError('Terjadi kesalahan koneksi.');
     } finally {
@@ -113,8 +118,8 @@ export default function LaporanKerjasamaPage() {
     }
   };
 
-  const download = (format: 'docx' | 'pdf') => {
-    window.location.href = `/api/superadmin/laporan/kerjasama/download?tahun=${tahun}&format=${format}&sumber=${sumberFilter}`;
+  const download = (isi: 'ringkas' | 'lengkap') => {
+    window.location.href = `/api/superadmin/laporan/kerjasama/download?tahun=${tahun}&format=pdf&sumber=${sumberFilter}&isi=${isi}`;
   };
 
   const bukaPreview = async () => {
@@ -162,7 +167,7 @@ export default function LaporanKerjasamaPage() {
       <Sidebar
         items={sidebarItems}
         activeHref="/dashboard/superadmin/laporan"
-        brandLabel="SI-POKJA HUMKER"
+        brandLabel="E-POKJA HUKER"
         brandSub="Admin BNNP/BNNK"
         userName={namaAdmin}
         userTag="Admin BNNP/BNNK"
@@ -285,6 +290,27 @@ export default function LaporanKerjasamaPage() {
               </div>
             ))}
           </div>
+
+          {tren.length > 1 && (
+            <div style={{ ...shell, marginBottom: 16 }} className="rise">
+              <div style={{ ...core, padding: '1.3rem 1.4rem' }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: INDIGO, marginBottom: 14 }}>Tren Dokumen per Tahun (Sistem + Arsip)</div>
+                <TrenChart data={tren} />
+                <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid rgba(30,58,95,0.08)' }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, color: INDIGO }}>
+                    Jumlah Kerja Sama BNNP Sulsel mencapai {data.length} dokumen.
+                  </div>
+                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
+                    Sebanyak {data.filter(d => d.jenis.toUpperCase() === 'MOU').length} dari MOU, sebanyak {data.filter(d => d.jenis.toUpperCase() === 'PKS').length} dari PKS.
+                  </div>
+                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                    Terdiri dari {data.filter(d => d.sumber === 'Sistem').length} dari pengajuan mitra melalui sistem dan {data.filter(d => d.sumber === 'Arsip').length} dari yang telah diarsipkan.
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div style={shell} className="rise">
             <div style={{ ...core, padding: '1.3rem 1.4rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
@@ -295,11 +321,11 @@ export default function LaporanKerjasamaPage() {
                   <button onClick={bukaPreview} disabled={previewLoading} className="btn-hover" style={btnGhostSm}>
                     <FiEye size={12} /> {previewLoading ? 'Menyiapkan...' : 'Preview'}
                   </button>
-                  <button onClick={() => download('docx')} className="btn-hover" style={btnDownload}>
-                    <FaFileWord size={13} /> Word
+                  <button onClick={() => download('ringkas')} className="btn-hover" style={btnGhostSm} title="Cuma halaman ringkasan + chart tren, tanpa tabel data lengkap">
+                    <FaFilePdf size={13} /> PDF Ringkas
                   </button>
-                  <button onClick={() => download('pdf')} className="btn-hover" style={{ ...btnDownload, background: '#A32D2D' }}>
-                    <FaFilePdf size={13} /> PDF
+                  <button onClick={() => download('lengkap')} className="btn-hover" style={{ ...btnDownload, background: '#A32D2D' }} title="Ringkasan + chart tren + tabel data lengkap semua dokumen">
+                    <FaFilePdf size={13} /> PDF Lengkap
                   </button>
                 </div>
               </div>
@@ -377,6 +403,52 @@ export default function LaporanKerjasamaPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// Line chart tren dokumen per tahun — gaya sederhana meniru referensi
+// (garis merah, marker diamond, gridlines horizontal, angka & tahun di sumbu).
+function TrenChart({ data }: { data: { tahun: number; jumlah: number }[] }) {
+  const W = 640, H = 260, padL = 36, padR = 20, padT = 16, padB = 30;
+  const innerW = W - padL - padR, innerH = H - padT - padB;
+  const maxVal = Math.max(2, ...data.map(d => d.jumlah));
+  const yMax = Math.ceil(maxVal / 5) * 5 || 5; // bulatkan ke atas ke kelipatan 5, mirip referensi (skala 0-20)
+  const yTicks = 5;
+
+  const x = (i: number) => padL + (data.length <= 1 ? innerW / 2 : (i / (data.length - 1)) * innerW);
+  const y = (v: number) => padT + innerH - (v / yMax) * innerH;
+
+  const pathD = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${x(i)} ${y(d.jumlah)}`).join(' ');
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', fontFamily: FONT }}>
+      {/* Gridlines horizontal + label sumbu Y */}
+      {Array.from({ length: yTicks + 1 }, (_, i) => {
+        const val = (yMax / yTicks) * i;
+        const yy = y(val);
+        return (
+          <g key={i}>
+            <line x1={padL} y1={yy} x2={W - padR} y2={yy} stroke="#e2e8f0" strokeWidth={1} />
+            <text x={padL - 8} y={yy + 3} textAnchor="end" fontSize={9} fill="#94a3b8">{Math.round(val)}</text>
+          </g>
+        );
+      })}
+      {/* Garis tren + marker diamond */}
+      <path d={pathD} fill="none" stroke="#DC2626" strokeWidth={2} />
+      {data.map((d, i) => (
+        <g key={d.tahun} transform={`translate(${x(i)},${y(d.jumlah)})`}>
+          <rect x={-4} y={-4} width={8} height={8} fill="#DC2626" transform="rotate(45)" />
+          <text x={0} y={-12} textAnchor="middle" fontSize={9} fontWeight={700} fill={INDIGO}>{d.jumlah}</text>
+        </g>
+      ))}
+      {/* Label sumbu X (tahun) */}
+      {data.map((d, i) => (
+        <text key={d.tahun} x={x(i)} y={H - padB + 16} textAnchor="middle" fontSize={9.5} fill="#64748b">{d.tahun}</text>
+      ))}
+      {/* Garis sumbu */}
+      <line x1={padL} y1={padT} x2={padL} y2={H - padB} stroke="#cbd5e1" strokeWidth={1} />
+      <line x1={padL} y1={H - padB} x2={W - padR} y2={H - padB} stroke="#cbd5e1" strokeWidth={1} />
+    </svg>
   );
 }
 

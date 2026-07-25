@@ -91,7 +91,7 @@ export default function ArsipPenangananHukumPage() {
       <Sidebar
         items={sidebarItems}
         activeHref="/dashboard/hukum/arsip-penanganan"
-        brandLabel="SI-POKJA HUMKER"
+        brandLabel="E-POKJA HUKER"
         brandSub="Modul Penegak Hukum"
         navSectionTitle="Modul Hukum"
         userName={namaAdmin}

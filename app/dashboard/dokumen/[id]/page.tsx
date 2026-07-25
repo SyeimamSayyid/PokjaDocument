@@ -4,7 +4,7 @@ import { useEffect, useState, use } from 'react';
 import Sidebar, { SidebarItem, SidebarExtraItem } from '@/components/Sidebar';
 import {
   FiGrid, FiCalendar as FiCalendarNav, FiInbox, FiKey, FiFolder as FiFolderNav,
-  FiActivity, FiUsers, FiList, FiArchive, FiShield,
+  FiActivity, FiUsers, FiList, FiArchive, FiShield, FiMessageCircle, FiMessageSquare, FiDroplet,
 } from 'react-icons/fi';
 import KomentarRevisi from '@/components/KomentarRevisi';
 import EditPencilIndicator from '@/components/EditPencilIndicator';
@@ -14,7 +14,7 @@ import {
   FiArrowLeft, FiExternalLink, FiEyeOff, FiEye, FiCheckCircle, FiCornerUpLeft,
   FiClock, FiInfo, FiHome, FiCalendar, FiDownload, FiCheck,
   FiX as FiClose, FiBriefcase, FiFileText, FiLoader, FiMail, FiPhone, FiUser, FiCopy,
-  FiEdit3, FiSend, FiPenTool, FiEdit2, FiZap, FiUpload, FiTrash2,
+  FiEdit3, FiSend, FiPenTool, FiEdit2, FiZap, FiUpload, FiTrash2, FiAlertCircle,
 } from 'react-icons/fi';
 
 interface Dokumen {
@@ -27,6 +27,9 @@ interface Dokumen {
   sisaHari: number | null;
   divisi: string[];
   manualLog?: string;
+  terakhirDiakses?: string;
+  masaBerlakuDiisiOleh?: string;
+  sumberTemplateAktif?: string; // "resmi" | "mitra" | "" (kosong = belum pernah diganti, berarti masih resmi)
   scanTtdId?: string;
   scanTtdUrl?: string;
   flagRevisi?: boolean;
@@ -145,6 +148,7 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
 
   const [templateKandidat, setTemplateKandidat]   = useState<Kandidat[]>([]);
   const [templateChecked, setTemplateChecked]     = useState(false);
+  const [templateResmiId, setTemplateResmiId]     = useState<string | null>(null);
   const [applyingTemplate, setApplyingTemplate]   = useState<string | null>(null);
 
   const [kontak, setKontak] = useState<{ namaPIC: string; email: string; noWa: string; waLink: string } | null>(null);
@@ -162,6 +166,7 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
   const [savingTglBerakhir, setSavingTglBerakhir] = useState(false);
 
   const [publikasiDitolak, setPublikasiDitolak] = useState(false);
+  const [peringatanAksiCepat, setPeringatanAksiCepat] = useState(false);
 
   const [ttdSaving, setTtdSaving] = useState(false);
   const [showTolakTtd, setShowTolakTtd] = useState(false);
@@ -174,6 +179,7 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
   const [scanError, setScanError] = useState('');
   const [scanUrl, setScanUrl] = useState('');
   const [showBatalkanTtd, setShowBatalkanTtd] = useState(false);
+  const [showAdminPilihTtd, setShowAdminPilihTtd] = useState(false);
   const [deletingScan, setDeletingScan] = useState(false);
   const [docFile, setDocFile] = useState<File | null>(null);
   const [docUploading, setDocUploading] = useState(false);
@@ -228,7 +234,7 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
     if (!['Draft', 'Dalam Proses', 'Selesai'].includes(dok.status)) return;
     fetch(`/api/dokumen/ganti-template?idDokumen=${id}`)
       .then(r => r.json())
-      .then(d => { setTemplateKandidat(d.data || []); setTemplateChecked(true); })
+      .then(d => { setTemplateKandidat(d.data || []); setTemplateResmiId(d.templateResmiId || null); setTemplateChecked(true); })
       .catch(() => setTemplateChecked(true));
   }, [dok, id]);
 
@@ -344,6 +350,13 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
   };
 
   // (2) Admin batalkan pemilihan TTD basah/online kalau salah klik
+  // (3) Admin pilih tipe TTD atas nama mitra — jaga-jaga mitra lupa memilih.
+  // Backend sudah validasi masa berlaku wajib lengkap & kirim email ke mitra.
+  const adminPilihTipeTtd = async (tipe: 'basah' | 'online') => {
+    const ok = await ttdRequest({ ttdAction: 'adminPilihTipe', tipeTtd: tipe });
+    if (ok) setShowAdminPilihTtd(false);
+  };
+
   const batalkanTtd = async () => {
     const ok = await ttdRequest({ ttdAction: 'batalkan' });
     if (ok) setShowBatalkanTtd(false);
@@ -616,7 +629,11 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
   };
 
   const gantiTemplate = async (fileId: string) => {
-    if (!confirm('Yakin ganti dokumen kerja saat ini dengan draf mitra ini? Dokumen yang sedang dipakai akan diarsipkan (tidak dihapus).')) return;
+    const keResmi = fileId === templateResmiId;
+    const pesanKonfirmasi = keResmi
+      ? 'Yakin kembalikan dokumen kerja ke Template Resmi BNN? Isi dokumen yang sedang dipakai saat ini akan diarsipkan (tidak dihapus).'
+      : 'Yakin ganti dokumen kerja saat ini dengan draf mitra ini? Dokumen yang sedang dipakai akan diarsipkan (tidak dihapus).';
+    if (!confirm(pesanKonfirmasi)) return;
     setApplyingTemplate(fileId); setError(''); setMsg('');
     try {
       const res = await fetch('/api/dokumen/ganti-template', {
@@ -625,7 +642,7 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
       });
       const d = await res.json();
       if (!res.ok) { setError(d.message); return; }
-      setDok(prev => prev ? { ...prev, docsId: d.docsId, docsUrl: d.docsUrl, embedUrl: `https://docs.google.com/document/d/${d.docsId}/preview` } : prev);
+      setDok(prev => prev ? { ...prev, docsId: d.docsId, docsUrl: d.docsUrl, embedUrl: `https://docs.google.com/document/d/${d.docsId}/preview`, sumberTemplateAktif: keResmi ? 'resmi' : 'mitra' } : prev);
       setMsg(d.message || 'Template berhasil diganti.');
     } catch { setError('Gagal mengganti template.'); }
     finally { setApplyingTemplate(null); }
@@ -645,11 +662,14 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
     { href: '/dashboard/pengajuan', icon: <FiInbox size={17} />, label: 'Kelola Pengajuan' },
     { href: '/dashboard/superadmin/generate-kode', icon: <FiKey size={17} />, label: 'Generate Kode' },
     { href: '/dashboard/dokumen', icon: <FiFolderNav size={17} />, label: 'Daftar Dokumen' },
+    { href: '/dashboard/dokumen-basah', icon: <FiDroplet size={17} />, label: 'Dokumen Basah' },
     { href: '/dashboard/kelola-kegiatan', icon: <FiActivity size={17} />, label: 'Kelola Kegiatan' },
     { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
     { href: '/dashboard/dokumen/extract-poin', icon: <FiList size={17} />, label: 'Extract Poin Publik' },
     { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
     { href: '/dashboard/superadmin/laporan', icon: <FiFileText size={17} />, label: 'Laporan' },
+    { href: '/dashboard/kelola-chatbot', icon: <FiMessageCircle size={17} />, label: 'Kelola Chatbot' },
+    { href: '/dashboard/kotak-saran', icon: <FiMessageSquare size={17} />, label: 'Kotak Saran' },
     { href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Kelola Admin' },
   ];
 
@@ -685,7 +705,7 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
       <Sidebar
         items={sidebarItems}
         activeHref={level === 'utama' ? '/dashboard/bnn-utama' : '/dashboard/dokumen'}
-        brandLabel="SI-POKJA HUMKER"
+        brandLabel="E-POKJA HUKER"
         brandSub={level === 'utama' ? 'BNN Utama' : 'Admin BNNP/BNNK'}
         userName={namaAdmin}
         userTag={level === 'utama' ? 'Admin BNN Utama' : 'Admin BNNP/BNNK'}
@@ -731,7 +751,7 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
               </div>
               <div style={{ fontSize:19, fontWeight:800, marginBottom:4, color:'#0f1f3d', letterSpacing:'-0.02em', display:'flex', alignItems:'center', gap:10 }}>
                 {dok.judul}
-                <EditPencilIndicator manualLog={dok.manualLog} size={24} ttdBasahPending={dok.ttdStatus === 'Menunggu Basah'} />
+                <EditPencilIndicator manualLog={dok.manualLog} terakhirDiakses={dok.terakhirDiakses} size={24} ttdBasahPending={dok.ttdStatus === 'Menunggu Basah'} />
               </div>
               {dok.flagRevisi && (
                 <div style={{ display:'flex', alignItems:'center', gap:10, background:'#FEF3C7', border:'1px solid #FBBF24', borderRadius:12, padding:'9px 13px', marginBottom:10 }}>
@@ -906,7 +926,7 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
             </div>
           </div>
 
-          {kontak && (kontak.email || kontak.noWa || kontak.namaPIC) && (
+          {kontak && (
             <div style={shellStyle} className="fld">
               <div style={coreStyle}>
                 <div style={cardTitle}><FiUser size={13} style={{ marginRight:6, verticalAlign:'middle', color: BLUE }} />Kontak Mitra</div>
@@ -945,12 +965,45 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
             </div>
           )}
 
-          {level !== 'utama' && (dok.ttdStatus || dok.ttdTglFinal) && (
+          {level !== 'utama' && (
             <div style={shellStyle} className="fld">
               <div style={coreStyle}>
                 <div style={cardTitle}><FiPenTool size={13} style={{ marginRight:6, verticalAlign:'middle', color: GOLD }} />Penandatanganan Dokumen</div>
 
-                {dok.ttdStatus === 'Disetujui' ? (
+                {!dok.ttdTipe && !dok.ttdStatus ? (
+                  <div>
+                    <div style={hintText}>Mitra belum memilih metode TTD (Basah/Online).</div>
+                    {!dok.tglBerakhir ? (
+                      <div style={{ ...kembaliBox, marginTop:8 }}>
+                        <div style={{ display:'flex', alignItems:'flex-start', gap:8 }}>
+                          <FiAlertCircle size={14} style={{ color:'#92400E', flexShrink:0, marginTop:1 }} />
+                          <div style={{ fontSize:11.5, color:'#92400E', lineHeight:1.5 }}>
+                            Lengkapi <strong>Masa Berlaku</strong> (tanggal mulai &amp; berakhir) dulu di bagian atas, baru Anda bisa memilih TTD atas nama mitra kalau diperlukan.
+                          </div>
+                        </div>
+                      </div>
+                    ) : !showAdminPilihTtd ? (
+                      <button onClick={() => setShowAdminPilihTtd(true)} style={{ ...btnSm, width:'100%', marginTop:8, display:'flex', alignItems:'center', justifyContent:'center', gap:6 }} className="btn-hover">
+                        <FiPenTool size={12} />Pilihkan TTD Atas Nama Mitra
+                      </button>
+                    ) : (
+                      <div style={{ ...kembaliBox, marginTop:8 }}>
+                        <div style={{ fontSize:11.5, color:'#92400E', marginBottom:10 }}>
+                          Gunakan ini kalau mitra lupa/belum memilih metode TTD. Mitra akan menerima <strong>email pemberitahuan</strong> begitu Anda memilihkan salah satu metode di bawah.
+                        </div>
+                        <div style={{ display:'flex', gap:6 }}>
+                          <button onClick={() => setShowAdminPilihTtd(false)} disabled={ttdSaving} style={{ ...btnSm, flex:1 }} className="btn-hover">Batal</button>
+                          <button onClick={() => adminPilihTipeTtd('basah')} disabled={ttdSaving} style={{ ...btnSm, flex:1 }} className="btn-hover">
+                            {ttdSaving ? '…' : 'TTD Basah'}
+                          </button>
+                          <button onClick={() => adminPilihTipeTtd('online')} disabled={ttdSaving} style={{ ...btnPrimary, flex:1 }} className="btn-hover">
+                            {ttdSaving ? '…' : 'TTD Online'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : dok.ttdStatus === 'Disetujui' ? (
                   <div style={ttdDoneBox}>
                     <FiCheckCircle size={16} style={{ color: BLUE, flexShrink:0, marginTop:1 }} />
                     <div>
@@ -1168,11 +1221,24 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
                 <div style={cardTitle}>Template Dokumen {dok.jenis}</div>
                 <div style={hintText}>Pilih sumber naskah kerja yang aktif dipakai.</div>
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginTop:10 }}>
-                  <div style={templateCard(false, true)}>
+                  {(() => {
+                    // Kosong (belum pernah diganti sama sekali) = masih pakai template
+                    // resmi (dokumen baru DIGENERATE dari template resmi by default).
+                    const aktifResmi = dok.sumberTemplateAktif !== 'mitra';
+                    return (
+                  <button
+                    onClick={() => templateResmiId && gantiTemplate(templateResmiId)}
+                    disabled={!templateResmiId || applyingTemplate === templateResmiId}
+                    style={{ ...templateCard(aktifResmi, true), cursor: templateResmiId ? 'pointer' : 'not-allowed', border: 'none', textAlign: 'left', font: 'inherit', width: '100%' }}
+                    className="tpl-active"
+                    title={templateResmiId ? 'Kembalikan dokumen kerja ke naskah resmi BNN' : 'ID template resmi belum dikonfigurasi'}
+                  >
                     <FiBriefcase size={20} style={{ color: BLUE, marginBottom:6 }} />
-                    <div style={templateCardTitle}>Template Resmi BNN</div>
-                    <div style={templateCardDesc}>Gunakan template standar BNN Provinsi</div>
-                  </div>
+                    <div style={templateCardTitle}>{applyingTemplate === templateResmiId ? 'Mengganti…' : 'Template Resmi BNN'}</div>
+                    <div style={templateCardDesc}>{templateResmiId ? 'Gunakan template standar BNN Provinsi' : 'Template resmi tidak tersedia'}</div>
+                  </button>
+                    );
+                  })()}
                   {!templateChecked ? (
                     <div style={templateCard(false, false)}>
                       <FiLoader size={20} style={{ color:'#94a3b8', marginBottom:6 }} className="spin" />
@@ -1182,7 +1248,7 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
                     <button
                       onClick={() => gantiTemplate(kandidatUtama.fileId)}
                       disabled={applyingTemplate === kandidatUtama.fileId}
-                      style={{ ...templateCard(true, true), cursor:'pointer', border:'none', textAlign:'left', font:'inherit' }}
+                      style={{ ...templateCard(dok.sumberTemplateAktif === 'mitra', true), cursor:'pointer', border:'none', textAlign:'left', font:'inherit' }}
                       className="tpl-active"
                     >
                       <FiFileText size={20} style={{ color: GOLD, marginBottom:6 }} />
@@ -1250,6 +1316,22 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
                   </div>
                 )}
               </div>
+              {dok.masaBerlakuDiisiOleh && (() => {
+                const [roleIsi, namaIsi, waktuIsi, levelIsi] = dok.masaBerlakuDiisiOleh.split('|');
+                if (!namaIsi) return null;
+                const labelIsi = roleIsi === 'admin' ? (levelIsi === 'utama' ? 'Admin BNN Utama' : 'Admin BNNP/BNNK') : roleIsi === 'mitra' ? 'Mitra' : 'Tidak dikenali';
+                let waktuLabel = waktuIsi;
+                try {
+                  const w = new Date(waktuIsi.replace(' ', 'T'));
+                  if (!isNaN(w.getTime())) waktuLabel = w.toLocaleString('id-ID', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+                } catch {}
+                return (
+                  <div style={{ fontSize:10.5, color:'#94a3b8', marginTop:8, display:'flex', alignItems:'center', gap:5 }}>
+                    <FiClock size={11} />
+                    Terakhir diisi oleh: <strong style={{ color:'#64748b' }}>{namaIsi}</strong> ({labelIsi}) · {waktuLabel}
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
@@ -1292,9 +1374,26 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
                   {!dok.tglKegiatanMulai && (
                     <div style={{ ...hintText, marginBottom:10 }}>Toggle publikasi akan muncul otomatis setelah Tanggal Kegiatan diisi.</div>
                   )}
-                  <a href={`/dashboard/dokumen/extract-poin?idDokumen=${dok.id}${dok.tglKegiatanMulai ? `&tglMulai=${dok.tglKegiatanMulai}` : ''}`} style={{ ...btnSm, textDecoration:'none', textAlign:'center', display:'block' }} className="btn-hover">
-                    <FiZap size={12} style={{ marginRight:6, verticalAlign:'middle' }} />Kelola Publikasi di Extract Poin
-                  </a>
+                  {dok.status === 'Draft' ? (
+                    <button
+                      onClick={() => setPeringatanAksiCepat(true)}
+                      style={{ ...btnSm, textDecoration:'none', textAlign:'center', display:'block', width:'100%', opacity:0.5, cursor:'not-allowed' }}
+                    >
+                      <FiZap size={12} style={{ marginRight:6, verticalAlign:'middle' }} />Kelola Publikasi di Extract Poin
+                    </button>
+                  ) : (
+                    <a href={`/dashboard/dokumen/extract-poin?idDokumen=${dok.id}${dok.tglKegiatanMulai ? `&tglMulai=${dok.tglKegiatanMulai}` : ''}`} style={{ ...btnSm, textDecoration:'none', textAlign:'center', display:'block' }} className="btn-hover">
+                      <FiZap size={12} style={{ marginRight:6, verticalAlign:'middle' }} />Kelola Publikasi di Extract Poin
+                    </a>
+                  )}
+                  {peringatanAksiCepat && dok.status === 'Draft' && (
+                    <div style={{ marginTop:10, padding:'10px 12px', borderRadius:10, background:'#FEF3C7', border:'1px solid #FDE68A', display:'flex', alignItems:'flex-start', gap:8 }} className="fld">
+                      <FiAlertCircle size={14} style={{ color:'#92400E', flexShrink:0, marginTop:1 }} />
+                      <div style={{ fontSize:11, color:'#92400E', lineHeight:1.5 }}>
+                        Silahkan selesaikan dokumen {dok.jenis} terlebih dahulu dan juga menentukan tanggal kegiatan untuk mengakses Aksi Cepat.
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>

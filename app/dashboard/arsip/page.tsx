@@ -2,9 +2,10 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Sidebar, { SidebarItem } from '@/components/Sidebar';
+import BadgeDokumenBasah from '@/components/BadgeDokumenBasah';
 import {
   FiGrid, FiInbox, FiKey, FiFolder, FiActivity,
-  FiUsers, FiList as FiListSidebar, FiShield,
+  FiUsers, FiList as FiListSidebar, FiShield, FiMessageCircle, FiMessageSquare, FiDroplet,
 } from 'react-icons/fi';
 import {
   FiFileText, FiHome, FiPenTool, FiEdit2, FiTrash2, FiZap,
@@ -421,6 +422,24 @@ export default function ArsipDokumenPage() {
   const [editLengkapId, setEditLengkapId] = useState<string | null>(null);
   const [elKomentarUtama, setElKomentarUtama] = useState('');
   const [savingLengkap, setSavingLengkap] = useState(false);
+  const [mintaId, setMintaId] = useState<string | null>(null);
+  const [mintaAlasan, setMintaAlasan] = useState('');
+  const [mintaLoading, setMintaLoading] = useState<string | null>(null);
+
+  const kirimMintaDokumen = async (a: Arsip) => {
+    setMintaLoading(a.id); setError(''); setMsg('');
+    try {
+      const res = await fetch('/api/arsip-dokumen/minta', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: a.id, sumber: a.sumber, alasan: mintaAlasan.trim() }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setError(d.message || 'Gagal mengirim permintaan.'); return; }
+      setMsg(d.message);
+      setMintaId(null); setMintaAlasan('');
+    } catch { setError('Terjadi kesalahan koneksi.'); }
+    finally { setMintaLoading(null); }
+  };
 
   const mulaiEditLengkap = (a: Arsip) => {
     setEditLengkapId(a.id);
@@ -458,11 +477,14 @@ export default function ArsipDokumenPage() {
     { href: '/dashboard/pengajuan', icon: <FiInbox size={17} />, label: 'Kelola Pengajuan' },
     { href: '/dashboard/superadmin/generate-kode', icon: <FiKey size={17} />, label: 'Generate Kode' },
     { href: '/dashboard/dokumen', icon: <FiFolder size={17} />, label: 'Daftar Dokumen' },
+    { href: '/dashboard/dokumen-basah', icon: <FiDroplet size={17} />, label: 'Dokumen Basah' },
     { href: '/dashboard/kelola-kegiatan', icon: <FiActivity size={17} />, label: 'Kelola Kegiatan' },
     { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
     { href: '/dashboard/dokumen/extract-poin', icon: <FiListSidebar size={17} />, label: 'Extract Poin Publik' },
     { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
     { href: '/dashboard/superadmin/laporan', icon: <FiFileText size={17} />, label: 'Laporan' },
+    { href: '/dashboard/kelola-chatbot', icon: <FiMessageCircle size={17} />, label: 'Kelola Chatbot' },
+    { href: '/dashboard/kotak-saran', icon: <FiMessageSquare size={17} />, label: 'Kotak Saran' },
     { href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Kelola Admin' },
   ];
 
@@ -509,7 +531,7 @@ export default function ArsipDokumenPage() {
       <Sidebar
         items={sidebarItems}
         activeHref="/dashboard/arsip"
-        brandLabel="SI-POKJA HUMKER"
+        brandLabel="E-POKJA HUKER"
         brandSub={level === 'utama' ? 'BNN Utama' : 'Admin BNNP/BNNK'}
         userName={namaAdmin}
         userTag={level === 'utama' ? 'Admin BNN Utama' : 'Admin BNNP/BNNK'}
@@ -819,7 +841,8 @@ export default function ArsipDokumenPage() {
               const a = entry.item;
               const sb = statusBadge(a);
               return (
-                <div key={a.id} style={{ ...shellStyle, animationDelay:`${Math.min(idx, 8) * 0.04}s` }} className="fld lift">
+                <div key={a.id} style={{ ...shellStyle, animationDelay:`${Math.min(idx, 8) * 0.04}s`, position:'relative' }} className="fld lift">
+                  {a.ttdTipe === 'basah' && <BadgeDokumenBasah />}
                   <div style={coreStyle}>
                     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, flexWrap:'wrap' }}>
                       <div style={{ flex:1, minWidth:200 }}>
@@ -893,6 +916,26 @@ export default function ArsipDokumenPage() {
                           </div>
                         ) : level === 'utama' ? null : (
                           <button onClick={() => mulaiEditStatus(a)} style={{ ...btnSm, textAlign:'center', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }} className="btn-hover"><FiEdit2 size={11} /> Edit Status</button>
+                        )}
+
+                        {level === 'utama' && (
+                          mintaId === a.id ? (
+                            <div style={{ ...confirmBox, width:230, background:'#EFF6FF', borderColor:'#93C5FD' }}>
+                              <label style={{ fontSize:9.5, fontWeight:700, color:'#1E3A8A', textTransform:'uppercase', letterSpacing:'0.05em', display:'block', marginBottom:4 }}>📩 Alasan (opsional)</label>
+                              <textarea value={mintaAlasan} onChange={e => setMintaAlasan(e.target.value)} placeholder="Mis: dokumen perlu diverifikasi ulang..." rows={3}
+                                style={{ fontSize:11, padding:'7px 9px', borderRadius:8, border:'1px solid #93C5FD', width:'100%', marginBottom:6, boxSizing:'border-box', resize:'vertical' }} />
+                              <div style={{ display:'flex', gap:6 }}>
+                                <button onClick={() => { setMintaId(null); setMintaAlasan(''); }} style={{ ...btnSm, flex:1, fontSize:10 }} className="btn-hover">Batal</button>
+                                <button onClick={() => kirimMintaDokumen(a)} disabled={mintaLoading === a.id} style={{ ...btnSm, flex:1, fontSize:10, background:'#1D4ED8', color:'#fff', borderColor:'#1D4ED8' }} className="btn-hover">
+                                  {mintaLoading === a.id ? '…' : 'Kirim'}
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button onClick={() => setMintaId(a.id)} style={{ ...btnSm, textAlign:'center', display:'flex', alignItems:'center', justifyContent:'center', gap:6, color:'#1D4ED8', borderColor:'#93C5FD' }} className="btn-hover">
+                              📩 Minta Dokumen
+                            </button>
+                          )
                         )}
 
                         {level === 'utama' && a.sumber === 'manual' && (

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Sidebar, { SidebarItem } from '@/components/Sidebar';
 import {
   FiGrid, FiCalendar, FiInbox, FiKey, FiFolder, FiActivity, FiFileText,
-  FiList as FiListSidebar, FiArchive,
+  FiList as FiListSidebar, FiArchive, FiMessageCircle, FiMessageSquare, FiDroplet,
 } from 'react-icons/fi';
 import {
   FiShield, FiUserPlus, FiUsers, FiCheck, FiX, FiEdit2,
@@ -67,6 +67,7 @@ export default function KelolaAdminPage() {
       .then(u => {
         if (!['admin', 'superadmin'].includes(u.role)) { window.location.href = '/login'; return; }
         setReadOnly(u.level === 'utama');
+        if (u.level === 'utama') setLevel('BNN Utama');
         setNamaSaya(u.nama || u.email || 'Admin');
         load();
       })
@@ -169,11 +170,14 @@ export default function KelolaAdminPage() {
     { href: '/dashboard/pengajuan', icon: <FiInbox size={17} />, label: 'Kelola Pengajuan' },
     { href: '/dashboard/superadmin/generate-kode', icon: <FiKey size={17} />, label: 'Generate Kode' },
     { href: '/dashboard/dokumen', icon: <FiFolder size={17} />, label: 'Daftar Dokumen' },
+    { href: '/dashboard/dokumen-basah', icon: <FiDroplet size={17} />, label: 'Dokumen Basah' },
     { href: '/dashboard/kelola-kegiatan', icon: <FiActivity size={17} />, label: 'Kelola Kegiatan' },
     { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
     { href: '/dashboard/dokumen/extract-poin', icon: <FiListSidebar size={17} />, label: 'Extract Poin Publik' },
     { href: '/dashboard/arsip', icon: <FiArchive size={17} />, label: 'Arsip Dokumen' },
     { href: '/dashboard/superadmin/laporan', icon: <FiFileText size={17} />, label: 'Laporan' },
+    { href: '/dashboard/kelola-chatbot', icon: <FiMessageCircle size={17} />, label: 'Kelola Chatbot' },
+    { href: '/dashboard/kotak-saran', icon: <FiMessageSquare size={17} />, label: 'Kotak Saran' },
     { href: '/dashboard/superadmin/kelola-admin', icon: <FiShield size={17} />, label: 'Kelola Admin' },
   ];
 
@@ -216,7 +220,7 @@ export default function KelolaAdminPage() {
       <Sidebar
         items={sidebarItems}
         activeHref="/dashboard/superadmin/kelola-admin"
-        brandLabel="SI-POKJA HUMKER"
+        brandLabel="E-POKJA HUKER"
         brandSub={readOnly ? 'BNN Utama' : 'Admin BNNP/BNNK'}
         userName={namaSaya}
         userTag={readOnly ? 'Admin BNN Utama' : 'Admin BNNP/BNNK'}
@@ -255,54 +259,59 @@ export default function KelolaAdminPage() {
 
         {readOnly && (
           <div className="rise" style={{ ...msgBox, background: 'rgba(171,209,198,0.15)', border: '1px solid rgba(47,84,73,0.2)', color: '#2F5449' }}>
-            <FiShield size={14} style={{ flexShrink: 0 }} /> Mode lihat saja — Admin BNN Utama tidak bisa menambah/mengubah data admin.
+            <FiShield size={14} style={{ flexShrink: 0 }} /> Admin BNN Utama hanya dapat menambahkan sesama akun BNN Utama, dan tidak dapat mengubah/menonaktifkan admin BNNP/BNNK.
           </div>
         )}
 
-        {/* Form tambah */}
-        {!readOnly && (
-            <div style={shell} className="rise">
-              <div style={{ ...core, padding: '1.5rem 1.6rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-                  <FiUserPlus size={15} style={{ color: GOLD_DARK }} />
-                  <span style={{ fontSize: 14.5, fontWeight: 800, color: INDIGO, letterSpacing: '-0.01em' }}>Tambah Admin Baru</span>
+        {/* Form tambah — Admin BNNP/BNNK bisa tambah BNNP/BNNK, Admin BNN
+            Utama bisa tambah sesama BNN Utama. Opsi Level di bawah dibatasi
+            sesuai level yang sedang login, biar tidak salah pilih. */}
+        <div style={shell} className="rise">
+            <div style={{ ...core, padding: '1.5rem 1.6rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                <FiUserPlus size={15} style={{ color: GOLD_DARK }} />
+                <span style={{ fontSize: 14.5, fontWeight: 800, color: INDIGO, letterSpacing: '-0.01em' }}>Tambah Admin Baru</span>
+              </div>
+              <form onSubmit={handleAdd} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12, alignItems: 'end' }}>
+                <div>
+                  <label style={label}>Nama</label>
+                  <input style={input} value={nama} onChange={e => setNama(e.target.value)} placeholder="Nama lengkap" required />
                 </div>
-                <form onSubmit={handleAdd} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12, alignItems: 'end' }}>
-                  <div>
-                    <label style={label}>Nama</label>
-                    <input style={input} value={nama} onChange={e => setNama(e.target.value)} placeholder="Nama lengkap" required />
-                  </div>
-                  <div>
-                    <label style={label}>Email</label>
-                    <input style={input} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="admin@bnn.go.id" required />
-                  </div>
-                  <div>
-                    <label style={label}>Password</label>
-                    <input style={input} type="text" value={password} onChange={e => setPassword(e.target.value)} placeholder="Min. 6 karakter" required minLength={6} />
-                  </div>
-                  <div>
-                    <label style={label}>Level</label>
-                    <select style={input} value={level} onChange={e => { setLevel(e.target.value as 'BNNP/BNNK' | 'BNN Utama'); setWilayah(''); }}>
-                      <option value="BNNP/BNNK">BNNP/BNNK</option>
+                <div>
+                  <label style={label}>Email</label>
+                  <input style={input} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="admin@bnn.go.id" required />
+                </div>
+                <div>
+                  <label style={label}>Password</label>
+                  <input style={input} type="text" value={password} onChange={e => setPassword(e.target.value)} placeholder="Min. 6 karakter" required minLength={6} />
+                </div>
+                <div>
+                  <label style={label}>Level</label>
+                  {readOnly ? (
+                    <select style={input} value="BNN Utama" disabled>
                       <option value="BNN Utama">BNN Utama</option>
                     </select>
-                  </div>
-                  {level === 'BNNP/BNNK' && (
-                    <div>
-                      <label style={label}>Wilayah</label>
-                      <select style={input} value={wilayah} onChange={e => setWilayah(e.target.value)} required>
-                        <option value="">Pilih wilayah...</option>
-                        {LOKASI_BNN_LIST.map(w => <option key={w} value={w}>{w}</option>)}
-                      </select>
-                    </div>
+                  ) : (
+                    <select style={input} value={level} onChange={e => { setLevel(e.target.value as 'BNNP/BNNK' | 'BNN Utama'); setWilayah(''); }}>
+                      <option value="BNNP/BNNK">BNNP/BNNK</option>
+                    </select>
                   )}
-                  <button type="submit" disabled={submitting} style={{ ...btnPrimary, gridColumn: 'span 1' }} className="btn-hover">
-                    <FiUserPlus size={13} /> {submitting ? 'Menambah…' : 'Tambah'}
-                  </button>
-                </form>
-              </div>
+                </div>
+                {!readOnly && level === 'BNNP/BNNK' && (
+                  <div>
+                    <label style={label}>Wilayah</label>
+                    <select style={input} value={wilayah} onChange={e => setWilayah(e.target.value)} required>
+                      <option value="">Pilih wilayah...</option>
+                      {LOKASI_BNN_LIST.map(w => <option key={w} value={w}>{w}</option>)}
+                    </select>
+                  </div>
+                )}
+                <button type="submit" disabled={submitting} style={{ ...btnPrimary, gridColumn: 'span 1' }} className="btn-hover">
+                  <FiUserPlus size={13} /> {submitting ? 'Menambah…' : 'Tambah'}
+                </button>
+              </form>
             </div>
-        )}
+        </div>
 
             {/* Daftar admin */}
             <div style={{ ...shell, marginTop: 16 }} className="rise">

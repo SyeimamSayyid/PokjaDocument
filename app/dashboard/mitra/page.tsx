@@ -8,7 +8,7 @@ import {
   FiFileText, FiImage, FiDownload, FiTrash2,
   FiClock, FiAlertCircle, FiCheckCircle, FiInfo, FiUpload,
   FiCalendar, FiDatabase, FiBell,
-  FiGrid, FiHome, FiEdit2, FiCheck, FiX, FiZap, FiArrowUpRight,
+  FiGrid, FiHome, FiEdit2, FiCheck, FiX, FiZap, FiArrowUpRight, FiMessageSquare, FiStar,
 } from 'react-icons/fi';
 import { FaFileSignature, FaFileAlt } from 'react-icons/fa';
 import { SiGoogledocs } from 'react-icons/si';
@@ -245,9 +245,10 @@ export default function DashboardMitraPage() {
           { href: `/mitra/dokumen/${user.idDokumen}`, icon: <FiFileText size={17} />, label: 'Dokumen' },
           { href: '/dashboard/mitra/notifikasi', icon: <FiBell size={17} />, label: 'Notifikasi', notifCount: belumDibaca },
           { href: '/dashboard/mitra/riwayat', icon: <FiClock size={17} />, label: 'Riwayat' },
+          { href: '/dashboard/mitra/saran', icon: <FiMessageSquare size={17} />, label: 'Kotak Saran' },
         ]}
         activeHref="/dashboard/mitra"
-        brandLabel="SI-POKJA HUMKER"
+        brandLabel="E-POKJA HUKER"
         brandSub="Akses Mitra"
         userName={user.namaMitra}
         userTag={labelMitra || user.namaMitra}
@@ -258,6 +259,13 @@ export default function DashboardMitraPage() {
       <div className="main-content-wrap" style={{ maxWidth: 880, margin: '0 auto', padding: '1.3rem 1.25rem 0' }}>
         <nav style={{ ...navPill, justifyContent: 'flex-end' }} className="rise">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <a href="/panduan/mitra.docx" download style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 100,
+              background: 'rgba(29,78,216,0.06)', border: '1px solid rgba(29,78,216,0.12)', color: '#1D4ED8',
+              fontSize: 11.5, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap',
+            }} className="btn-hover">
+              <FiDownload size={13} /> Unduh Panduan
+            </a>
             <button onClick={bukaNotif} style={navIcon} className="btn-hover" title="Notifikasi">
               <FiBell size={15} strokeWidth={1.8} />
               {belumDibaca > 0 && <span style={notifBadge}>{belumDibaca}</span>}

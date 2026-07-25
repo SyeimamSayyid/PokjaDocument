@@ -10,10 +10,15 @@ const COL = {
   TGL_BERLAKU:6, TGL_BERAKHIR:7, DURASI:8, STATUS:9, KODE:10,
   KODE_EXP:11, DOCS_ID:12, DOCS_URL:13, FOLDER_ID:14,
   DIBUAT_OLEH:15, CATATAN:16,
+  TERAKHIR_DIAKSES:17, // BARU — slot yang sebelumnya kosong ('') di appendRow,
+                       // dipakai catat siapa+kapan terakhir BUKA (bukan edit)
+                       // dokumen ini, format "role|nama|waktu" (mirip LOG_EDIT).
   DIVISI:23, // sudah ada dari desain awal sheet — dipakai utk tampilan, TIDAK ditulis appendRow di sini
   LOG_EDIT:30, // sama seperti di dokumen-id-route.ts — siapa terakhir edit, format "role|nama|waktu"
   // (index 29 SUDAH DIPAKAI di Kode.gs untuk "Milestone Diingatkan" — jangan pakai ulang!)
   FLAG_REVISI:33, // BARU — flag "perlu revisi" dari BNN Utama, format "ya|waktu"
+  MASA_BERLAKU_DIISI_OLEH:34, // BARU — siapa TERAKHIR isi/ubah tgl berlaku atau berakhir, format "role|nama|waktu|level"
+  SUMBER_TEMPLATE_AKTIF:35, // BARU — "resmi" atau "mitra", nunjukin naskah kerja mana yang SEDANG dipakai
 };
 
 // ── POST: Generate kode + buat Docs + Drive via Apps Script ──
@@ -137,6 +142,21 @@ export async function POST(req: NextRequest) {
         await updateCell('Dokumen Kerja sama', rowBaru.rowNumber, COL.LOG_EDIT + 1, `admin|${dibuatOleh || 'Superadmin'}|${formatTanggalWaktu(now)}|bnnp_bnnk`);
       }
 
+      // Email notifikasi ke Admin BNN Utama — best-effort, gagal kirim email
+      // TIDAK menggagalkan pembuatan dokumen itu sendiri.
+      try {
+        await fetch(process.env.APPS_SCRIPT_WEBAPP_URL!, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'kirimEmailAccBnnUtama',
+            idDokumen, jenis, judul: judul.trim(), namaMitra: namaMitra.trim(),
+            dibuatOleh: dibuatOleh || 'Superadmin',
+          }),
+          redirect: 'follow',
+        });
+      } catch (e) { console.error('[EMAIL ACC BNN UTAMA]', e); }
+
       return NextResponse.json({
         tipeKode: 'dokumen',
         idDokumen, kodeAkses,
@@ -179,6 +199,7 @@ export async function GET() {
       divisi:      String(r[COL.DIVISI] || '').split(',').map(s => s.trim()).filter(Boolean),
       manualLog:   String(r[COL.LOG_EDIT] || ''),
       flagRevisi:  String(r[COL.FLAG_REVISI] || '').startsWith('ya'),
+      terakhirDiakses: String(r[COL.TERAKHIR_DIAKSES] || ''), // format "role|nama|waktu|level"
     })).reverse();
     return NextResponse.json({ data });
   } catch (err) {
@@ -276,6 +297,18 @@ export async function PATCH(req: NextRequest) {
       }
     } catch { /* fallback ke nilai dari body */ }
 
+    // ── Catat AKSES (buka halaman), BUKAN edit — dipanggil dari halaman detail
+    // dokumen (admin maupun mitra) begitu halaman selesai dimuat. Sengaja
+    // TIDAK menyentuh LOG_EDIT atau Log Aktivitas (itu cuma buat perubahan
+    // data beneran), cuma nulis ke kolom TERAKHIR_DIAKSES lalu langsung
+    // selesai — biar "buka dokumen" tidak keliru tercatat sebagai "edit". ──
+    if (fields._catatAkses === true) {
+      const namaAkses = String(namaPelaku || (pelaku === 'mitra' ? 'Mitra' : 'Admin')).trim();
+      const levelStr = pelaku === 'admin' ? (levelPelaku === 'utama' ? 'utama' : 'bnnp_bnnk') : '';
+      await updateCell('Dokumen Kerja sama', found.rowNumber, COL.TERAKHIR_DIAKSES + 1, `${pelaku}|${namaAkses}|${formatTanggalWaktu(new Date())}|${levelStr}`);
+      return NextResponse.json({ message: 'Akses tercatat.' });
+    }
+
     const map: Record<string, number> = {
       judul:       COL.JUDUL + 1,
       status:      COL.STATUS + 1,
@@ -297,6 +330,13 @@ export async function PATCH(req: NextRequest) {
     const nama = String(namaPelaku || (role === 'mitra' ? 'Mitra' : 'Admin')).trim();
     const levelStr = role === 'admin' ? (levelPelaku === 'utama' ? 'utama' : 'bnnp_bnnk') : '';
     await updateCell('Dokumen Kerja sama', found.rowNumber, COL.LOG_EDIT + 1, `${role}|${nama}|${formatTanggalWaktu(new Date())}|${levelStr}`);
+
+    // Attribution KHUSUS masa berlaku — terpisah dari LOG_EDIT generic di atas
+    // (yang bisa tertimpa perubahan field lain), biar "siapa terakhir isi
+    // masa berlaku" tetap akurat walau ada edit lain sesudahnya.
+    if ('tglBerlaku' in fields || 'tglBerakhir' in fields) {
+      await updateCell('Dokumen Kerja sama', found.rowNumber, COL.MASA_BERLAKU_DIISI_OLEH + 1, `${role}|${nama}|${formatTanggalWaktu(new Date())}|${levelStr}`);
+    }
 
     // Log Aktivitas — sebutkan field spesifik yang diubah
     const fieldLabel: Record<string, string> = {
