@@ -10,7 +10,7 @@ import {
   ArrowLeft, Eye, Check, X, Search, Users, FileText, Tag,
   Mail, Phone, MessageSquare, Clipboard, Calendar, Building,
   GraduationCap, CheckCircle, AlertCircle, Clock, ExternalLink,
-  Copy, List, LayoutDashboard, Key, ChevronDown, ChevronUp, Info,
+  Copy, List, LayoutDashboard, Key, ChevronDown, ChevronUp, Info, Lock, Loader2, FileCheck,
 } from 'lucide-react';
 
 interface Pendaftaran {
@@ -18,6 +18,8 @@ interface Pendaftaran {
   namaInstitusi: string; jurusan: string; email: string; noWa: string;
   deskripsi: string; kodeTracking: string; status: string; catatan: string;
   idDokumen: string; tglDaftar: string;
+  tglDitetapkan: string; tglBerakhirMou: string;
+  fileDokumenId: string; fileDokumenNama: string;
 }
 
 interface HasilGenerate {
@@ -61,11 +63,12 @@ export default function KelolaPendaftaranPage() {
 
   const [accItem, setAccItem]   = useState<Pendaftaran | null>(null);
   const [judulDok, setJudulDok] = useState('');
-  const [durasiDok, setDurasiDok] = useState(5);
   const [idMitra, setIdMitra]   = useState('');
   const [generating, setGenerating] = useState(false);
   const [hasil, setHasil]       = useState<HasilGenerate | null>(null);
   const [copied, setCopied] = useState(false);
+  const [emailTerkirim, setEmailTerkirim] = useState(false);
+  const [kirimLoading, setKirimLoading] = useState(false);
 
   const [tolakItem, setTolakItem] = useState<Pendaftaran | null>(null);
   const [alasanTolak, setAlasanTolak] = useState('');
@@ -134,7 +137,8 @@ export default function KelolaPendaftaranPage() {
 
   const openAcc = (item: Pendaftaran) => {
     setAccItem(item); setHasil(null); setError('');
-    setJudulDok(item.judulKegiatan || ''); setDurasiDok(5);
+    setJudulDok(item.judulKegiatan || '');
+    setEmailTerkirim(false);
     const cocok = mitraList.find(m => m.nama.toLowerCase() === item.namaInstitusi.toLowerCase());
     setIdMitra(cocok?.id || '');
     setCopied(false);
@@ -143,6 +147,10 @@ export default function KelolaPendaftaranPage() {
   const handleAcc = async () => {
     if (!accItem) return;
     if (!judulDok.trim()) { setError('Judul dokumen wajib diisi.'); return; }
+    if (!accItem.tglDitetapkan || !accItem.tglBerakhirMou) {
+      setError('Rencana E-Planning ini belum punya Masa Berlaku MOU/PKS. Lengkapi dulu di halaman E-Planning.');
+      return;
+    }
     setGenerating(true); setError('');
     const namaMitra = mitraList.find(m => m.id === idMitra)?.nama || accItem.namaInstitusi;
     try {
@@ -151,7 +159,9 @@ export default function KelolaPendaftaranPage() {
         body: JSON.stringify({
           tipeKode: 'dokumen', idMitra: idMitra || '', namaMitra,
           jenis: accItem.jenis, judul: judulDok.trim(),
-          durasiTahun: durasiDok, dibuatOleh: namaAdmin,
+          tglBerlaku: accItem.tglDitetapkan, tglBerakhir: accItem.tglBerakhirMou,
+          dibuatOleh: namaAdmin,
+          ...(accItem.fileDokumenId ? { templateMitraId: accItem.fileDokumenId } : {}),
         }),
       });
       const d = await res.json();
@@ -167,6 +177,25 @@ export default function KelolaPendaftaranPage() {
       setHasil(d); load();
     } catch { setError('Terjadi kesalahan.'); }
     finally { setGenerating(false); }
+  };
+
+  const handleKirimEmail = async () => {
+    if (!hasil || !accItem) return;
+    setKirimLoading(true); setError('');
+    try {
+      const res = await fetch('/api/email/kirim-akses', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: accItem.email?.trim() || '', namaMitra: accItem.namaInstitusi,
+          jenis: accItem.jenis, judul: judulDok.trim(),
+          kodeAkses: hasil.kodeAkses, kodeExpire: hasil.kodeExpire, idDokumen: hasil.idDokumen,
+        }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setError(d.message || 'Gagal mengirim email.'); return; }
+      setEmailTerkirim(true);
+    } catch { setError('Terjadi kesalahan saat mengirim email.'); }
+    finally { setKirimLoading(false); }
   };
 
   const handleTolak = async () => {
@@ -413,7 +442,31 @@ export default function KelolaPendaftaranPage() {
                     <ExternalLink size={14} /> Buka Docs
                   </a>
                 )}
-                <button onClick={() => setAccItem(null)} style={{ ...btnSm, width:'100%' }} className="btn-hover">Tutup</button>
+
+                {!emailTerkirim ? (
+                  <>
+                    <button onClick={handleKirimEmail} disabled={kirimLoading || !accItem.email} style={{ ...btnPrimary, width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:6, marginBottom:10 }} className="btn-hover">
+                      {kirimLoading ? (<><Loader2 size={14} style={{ animation:'spin 1s linear infinite' }} /> Mengirim…</>) : (<><Mail size={14} /> Kirim Kode Akses ke Email</>)}
+                    </button>
+                    {!accItem.email && (
+                      <div style={{ fontSize:11, color:'#92400E', background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:9, padding:'8px 11px', marginBottom:10 }}>
+                        Pendaftar ini tidak punya email tersimpan — sampaikan kode akses secara manual, lalu tombol Tutup akan tetap terkunci sampai Anda konfirmasi.
+                      </div>
+                    )}
+                    <div style={{ fontSize:11, color:'#92400E', background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:9, padding:'8px 11px', marginBottom:10, display:'flex', alignItems:'flex-start', gap:6 }}>
+                      <Lock size={12} style={{ flexShrink:0, marginTop:1 }} />
+                      Kirim kode akses dulu sebelum menutup — supaya tidak lupa memberi tahu mitra.
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize:11.5, color:'#0a5c47', background:'rgba(10,92,71,0.08)', borderRadius:9, padding:'8px 11px', marginBottom:10, display:'flex', alignItems:'center', gap:6 }}>
+                    <CheckCircle size={13} /> Kode akses sudah terkirim ke email mitra.
+                  </div>
+                )}
+
+                <button onClick={() => emailTerkirim && setAccItem(null)} disabled={!emailTerkirim} style={{ ...btnSm, width:'100%', opacity: emailTerkirim ? 1 : 0.5, cursor: emailTerkirim ? 'pointer' : 'not-allowed' }} className="btn-hover">
+                  {emailTerkirim ? 'Tutup' : <><Lock size={12} style={{ marginRight:6, verticalAlign:'middle' }} />Tutup (Terkunci)</>}
+                </button>
               </div>
             ) : (
               <div>
@@ -444,30 +497,45 @@ export default function KelolaPendaftaranPage() {
                   </select>
                 </div>
 
+                {accItem.fileDokumenId && (
+                  <div style={{
+                    marginBottom:12, padding:'10px 13px', borderRadius:10,
+                    background:'#EFF6FF', border:'1px solid rgba(29,78,216,0.15)',
+                    fontSize:11.5, color:'#1E3A8A', display:'flex', alignItems:'center', gap:8,
+                  }}>
+                    <FileCheck size={14} style={{ flexShrink:0 }} />
+                    <span>Mitra mengunggah draft <strong>{accItem.fileDokumenNama || 'dokumen'}</strong> — akan otomatis jadi naskah aktif di dokumen ini (bisa diganti kembali ke Template Resmi BNN kapan saja dari halaman detail).</span>
+                  </div>
+                )}
+
                 <div style={{ marginBottom:12 }}>
                   <label style={labelSt}><FileText size={13} style={{ marginRight:4 }} /> Judul Dokumen <span style={{ color: RED }}>*</span></label>
                   <input style={inputFull} value={judulDok} onChange={e => setJudulDok(e.target.value)} />
                 </div>
 
                 <div style={{ marginBottom:18 }}>
-                  <label style={labelSt}><Clock size={13} style={{ marginRight:4 }} /> Durasi Berlaku</label>
-                  <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-                    {[5,6,7,8,9,10].map(d => (
-                      <button key={d} onClick={() => setDurasiDok(d)} style={{
-                        padding:'7px 15px', borderRadius:100, cursor:'pointer', fontFamily:FONT, fontSize:12,
-                        borderWidth:1.5, borderStyle:'solid',
-                        borderColor: durasiDok===d ? INDIGO : 'rgba(30,58,95,0.1)',
-                        background: durasiDok===d ? INDIGO : '#fff',
-                        color: durasiDok===d ? CREAM : '#374151',
-                        fontWeight: durasiDok===d ? 700 : 500,
-                      }} className="btn-hover">
-                        {d} th
-                      </button>
-                    ))}
+                  <label style={labelSt}><Clock size={13} style={{ marginRight:4 }} /> Masa Berlaku MOU/PKS</label>
+                  {accItem.tglDitetapkan && accItem.tglBerakhirMou ? (
+                    <div style={{
+                      padding:'11px 14px', borderRadius:10, background:'#F3F0E8',
+                      border:'1px solid rgba(30,58,95,0.12)', fontSize:12.5, color:'#374151',
+                      display:'flex', alignItems:'center', gap:6,
+                    }}>
+                      <Lock size={12} style={{ color: INDIGO, flexShrink:0 }} />
+                      <span><strong>{accItem.tglDitetapkan}</strong> s.d. <strong>{accItem.tglBerakhirMou}</strong></span>
+                    </div>
+                  ) : (
+                    <div style={{ padding:'11px 14px', borderRadius:10, background:'#FEF3C7', border:'1px solid #FDE68A', fontSize:11.5, color:'#92400E', display:'flex', alignItems:'flex-start', gap:6 }}>
+                      <AlertCircle size={13} style={{ flexShrink:0, marginTop:1 }} />
+                      Rencana E-Planning ini belum punya Masa Berlaku MOU/PKS (Tanggal Ditetapkan & Berakhir) — lengkapi dulu di halaman E-Planning sebelum generate dokumen.
+                    </div>
+                  )}
+                  <div style={{ fontSize:10.5, color:'#94a3b8', marginTop:6 }}>
+                    Diambil otomatis dari rencana E-Planning, mengikuti tanggal yang sudah ditetapkan — tidak bisa diubah dari sini.
                   </div>
                 </div>
 
-                <button onClick={handleAcc} disabled={generating} style={{ ...btnPrimary, width:'100%', height:48, display:'flex', alignItems:'center', justifyContent:'center', gap:8, fontSize:14, opacity: generating ? 0.7 : 1 }} className="btn-hover">
+                <button onClick={handleAcc} disabled={generating || !accItem.tglDitetapkan || !accItem.tglBerakhirMou} style={{ ...btnPrimary, width:'100%', height:48, display:'flex', alignItems:'center', justifyContent:'center', gap:8, fontSize:14, opacity: (generating || !accItem.tglDitetapkan || !accItem.tglBerakhirMou) ? 0.6 : 1 }} className="btn-hover">
                   {generating ? (
                     <>
                       <div style={{ width:18, height:18, border:'2px solid rgba(240,231,213,.4)', borderTopColor: CREAM, borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />

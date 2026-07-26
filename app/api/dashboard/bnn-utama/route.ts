@@ -6,6 +6,7 @@ const COL = {
   ID: 0, JENIS: 1, JUDUL: 2, ID_MITRA: 3, NAMA_MITRA: 4, TGL_DIBUAT: 5,
   TGL_BERLAKU: 6, TGL_BERAKHIR: 7, STATUS: 9,
   LOG_EDIT: 30, // siapa terakhir edit dokumen ini, format "role|nama|waktu|level"
+  ACC_FINAL_UTAMA: 36, // flag sudah di-ACC final BNN Utama, format "ya|waktu|nama"
 };
 
 // Dashboard khusus Admin BNN Utama — lintas semua institusi/provinsi (BUKAN
@@ -109,11 +110,45 @@ export async function GET(req: NextRequest) {
         tglDibuat: String(r[COL.TGL_DIBUAT] || ''),
       }));
 
+    // ── Dokumen Selesai — seluruh dokumen MOU/PKS lintas provinsi yang sudah
+    // mencapai status "Selesai" (bukan Draft/Dalam Proses lagi) — supaya BNN
+    // Utama bisa lihat sekilas dokumen mana saja yang sudah tuntas diproses,
+    // tanpa perlu buka Daftar Dokumen dan filter manual satu-satu. ──
+    const dokumenSelesai = dokList
+      .filter(r => String(r[COL.STATUS]).trim() === 'Selesai')
+      .map(r => ({
+        id: String(r[COL.ID]),
+        jenis: String(r[COL.JENIS]),
+        judul: String(r[COL.JUDUL]),
+        namaMitra: String(r[COL.NAMA_MITRA]),
+        tglBerlaku: String(r[COL.TGL_BERLAKU] || ''),
+        tglBerakhir: String(r[COL.TGL_BERAKHIR] || ''),
+        tglDibuat: String(r[COL.TGL_DIBUAT] || ''),
+        manualLog: String(r[COL.LOG_EDIT] || ''),
+      }))
+      .sort((a, b) => b.tglDibuat.localeCompare(a.tglDibuat)); // yang terbaru duluan
+
+    // ── Dokumen Disetujui — sudah di-ACC final oleh Admin BNN Utama sendiri
+    // (beda dari "Dokumen Selesai" di atas, yang cuma soal status alur kerja
+    // BNNP/BNNK — ini spesifik soal keputusan final BNN Utama). ──
+    const dokumenDisetujui = dokList
+      .filter(r => String(r[COL.ACC_FINAL_UTAMA] || '').startsWith('ya'))
+      .map(r => {
+        const [, waktu, nama] = String(r[COL.ACC_FINAL_UTAMA] || '').split('|');
+        return {
+          id: String(r[COL.ID]), jenis: String(r[COL.JENIS]), judul: String(r[COL.JUDUL]),
+          namaMitra: String(r[COL.NAMA_MITRA]), tglDisetujui: waktu || '', disetujuiOleh: nama || '',
+        };
+      })
+      .sort((a, b) => b.tglDisetujui.localeCompare(a.tglDisetujui));
+
     return NextResponse.json({
       ringkasan: { totalInstitusi, totalDokumen, mouCount, pksCount, statusCount, menungguReview: antrianReview.length },
       chartSumber, chartMitra,
       antrianReview,
       dokumenBaru,
+      dokumenSelesai,
+      dokumenDisetujui,
       riwayatKeputusan: riwayatLengkap,
     });
   } catch (err) {

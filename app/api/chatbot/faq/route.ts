@@ -9,11 +9,13 @@ const SHEET = 'Chatbot FAQ';
 const C = {
   ID: 0, PERTANYAAN: 1, JAWABAN: 2, ID_LANJUTAN: 3, TAMPIL_AWAL: 4,
   AKTIF: 5, DIBUAT_OLEH: 6, TGL_DIBUAT: 7, URUTAN: 8,
+  LINK_AKSI: 9, LABEL_AKSI: 10, // BARU — tombol opsional di bawah jawaban, mis. "Cek Status" -> /cek-pengajuan
 };
 
 interface FaqItem {
   id: string; pertanyaan: string; jawaban: string; idLanjutan: string[];
   tampilAwal: boolean; aktif: boolean; urutan: number;
+  linkAksi?: string; labelAksi?: string;
 }
 
 function mapRow(r: string[]): FaqItem {
@@ -25,6 +27,8 @@ function mapRow(r: string[]): FaqItem {
     tampilAwal: String(r[C.TAMPIL_AWAL] || '').trim().toLowerCase() === 'ya',
     aktif: String(r[C.AKTIF] || 'ya').trim().toLowerCase() !== 'tidak', // default aktif kalau kosong
     urutan: parseInt(String(r[C.URUTAN] || '0')) || 0,
+    linkAksi: String(r[C.LINK_AKSI] || '').trim() || undefined,
+    labelAksi: String(r[C.LABEL_AKSI] || '').trim() || undefined,
   };
 }
 
@@ -56,7 +60,7 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ message: 'Tidak diizinkan. Silakan login.' }, { status: 401 });
 
   try {
-    const { pertanyaan, jawaban, idLanjutan, tampilAwal, urutan } = await req.json();
+    const { pertanyaan, jawaban, idLanjutan, tampilAwal, urutan, linkAksi, labelAksi } = await req.json();
     if (!pertanyaan?.trim()) return NextResponse.json({ message: 'Pertanyaan wajib diisi.' }, { status: 400 });
     if (!jawaban?.trim()) return NextResponse.json({ message: 'Jawaban wajib diisi.' }, { status: 400 });
 
@@ -69,6 +73,7 @@ export async function POST(req: NextRequest) {
       id, pertanyaan.trim(), jawaban.trim(), idLanjutanStr,
       tampilAwal ? 'Ya' : 'Tidak', 'Ya', namaAdmin, formatTanggalWaktu(new Date()),
       String(urutan ?? 0),
+      String(linkAksi || '').trim(), String(labelAksi || '').trim(),
     ]);
 
     return NextResponse.json({ id, message: 'FAQ berhasil ditambahkan.' });
@@ -95,6 +100,8 @@ export async function PATCH(req: NextRequest) {
       tampilAwal: C.TAMPIL_AWAL + 1,
       aktif: C.AKTIF + 1,
       urutan: C.URUTAN + 1,
+      linkAksi: C.LINK_AKSI + 1,
+      labelAksi: C.LABEL_AKSI + 1,
     };
 
     for (const [key, val] of Object.entries(fields)) {

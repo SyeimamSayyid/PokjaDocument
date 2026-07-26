@@ -4,13 +4,13 @@ import { useEffect, useState, useCallback } from 'react';
 import Sidebar, { SidebarItem } from '@/components/Sidebar';
 import {
   FiGrid, FiCalendar, FiInbox, FiKey, FiFolder, FiActivity, FiFileText,
-  FiUsers, FiList, FiArchive, FiShield, FiMessageCircle, FiMessageSquare,
+  FiUsers, FiList, FiArchive, FiShield, FiMessageCircle, FiMessageSquare, FiDroplet,
 } from 'react-icons/fi';
 import {
   ArrowLeft, Key, Building, User, FileText, Tag, Calendar,
   Copy, Check, ExternalLink, AlertCircle, CheckCircle, Loader2, Send,
   Mail, Phone, Clock, List, Search, Landmark, Upload, Trash2, Paperclip,
-  GraduationCap,
+  GraduationCap, Lock,
 } from 'lucide-react';
 
 interface RiwayatItem {
@@ -221,6 +221,7 @@ export default function GenerateKodePage() {
     { href: '/dashboard/pengajuan', icon: <FiInbox size={17} />, label: 'Kelola Pengajuan' },
     { href: '/dashboard/superadmin/generate-kode', icon: <FiKey size={17} />, label: 'Generate Kode' },
     { href: '/dashboard/dokumen', icon: <FiFolder size={17} />, label: 'Daftar Dokumen' },
+    { href: '/dashboard/dokumen-basah', icon: <FiDroplet size={17} />, label: 'Dokumen Basah' },
     { href: '/dashboard/kelola-kegiatan', icon: <FiActivity size={17} />, label: 'Kelola Kegiatan' },
     { href: '/dashboard/kontak', icon: <FiUsers size={17} />, label: 'Kontak Mitra' },
     { href: '/dashboard/dokumen/extract-poin', icon: <FiList size={17} />, label: 'Extract Poin Publik' },
@@ -255,7 +256,7 @@ export default function GenerateKodePage() {
       <Sidebar
         items={sidebarItems}
         activeHref="/dashboard/superadmin/generate-kode"
-        brandLabel="SI-POKJA HUMKER"
+        brandLabel="E-POKJA HUKER"
         brandSub={level === 'utama' ? 'BNN Utama' : 'Admin BNNP/BNNK'}
         userName={namaAdmin}
         userTag={level === 'utama' ? 'Admin BNN Utama' : 'Admin BNNP/BNNK'}
@@ -335,7 +336,15 @@ export default function GenerateKodePage() {
                   <Clock size={12} /> Dokumen ini otomatis tercatat di Arsip Dokumen (sumber: Sistem).
                 </div>
 
-                <button onClick={resetForm} style={{ ...btnSm, width:'100%' }} className="btn-hover">Buat Dokumen Baru</button>
+                {!emailTerkirim && (
+                  <div style={{ fontSize:11, color:'#92400E', background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:9, padding:'9px 12px', marginBottom:10, display:'flex', alignItems:'flex-start', gap:7 }}>
+                    <AlertCircle size={13} style={{ flexShrink:0, marginTop:1 }} />
+                    Kirim kode akses ke email mitra dulu sebelum membuat dokumen baru lainnya — supaya tidak lupa/terlewat.
+                  </div>
+                )}
+                <button onClick={resetForm} disabled={!emailTerkirim} style={{ ...btnSm, width:'100%', opacity: emailTerkirim ? 1 : 0.5, cursor: emailTerkirim ? 'pointer' : 'not-allowed' }} className="btn-hover">
+                  {emailTerkirim ? 'Buat Dokumen Baru' : <><Lock size={12} style={{ marginRight:6, verticalAlign:'middle' }} />Buat Dokumen Baru (Terkunci)</>}
+                </button>
               </div>
             </div>
           ) : (

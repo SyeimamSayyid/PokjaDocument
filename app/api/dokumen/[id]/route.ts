@@ -22,6 +22,7 @@ const COL = {
   FLAG_REVISI:33, // BARU — flag "perlu revisi" dari BNN Utama, format "ya|waktu"
   MASA_BERLAKU_DIISI_OLEH:34, // BARU — siapa TERAKHIR isi/ubah tgl berlaku atau berakhir, format "role|nama|waktu|level"
   SUMBER_TEMPLATE_AKTIF:35, // BARU — "resmi" atau "mitra", nunjukin naskah kerja mana yang SEDANG dipakai
+  ACC_FINAL_UTAMA:36, // BARU — flag dokumen sudah disetujui final BNN Utama, format "ya|waktu|nama"
 };
 
 const URUTAN_STATUS = [
@@ -307,6 +308,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       scanTtdId:  String(row[COL.SCAN_TTD] || ''),
       scanTtdUrl: row[COL.SCAN_TTD] ? `https://drive.google.com/file/d/${String(row[COL.SCAN_TTD])}/view` : '',
       flagRevisi: String(row[COL.FLAG_REVISI] || '').startsWith('ya'),
+      accFinalUtama: String(row[COL.ACC_FINAL_UTAMA] || '').startsWith('ya'),
       docsId, docsUrl, embedUrl,
       folderId:     String(row[COL.FOLDER_ID] || ''),
       dibuatOleh:   String(row[COL.DIBUAT_OLEH] || ''),
@@ -622,6 +624,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
 
       if (bnnUtamaAction === 'setujuiFinal') {
+        await updateCell('Dokumen Kerja sama', rowNumber, COL.ACC_FINAL_UTAMA + 1, `ya|${formatTanggalWaktu(new Date())}|${namaPelaku}`);
         await catatKomentarSistem(id, `✓ Dokumen disetujui final oleh ${namaPelaku} (BNN Utama).`);
         await catatLogEdit(rowNumber, pelaku, namaPelaku, levelPelaku);
         return NextResponse.json({ message: 'Dokumen disetujui final oleh BNN Utama.' });
@@ -632,6 +635,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         if (!alasanBersih) return NextResponse.json({ message: 'Alasan pengembalian wajib diisi.' }, { status: 400 });
 
         await updateCell('Dokumen Kerja sama', rowNumber, COL.STATUS + 1, 'Dalam Proses');
+        await updateCell('Dokumen Kerja sama', rowNumber, COL.ACC_FINAL_UTAMA + 1, ''); // reset — perlu di-ACC ulang setelah diperbaiki
         await catatKomentarSistem(id, `↩ Dokumen dikembalikan oleh ${namaPelaku} (BNN Utama) ke Admin BNNP/BNNK — dianggap keliru. Alasan: ${alasanBersih}`);
         await catatLogEdit(rowNumber, pelaku, namaPelaku, levelPelaku);
         await kirimNotifikasiAdmin(id, 'dikembalikan-bnn-utama', 'Dokumen dikembalikan BNN Utama',

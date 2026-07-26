@@ -6,11 +6,12 @@ import {
   FiGrid, FiCalendar, FiInbox, FiKey, FiFolder, FiActivity, FiFileText,
   FiUsers, FiList as FiListSidebar, FiArchive, FiShield, FiMessageCircle, FiMessageSquare, FiDroplet,
 } from 'react-icons/fi';
+import { FaHandshake } from 'react-icons/fa';
 import {
   ArrowLeft, FileText, Search, Building, Tag, CheckCircle, AlertCircle,
   Check, X, Save, Calendar, MapPin, List, Info,
   RefreshCw, ExternalLink, Loader2, Zap, Shuffle,
-  Sparkles, Edit3, Bell,
+  Sparkles, Edit3, Bell, Lock, Trash2,
 } from 'lucide-react';
 
 interface DokSelesai {
@@ -18,6 +19,7 @@ interface DokSelesai {
   status: string; docsId: string; tglBerlaku: string; tglBerakhir: string;
   fotoFolderId: string;
   tglKegiatanMulai?: string; tglKegiatanSelesai?: string;
+  dariEplanning?: boolean;
   publikasi?: { statusPublikasi: string; tanggalKegiatan: string; tempatKegiatan: string; narasiKustom?: string } | null;
 }
 
@@ -75,6 +77,7 @@ export default function ExtractPoinPage() {
   const [error, setError]         = useState('');
   const [msg, setMsg]             = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterPublikasi, setFilterPublikasi] = useState<'semua' | 'sudah' | 'belum'>('semua');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
 
   const [activeDok, setActiveDok]       = useState<DokSelesai | null>(null);
@@ -83,6 +86,8 @@ export default function ExtractPoinPage() {
   const [poinDipilih, setPoinDipilih]   = useState<string[]>([]);
   const [pasalAktif, setPasalAktif] = useState<number | null>(null);
   const [tanggalKegiatan, setTanggalKegiatan] = useState('');
+  const [tanggalKegiatanSelesai, setTanggalKegiatanSelesai] = useState('');
+  const [editTanggalManual, setEditTanggalManual] = useState(false);
   const [tempatKegiatan, setTempatKegiatan]   = useState('');
   const [saving, setSaving]   = useState(false);
   const [selectedCount, setSelectedCount] = useState(0);
@@ -135,7 +140,10 @@ export default function ExtractPoinPage() {
   const pilihDokumen = async (dok: DokSelesai, tglDefault?: string) => {
     setActiveDok(dok); setPasalData([]); setPoinDipilih([]);
     setMsg(''); setError(''); setLoadingPasal(true);
-    setTanggalKegiatan(tglDefault || dok.tglKegiatanMulai || ''); setTempatKegiatan(''); setCariPoin('');
+    setTanggalKegiatan(tglDefault || dok.tglKegiatanMulai || '');
+    setTanggalKegiatanSelesai(dok.tglKegiatanSelesai || '');
+    setEditTanggalManual(false);
+    setTempatKegiatan(''); setCariPoin('');
     setGayaNarasi(0); setNarasiDisunting(false); setNarasiEdit('');
     setPasalAktif(null);
 
@@ -149,6 +157,7 @@ export default function ExtractPoinPage() {
 
       if (d.savedData) {
         setTanggalKegiatan(d.savedData.tanggalKegiatan || tglDefault || dok.tglKegiatanMulai || '');
+        setTanggalKegiatanSelesai(dok.tglKegiatanSelesai || '');
         setTempatKegiatan(d.savedData.tempatKegiatan || '');
         setPoinDipilih(d.savedData.poinDipilih || []);
         if (d.savedData.narasiKustom) {
@@ -168,6 +177,34 @@ export default function ExtractPoinPage() {
       if (!res.ok) { setError(d.message || 'Dokumen tidak ditemukan.'); setLoadingPasal(false); return; }
       await pilihDokumen(d.dok, tglDefault);
     } catch { setError('Gagal memuat dokumen dari link.'); setLoadingPasal(false); }
+  };
+
+  // Jaga-jaga admin tidak sengaja klik dokumen yang SUDAH dipublikasikan —
+  // tampilkan peringatan dulu, supaya tidak keliru kira ini publikasi baru.
+  const klikKartuDokumen = (d: DokSelesai) => {
+    const sudahPublik = !!(d.publikasi?.statusPublikasi);
+    if (sudahPublik) {
+      const lanjut = confirm(`Kegiatan "${d.judul}" sudah dipublikasikan ke Beranda sebelumnya. Lanjutkan untuk mengedit isi publikasinya?`);
+      if (!lanjut) return;
+    }
+    pilihDokumen(d);
+  };
+
+  const hapusPublikasi = async (d: DokSelesai) => {
+    const yakin = confirm(`Hapus kegiatan "${d.judul}" dari halaman Beranda publik? Poin yang sudah dipilih akan ikut terhapus, tapi dokumen kerja sama itu sendiri TIDAK terpengaruh.`);
+    if (!yakin) return;
+    setMsg(''); setError('');
+    try {
+      const res = await fetch('/api/extract-poin', {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idDokumen: d.id }),
+      });
+      const dd = await res.json();
+      if (!res.ok) { setError(dd.message || 'Gagal menghapus.'); return; }
+      setMsg(dd.message || 'Kegiatan berhasil dihapus dari Beranda.');
+      if (activeDok?.id === d.id) setActiveDok(null);
+      loadDokList();
+    } catch { setError('Terjadi kesalahan koneksi.'); }
   };
 
   const togglePoinPasal = (poinList: string[], e: React.MouseEvent) => {
@@ -214,14 +251,15 @@ export default function ExtractPoinPage() {
         body: JSON.stringify({
           idDokumen: activeDok.id, jenis: activeDok.jenis,
           judul: activeDok.judul, namaMitra: activeDok.namaMitra,
-          statusPublikasi: STATUS_TETAP, tanggalKegiatan, tempatKegiatan,
+          statusPublikasi: STATUS_TETAP, tanggalKegiatan, tanggalKegiatanSelesai, tempatKegiatan,
           poinDipilih, dibuatOleh: namaAdmin,
           narasiKustom: narasiEdit,
         }),
       });
       const d = await res.json();
       if (!res.ok) { setError(d.message || 'Gagal.'); return; }
-      setMsg(d.message); loadDokList();
+      setMsg(`${d.message}${d.catatanTampil ? ` ${d.catatanTampil}` : ''}`);
+      loadDokList();
     } catch { setError('Terjadi kesalahan.'); }
     finally { setSaving(false); }
   };
@@ -250,10 +288,15 @@ export default function ExtractPoinPage() {
     window.location.href = '/login';
   };
 
-  const filtered = dokList.filter(d =>
-    d.judul.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    d.namaMitra.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filtered = dokList.filter(d => {
+    const cocokSearch = d.judul.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      d.namaMitra.toLowerCase().includes(searchTerm.toLowerCase());
+    const sudahPublikCek = !!(d.publikasi?.statusPublikasi);
+    const cocokFilter = filterPublikasi === 'semua' ? true
+      : filterPublikasi === 'sudah' ? sudahPublikCek
+      : !sudahPublikCek;
+    return cocokSearch && cocokFilter;
+  });
 
   const totalPoin = pasalData.reduce((acc, p) => acc + p.poin.length, 0);
   const pasalAktifData = pasalData.find(p => p.nomor === pasalAktif) || null;
@@ -357,6 +400,23 @@ export default function ExtractPoinPage() {
             )}
           </div>
 
+          <div style={{ display:'flex', gap:5, marginBottom:10, flexWrap:'wrap' }}>
+            {([
+              { key:'semua' as const, label:'Semua' },
+              { key:'sudah' as const, label:'Sudah di Beranda' },
+              { key:'belum' as const, label:'Belum di Beranda' },
+            ]).map(f => (
+              <button key={f.key} onClick={() => setFilterPublikasi(f.key)} style={{
+                fontSize:10.5, padding:'5px 11px', borderRadius:100, cursor:'pointer', fontFamily:'inherit', fontWeight:600,
+                border: filterPublikasi === f.key ? 'none' : '1px solid #e2e8f0',
+                background: filterPublikasi === f.key ? BLUE : '#fff',
+                color: filterPublikasi === f.key ? '#fff' : '#64748b',
+              }}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+
           {loading ? (
             <div style={{ ...card, textAlign:'center', padding:'2rem', color:'#94a3b8', display:'flex', flexDirection:'column', alignItems:'center', gap:12 }}>
               <Loader2 size={28} style={{ animation: 'spin 1s linear infinite', color: BLUE }} />
@@ -366,7 +426,7 @@ export default function ExtractPoinPage() {
             <div style={{ ...card, textAlign:'center', padding:'2rem', color:'#94a3b8', display:'flex', flexDirection:'column', alignItems:'center', gap:8 }}>
               <FileText size={32} style={{ color:'#cbd5e1' }} />
               <div style={{ fontSize:13 }}>
-                {searchTerm ? 'Tidak ada yang cocok.' : 'Belum ada dokumen berstatus "Selesai".'}
+                {searchTerm || filterPublikasi !== 'semua' ? 'Tidak ada yang cocok.' : 'Belum ada dokumen berstatus "Selesai".'}
               </div>
             </div>
           ) : (
@@ -378,9 +438,9 @@ export default function ExtractPoinPage() {
                 return (
                   <div
                     key={d.id}
-                    onClick={() => pilihDokumen(d)}
+                    onClick={() => klikKartuDokumen(d)}
                     style={{
-                      ...card, cursor:'pointer', padding:'12px 14px',
+                      ...card, cursor:'pointer', padding:'12px 14px', position:'relative',
                       border: isActive ? `2px solid ${BLUE}` : (siapPublik ? '1.5px solid #FDE68A' : '1px solid #e2e8f0'),
                       background: isActive ? 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)' : '#fff',
                       boxShadow: isActive ? `0 2px 12px ${BLUE}20` : 'none',
@@ -395,9 +455,9 @@ export default function ExtractPoinPage() {
                         {d.jenis}
                       </span>
                       {sudahPublik && (
-                        <span style={{ fontSize:10, padding:'2px 10px', borderRadius:100, background:'#FEF3C7', color:GOLD, display:'flex', alignItems:'center', gap:4 }}>
+                        <span title="Sudah tampil di halaman Beranda publik" style={{ fontSize:10, padding:'2px 10px', borderRadius:100, background:'#FEF3C7', color:GOLD, display:'flex', alignItems:'center', gap:4 }}>
                           <Zap size={10} />
-                          Aktif
+                          Di Beranda
                         </span>
                       )}
                       {siapPublik && (
@@ -406,12 +466,36 @@ export default function ExtractPoinPage() {
                           Siap Publikasi
                         </span>
                       )}
+                      {d.dariEplanning && (
+                        <span title="Dokumen ini berasal dari pendaftaran E-Planning" style={{ fontSize:10, padding:'2px 10px', borderRadius:100, background:'#DBEAFE', color:'#1E3A8A', display:'flex', alignItems:'center', gap:4 }}>
+                          <FaHandshake size={10} />
+                          E-Planning
+                        </span>
+                      )}
                     </div>
-                    <div style={{ fontSize:13, fontWeight:600, lineHeight:1.4, marginBottom:3, color:'#0f1f3d' }}>{d.judul}</div>
+                    <div style={{ fontSize:13, fontWeight:600, lineHeight:1.4, marginBottom:3, color:'#0f1f3d', paddingRight: sudahPublik ? 60 : 0 }}>{d.judul}</div>
                     <div style={{ fontSize:11, color:'#64748b', display:'flex', alignItems:'center', gap:4 }}>
                       <Building size={12} />
                       {d.namaMitra}
                     </div>
+                    {sudahPublik && (
+                      <div style={{ position:'absolute', top:10, right:10, display:'flex', gap:4 }}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); klikKartuDokumen(d); }}
+                          title="Edit publikasi"
+                          style={{ width:24, height:24, borderRadius:7, border:'1px solid rgba(29,78,216,0.15)', background:'#fff', color: BLUE, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}
+                        >
+                          <Edit3 size={12} />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); hapusPublikasi(d); }}
+                          title="Hapus dari Beranda"
+                          style={{ width:24, height:24, borderRadius:7, border:'1px solid rgba(220,38,38,0.2)', background:'#fff', color:'#DC2626', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -480,11 +564,38 @@ export default function ExtractPoinPage() {
 
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginTop:12 }}>
                   <div>
-                    <label style={labelSt}>
-                      <Calendar size={13} style={{ marginRight:4 }} />
-                      Tanggal Kegiatan
+                    <label style={{ ...labelSt, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                      <span><Calendar size={13} style={{ marginRight:4 }} />Durasi Kegiatan</span>
+                      {activeDok?.tglKegiatanMulai && (
+                        <button type="button" onClick={() => setEditTanggalManual(v => !v)} style={{ fontSize:10, color: BLUE_DARK, background:'none', border:'none', cursor:'pointer', fontWeight:700, textDecoration:'underline', padding:0 }}>
+                          {editTanggalManual ? 'Batal, pakai otomatis' : 'Ubah manual (jika perlu)'}
+                        </button>
+                      )}
                     </label>
-                    <input type="date" style={inputFull} value={tanggalKegiatan} onChange={e => setTanggalKegiatan(e.target.value)} />
+                    {!activeDok?.tglKegiatanMulai ? (
+                      <div style={{ ...inputFull, background:'#FEF3C7', color:'#92400E', fontSize:11.5, display:'flex', alignItems:'center', gap:6 }}>
+                        <AlertCircle size={13} style={{ flexShrink:0 }} /> Tanggal kegiatan belum diisi di halaman Detail Dokumen
+                      </div>
+                    ) : editTanggalManual ? (
+                      <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                        <input type="date" style={inputFull} value={tanggalKegiatan} onChange={e => setTanggalKegiatan(e.target.value)} />
+                        <span style={{ fontSize:11, color:'#94a3b8' }}>s.d.</span>
+                        <input type="date" style={inputFull} value={tanggalKegiatanSelesai} onChange={e => setTanggalKegiatanSelesai(e.target.value)} />
+                      </div>
+                    ) : (
+                      <div style={{ ...inputFull, display:'flex', alignItems:'center', gap:8, background:'#F3F0E8', cursor:'not-allowed' }}>
+                        <Lock size={12} style={{ color: BLUE_DARK, flexShrink:0 }} />
+                        <span style={{ fontSize:12.5 }}>
+                          <strong>{activeDok.tglKegiatanMulai}</strong>
+                          {activeDok.tglKegiatanSelesai && activeDok.tglKegiatanSelesai !== activeDok.tglKegiatanMulai && <> s.d. <strong>{activeDok.tglKegiatanSelesai}</strong></>}
+                        </span>
+                      </div>
+                    )}
+                    <div style={{ fontSize:10, color:'#94a3b8', marginTop:5 }}>
+                      {editTanggalManual
+                        ? 'Perubahan ini CUMA berlaku untuk publikasi di sini — tidak mengubah Masa Berlaku Kesepakatan di Detail Dokumen.'
+                        : 'Diambil otomatis dari Masa Berlaku Kesepakatan di halaman Detail Dokumen.'}
+                    </div>
                   </div>
                   <div>
                     <label style={labelSt}>

@@ -48,6 +48,11 @@ export default function CekPengajuanPage() {
   const [error, setError]     = useState('');
   const [hasil, setHasil]     = useState<HasilCek | null>(null);
   const [isFocused, setIsFocused] = useState(false);
+  const [showLupaKode, setShowLupaKode] = useState(false);
+  const [lupaKodeEmail, setLupaKodeEmail] = useState('');
+  const [lupaKodeLoading, setLupaKodeLoading] = useState(false);
+  const [lupaKodeSukses, setLupaKodeSukses] = useState('');
+  const [lupaKodeError, setLupaKodeError] = useState('');
 
   const handleCek = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,6 +68,22 @@ export default function CekPengajuanPage() {
   };
 
   const handleReset = () => { setHasil(null); setKode(''); setError(''); };
+
+  const kirimLupaKode = async () => {
+    setLupaKodeError('');
+    if (!lupaKodeEmail.trim()) { setLupaKodeError('Email wajib diisi.'); return; }
+    setLupaKodeLoading(true);
+    try {
+      const res = await fetch('/api/pengajuan/lupa-kode-tracking', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: lupaKodeEmail.trim() }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setLupaKodeError(d.message || 'Terjadi kesalahan.'); return; }
+      setLupaKodeSukses(d.message);
+    } catch { setLupaKodeError('Terjadi kesalahan koneksi.'); }
+    finally { setLupaKodeLoading(false); }
+  };
 
   const alurIdx    = hasil ? getAlurIndex(hasil.status) : -1;
   const sudahAcc    = hasil ? isAcc(hasil.status) : false;
@@ -246,10 +267,52 @@ export default function CekPengajuanPage() {
 
         {!hasil && (
           <div style={{ textAlign:'center', fontSize:12, color:'#94a3b8', marginTop:16 }}>
-            Belum punya kode?{' '}
-            <a href="/pengajuan" style={{ color: BLUE, textDecoration:'none', fontWeight:700, display:'inline-flex', alignItems:'center', gap:4 }}>
-              Ajukan kerja sama <ArrowRight size={12} />
-            </a>
+            <button onClick={() => setShowLupaKode(true)} style={{ background:'none', border:'none', color: BLUE, textDecoration:'none', fontWeight:700, cursor:'pointer', fontFamily:'inherit', fontSize:12, display:'inline-flex', alignItems:'center', gap:4, padding:0, marginBottom:8 }}>
+              <Key size={12} /> Lupa kode tracking?
+            </button>
+            <div>
+              Belum punya kode?{' '}
+              <a href="/pengajuan" style={{ color: BLUE, textDecoration:'none', fontWeight:700, display:'inline-flex', alignItems:'center', gap:4 }}>
+                Ajukan kerja sama <ArrowRight size={12} />
+              </a>
+            </div>
+          </div>
+        )}
+
+        {showLupaKode && (
+          <div onClick={() => setShowLupaKode(false)} style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.5)', backdropFilter:'blur(3px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, padding:'1.5rem' }}>
+            <div onClick={e => e.stopPropagation()} style={{ background:'#fff', borderRadius:20, padding:'1.6rem', width:'100%', maxWidth:400, boxShadow:'0 30px 70px -20px rgba(15,23,42,0.4)' }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
+                <span style={{ fontSize:14.5, fontWeight:800, color:'#0f1f3d', display:'flex', alignItems:'center', gap:8 }}>
+                  <Key size={16} style={{ color: BLUE }} /> Lupa Kode Tracking?
+                </span>
+                <button onClick={() => setShowLupaKode(false)} style={{ background:'rgba(15,23,42,0.05)', border:'none', borderRadius:100, width:26, height:26, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:'#64748b' }}>
+                  <X size={14} />
+                </button>
+              </div>
+              <div style={{ fontSize:11.5, color:'#64748b', marginBottom:16, lineHeight:1.6 }}>
+                Masukkan email yang Anda gunakan saat mengajukan kerja sama — kami akan kirimkan kembali kode tracking Anda.
+              </div>
+
+              {lupaKodeSukses ? (
+                <div style={{ textAlign:'center', padding:'1rem 0' }}>
+                  <CheckCircle size={32} style={{ color:'#0a5c47', marginBottom:10 }} />
+                  <div style={{ fontSize:12.5, color:'#334155', lineHeight:1.6 }}>{lupaKodeSukses}</div>
+                </div>
+              ) : (
+                <>
+                  <input
+                    type="email" value={lupaKodeEmail} onChange={e => setLupaKodeEmail(e.target.value)}
+                    placeholder="email@institusi.go.id"
+                    style={{ width:'100%', padding:'11px 14px', borderRadius:11, border:'1.5px solid rgba(29,78,216,0.12)', fontSize:13, fontFamily:'inherit', boxSizing:'border-box', outline:'none', marginBottom:12, background:'#f8fafc' }}
+                  />
+                  {lupaKodeError && <div style={{ fontSize:11.5, color:'#DC2626', marginBottom:12, display:'flex', alignItems:'center', gap:6 }}><AlertCircle size={13} />{lupaKodeError}</div>}
+                  <button onClick={kirimLupaKode} disabled={lupaKodeLoading} style={{ ...btnPrimary, width:'100%', justifyContent:'center' }} className="btn-hover">
+                    {lupaKodeLoading ? 'Mengirim...' : 'Kirim Kode ke Email'}
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         )}
       </div>

@@ -6,7 +6,7 @@ import Sidebar, { SidebarItem } from '@/components/Sidebar';
 import { DonutChart, BarChart } from '@/components/DashboardCharts';
 import EditPencilIndicator from '@/components/EditPencilIndicator';
 import {
-  FiFolder, FiFileText, FiCheckCircle, FiClock, FiAlertCircle,
+  FiFolder, FiFileText, FiCheckCircle, FiClock, FiAlertCircle, FiCheck,
   FiArrowUpRight, FiInbox, FiClipboard, FiGrid, FiArchive, FiUsers, FiShield,
   FiBell, FiDownload, FiDroplet,
 } from 'react-icons/fi';
@@ -36,6 +36,10 @@ interface DokAntrian {
   tglBerlaku: string; tglBerakhir: string; tglDibuat: string;
   manualLog?: string;
 }
+interface DokDisetujui {
+  id: string; jenis: string; judul: string; namaMitra: string;
+  tglDisetujui: string; disetujuiOleh: string;
+}
 interface DokBaru {
   id: string; jenis: string; judul: string; namaMitra: string;
   status: string; tglDibuat: string;
@@ -59,9 +63,13 @@ export default function BnnUtamaDashboard() {
   const [chartSumber, setChartSumber] = useState<ChartSumber>({ sistem: 0, arsip: 0 });
   const [chartMitra, setChartMitra] = useState<ChartMitra>({ totalInstitusi: 0, mitraTerdaftar: 0 });
   const [antrian, setAntrian] = useState<DokAntrian[]>([]);
+  const [dokumenSelesaiList, setDokumenSelesaiList] = useState<DokAntrian[]>([]);
+  const [dokumenDisetujuiList, setDokumenDisetujuiList] = useState<DokDisetujui[]>([]);
   const [dokumenBaru, setDokumenBaru] = useState<DokBaru[]>([]);
   const [dokumenBasahMenunggu, setDokumenBasahMenunggu] = useState(0);
   const [cardBaruTerbuka, setCardBaruTerbuka] = useState(false);
+  const [selesaiTerbuka, setSelesaiTerbuka] = useState(false);
+  const [disetujuiTerbuka, setDisetujuiTerbuka] = useState(false);
   const [idTerakhirDilihat, setIdTerakhirDilihat] = useState<string>('');
   const [riwayat, setRiwayat] = useState<Riwayat[]>([]);
   const [loading, setLoading] = useState(true);
@@ -85,6 +93,8 @@ export default function BnnUtamaDashboard() {
         setChartSumber(d.chartSumber || { sistem: 0, arsip: 0 });
         setChartMitra(d.chartMitra || { totalInstitusi: 0, mitraTerdaftar: 0 });
         setAntrian(d.antrianReview || []);
+        setDokumenSelesaiList(d.dokumenSelesai || []);
+        setDokumenDisetujuiList(d.dokumenDisetujui || []);
         setDokumenBaru(d.dokumenBaru || []);
         try { setIdTerakhirDilihat(localStorage.getItem('bnnUtama_dokBaru_dilihat') || ''); } catch {}
         setRiwayat(d.riwayatKeputusan || []);
@@ -173,7 +183,7 @@ export default function BnnUtamaDashboard() {
               Data langsung dari Google Sheets — seluruh institusi BNNP/BNNK
             </p>
           </div>
-          <a href="/panduan/admin-bnn-utama.docx" download style={{
+          <a href="https://drive.google.com/uc?export=download&id=14Pl55nm_IgSn_spHvGphU4y7cyFGKs7P" target="_blank" rel="noopener noreferrer" style={{
             display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 100,
             background: '#fff', border: '1px solid rgba(47,84,73,0.12)', color: JADE_DEEP,
             fontSize: 12, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0,
@@ -338,6 +348,100 @@ export default function BnnUtamaDashboard() {
                     </div>
                   </a>
                 ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Dokumen Selesai — lintas provinsi, collapsible karena bisa panjang */}
+        <div style={{ ...shell, marginTop: 18 }} className="rise">
+          <div style={{ ...core, padding: 0, overflow: 'hidden' }}>
+            <button onClick={() => setSelesaiTerbuka(v => !v)} style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '1.3rem 1.4rem',
+              background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT, textAlign: 'left',
+            }}>
+              <FiCheckCircle size={16} style={{ color: JADE_DEEP, flexShrink: 0 }} />
+              <span style={{ fontSize: 14.5, fontWeight: 800, color: JADE_DEEP, flex: 1 }}>Dokumen Selesai ({dokumenSelesaiList.length})</span>
+              <span style={{ fontSize: 11, color: '#94a3b8' }}>{selesaiTerbuka ? 'Tutup' : 'Buka'}</span>
+            </button>
+
+            {selesaiTerbuka && (
+              <div style={{ padding: '0 1.4rem 1.3rem' }} className="rise">
+                {dokumenSelesaiList.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '2rem', color: 'rgba(47,84,73,0.35)' }}>
+                    <FiFileText size={32} style={{ opacity: 0.5, marginBottom: 8 }} />
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>Belum ada dokumen berstatus Selesai</div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {dokumenSelesaiList.map(d => (
+                      <a key={d.id} href={`/dashboard/dokumen/${d.id}`} style={{ textDecoration: 'none', color: 'inherit' }} className="lift">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, background: '#F5FAF8', borderRadius: 14, padding: '12px 16px', border: '1px solid rgba(171,209,198,0.45)' }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3, flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 100, background: d.jenis === 'MOU' ? '#DBEAFE' : '#FEF3C7', color: d.jenis === 'MOU' ? '#1D4ED8' : '#92400E' }}>{d.jenis}</span>
+                              <span style={{ fontWeight: 700, color: INK, fontSize: 13.5 }}>{d.judul}</span>
+                              <EditPencilIndicator manualLog={d.manualLog} size={20} />
+                            </div>
+                            <div style={{ fontSize: 11.5, color: 'rgba(47,84,73,0.6)' }}>
+                              {d.namaMitra}{d.tglBerlaku ? ` · Berlaku ${d.tglBerlaku}` : ''}{d.tglBerakhir ? ` s.d. ${d.tglBerakhir}` : ''}
+                            </div>
+                          </div>
+                          <FiArrowUpRight size={16} style={{ color: JADE_DEEP, flexShrink: 0 }} />
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Dokumen Disetujui — sudah di-ACC final oleh BNN Utama sendiri */}
+        <div style={{ ...shell, marginTop: 18 }} className="rise">
+          <div style={{ ...core, padding: 0, overflow: 'hidden' }}>
+            <button onClick={() => setDisetujuiTerbuka(v => !v)} style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '1.3rem 1.4rem',
+              background: 'none', border: 'none', cursor: 'pointer', fontFamily: FONT, textAlign: 'left',
+            }}>
+              <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:20, height:20, borderRadius:'50%', background:'#1D4ED8', color:'#fff', flexShrink:0 }}>
+                <FiCheck size={12} strokeWidth={3} />
+              </span>
+              <span style={{ fontSize: 14.5, fontWeight: 800, color: JADE_DEEP, flex: 1 }}>Dokumen Disetujui ({dokumenDisetujuiList.length})</span>
+              <span style={{ fontSize: 11, color: '#94a3b8' }}>{disetujuiTerbuka ? 'Tutup' : 'Buka'}</span>
+            </button>
+
+            {disetujuiTerbuka && (
+              <div style={{ padding: '0 1.4rem 1.3rem' }} className="rise">
+                {dokumenDisetujuiList.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '2rem', color: 'rgba(47,84,73,0.35)' }}>
+                    <FiFileText size={32} style={{ opacity: 0.5, marginBottom: 8 }} />
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>Belum ada dokumen yang di-ACC final</div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {dokumenDisetujuiList.map(d => (
+                      <a key={d.id} href={`/dashboard/dokumen/${d.id}`} style={{ textDecoration: 'none', color: 'inherit' }} className="lift">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, background: '#F5FAF8', borderRadius: 14, padding: '12px 16px', border: '1px solid rgba(171,209,198,0.45)' }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3, flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 100, background: d.jenis === 'MOU' ? '#DBEAFE' : '#FEF3C7', color: d.jenis === 'MOU' ? '#1D4ED8' : '#92400E' }}>{d.jenis}</span>
+                              <span style={{ fontWeight: 700, color: INK, fontSize: 13.5 }}>{d.judul}</span>
+                              <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:16, height:16, borderRadius:'50%', background:'#1D4ED8', color:'#fff', flexShrink:0 }}>
+                                <FiCheck size={9} strokeWidth={3} />
+                              </span>
+                            </div>
+                            <div style={{ fontSize: 11.5, color: 'rgba(47,84,73,0.6)' }}>
+                              {d.namaMitra}{d.disetujuiOleh ? ` · disetujui oleh ${d.disetujuiOleh}` : ''}{d.tglDisetujui ? ` · ${d.tglDisetujui}` : ''}
+                            </div>
+                          </div>
+                          <FiArrowUpRight size={16} style={{ color: JADE_DEEP, flexShrink: 0 }} />
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>

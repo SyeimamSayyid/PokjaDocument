@@ -15,7 +15,7 @@ const COL_D = {
 const COL_K = {
   ID:0, KATEGORI:1, DIVISI:2, JUDUL:3, DESKRIPSI:4, JENIS:5,
   TARGET:6, TERISI:7, WILAYAH:8, BIAYA:9, TGL_MULAI:10, TGL_TARGET:11,
-  STATUS:12, TAMPIL_PUBLIK:13,
+  STATUS:12, TAMPIL_PUBLIK:13, TGL_DITETAPKAN:17, TGL_BERAKHIR_MOU:18,
 };
 
 // ── POST: Mitra daftar slot kegiatan (kuota -1) ───────────
@@ -167,9 +167,26 @@ export async function GET(req: NextRequest) {
     }
 
     // List semua (admin)
-    let data = rows.filter(r => r[COL_D.ID]).map(r => ({
+    // Join dengan "Kegiatan Eplanning" — supaya admin lihat masa berlaku
+    // MOU/PKS yang sudah ditetapkan di rencana, tanpa perlu isi ulang manual
+    // saat generate dokumen (masa berlaku dikunci ikut rencana).
+    let kegiatanMap: Record<string, { tglDitetapkan: string; tglBerakhirMou: string }> = {};
+    try {
+      const kegRows = await getSheetData(SHEET_KEGIATAN);
+      kegRows.forEach(r => {
+        if (r[COL_K.ID]) kegiatanMap[String(r[COL_K.ID])] = {
+          tglDitetapkan: String(r[COL_K.TGL_DITETAPKAN] || ''),
+          tglBerakhirMou: String(r[COL_K.TGL_BERAKHIR_MOU] || ''),
+        };
+      });
+    } catch {}
+
+    let data = rows.filter(r => r[COL_D.ID]).map(r => {
+      const idKeg = String(r[COL_D.ID_KEGIATAN]);
+      const keg = kegiatanMap[idKeg] || { tglDitetapkan: '', tglBerakhirMou: '' };
+      return {
       id:            String(r[COL_D.ID]),
-      idKegiatan:    String(r[COL_D.ID_KEGIATAN]),
+      idKegiatan:    idKeg,
       judulKegiatan: String(r[COL_D.JUDUL_KEG]),
       jenis:         String(r[COL_D.JENIS]),
       namaInstitusi: String(r[COL_D.NAMA_INST]),
@@ -185,7 +202,11 @@ export async function GET(req: NextRequest) {
       fileDokumenId:   String(r[COL_D.FILE_ID] || ''),
       fileDokumenNama: String(r[COL_D.FILE_NAMA] || ''),
       tglDaftar:     String(r[COL_D.TGL_DAFTAR]),
-    })).reverse();
+      // BARU — masa berlaku MOU/PKS dikunci dari rencana E-Planning
+      tglDitetapkan:  keg.tglDitetapkan,
+      tglBerakhirMou: keg.tglBerakhirMou,
+      };
+    }).reverse();
 
     if (idKegiatan) data = data.filter(d => d.idKegiatan === idKegiatan);
 

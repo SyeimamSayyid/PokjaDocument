@@ -259,7 +259,7 @@ export default function DashboardMitraPage() {
       <div className="main-content-wrap" style={{ maxWidth: 880, margin: '0 auto', padding: '1.3rem 1.25rem 0' }}>
         <nav style={{ ...navPill, justifyContent: 'flex-end' }} className="rise">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <a href="/panduan/mitra.docx" download style={{
+            <a href="https://drive.google.com/uc?export=download&id=1GpIgfRfgeZ36Vw4739MCCj7Kf_EXpL-L" target="_blank" rel="noopener noreferrer" style={{
               display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 100,
               background: 'rgba(29,78,216,0.06)', border: '1px solid rgba(29,78,216,0.12)', color: '#1D4ED8',
               fontSize: 11.5, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap',

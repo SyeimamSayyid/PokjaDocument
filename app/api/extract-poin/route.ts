@@ -13,6 +13,31 @@ const COL_DOK = {
   TGL_KEG_MULAI:20, TGL_KEG_SELESAI:21,
 };
 
+// ── Perhitungan bucket tanggal — SAMA PERSIS dengan /api/beranda dan
+// /api/kelola-kegiatan, supaya pesan sukses di halaman ini bisa kasih tau
+// admin dengan AKURAT kegiatan ini bakal muncul di tab mana. ──
+function tanggalHariIniWITA(): string {
+  const now = new Date();
+  return now.toLocaleDateString('en-CA', { timeZone: 'Asia/Makassar' });
+}
+function tanggalSaja(str: string): string {
+  if (!str) return '';
+  const m = String(str).match(/^(\d{4}-\d{2}-\d{2})/);
+  if (m) return m[1];
+  const d = new Date(str);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Makassar' });
+}
+function hitungBucket(tglMulai: string, tglSelesai: string, fallback: string): string {
+  if (!tglMulai && !tglSelesai) return fallback || 'akan-berlangsung';
+  const hariIni = tanggalHariIniWITA();
+  const mulai   = tanggalSaja(tglMulai);
+  const selesai = tanggalSaja(tglSelesai);
+  if (selesai && hariIni > selesai) return 'telah-berlangsung';
+  if (mulai && hariIni >= mulai)    return 'berlangsung';
+  return 'akan-berlangsung';
+}
+
 function getAuth() {
   return new google.auth.GoogleAuth({
     credentials: {
@@ -93,6 +118,14 @@ export async function GET(req: NextRequest) {
     const idDokumen  = searchParams.get('idDokumen');
     const getPoin    = searchParams.get('getPoin') === 'true';
 
+    // Deteksi dokumen yang berasal dari pendaftaran E-Planning — sama
+    // seperti logika di generate-kode-route.ts & kelola-kegiatan-route.ts.
+    let idDokumenDariEplanning = new Set<string>();
+    try {
+      const daftarRows = await getSheetData('Pendaftaran Kegiatan');
+      daftarRows.forEach(r => { if (r[12]) idDokumenDariEplanning.add(String(r[12]).trim()); });
+    } catch {}
+
     const rows = await getSheetData('Dokumen Kerja sama');
     const selesai = rows
       .filter(r => r[COL_DOK.ID] && String(r[COL_DOK.STATUS]).trim() === 'Selesai')
@@ -108,6 +141,7 @@ export async function GET(req: NextRequest) {
         fotoFolderId: String(r[COL_DOK.FOTO_FOLDER] || ''),
         tglKegiatanMulai:   String(r[COL_DOK.TGL_KEG_MULAI] || ''),
         tglKegiatanSelesai: String(r[COL_DOK.TGL_KEG_SELESAI] || ''),
+        dariEplanning: idDokumenDariEplanning.has(String(r[COL_DOK.ID])),
       }));
 
     if (idDokumen && getPoin) {
@@ -156,6 +190,7 @@ export async function GET(req: NextRequest) {
             tempatKegiatan:  String(found[7] || ''),
             poinDipilih:     JSON.parse(String(found[8] || '[]')),
             narasiKustom:    String(found[12] || ''),
+            tanggalKegiatanSelesai: String(found[13] || ''),
           };
         }
       } catch {}
@@ -194,13 +229,33 @@ export async function POST(req: NextRequest) {
   try {
     const {
       idDokumen, jenis, judul, namaMitra,
-      statusPublikasi, tanggalKegiatan, tempatKegiatan,
+      statusPublikasi, tanggalKegiatan, tanggalKegiatanSelesai, tempatKegiatan,
       poinDipilih, dibuatOleh, narasiKustom,
     } = await req.json();
 
     if (!idDokumen || !poinDipilih || !statusPublikasi) {
       return NextResponse.json({ message: 'Data tidak lengkap.' }, { status: 400 });
     }
+
+    // Ambil tanggal kegiatan dari dokumen asli (kalau ada) — SAMA seperti
+    // prioritas yang dipakai /api/beranda & /api/kelola-kegiatan — supaya
+    // pesan sukses di sini akurat menyebutkan tab tempat kegiatan ini
+    // akan benar-benar muncul, bukan cuma dugaan.
+    let tglMulaiDok = '', tglSelesaiDok = '';
+    try {
+      const dokRows = await getSheetData('Dokumen Kerja sama');
+      const dokRow = dokRows.find(r => String(r[COL_DOK.ID] || '').trim() === idDokumen);
+      if (dokRow) {
+        tglMulaiDok   = String(dokRow[COL_DOK.TGL_KEG_MULAI] || '');
+        tglSelesaiDok = String(dokRow[COL_DOK.TGL_KEG_SELESAI] || '');
+      }
+    } catch {}
+
+    const bucket = hitungBucket(tglMulaiDok || tanggalKegiatan || '', tglSelesaiDok, statusPublikasi);
+    const labelBucket: Record<string, string> = {
+      'akan-berlangsung': 'Akan Berlangsung', 'berlangsung': 'Sedang Berlangsung', 'telah-berlangsung': 'Telah Berlangsung',
+    };
+    const catatanTampil = `Akan muncul di tab "${labelBucket[bucket] || bucket}" pada halaman Beranda publik dan Kelola Kegiatan.`;
 
     try {
       const pubRows = await getSheetData('Poin Publik Kegiatan');
@@ -212,7 +267,8 @@ export async function POST(req: NextRequest) {
         await updateCell('Poin Publik Kegiatan', rowNum, 8,  tempatKegiatan  || '');
         await updateCell('Poin Publik Kegiatan', rowNum, 9,  JSON.stringify(poinDipilih));
         await updateCell('Poin Publik Kegiatan', rowNum, 13, narasiKustom || '');
-        return NextResponse.json({ message: 'Poin publik berhasil diperbarui.' });
+        await updateCell('Poin Publik Kegiatan', rowNum, 14, tanggalKegiatanSelesai || tglSelesaiDok || '');
+        return NextResponse.json({ message: 'Poin publik berhasil diperbarui.', bucket, catatanTampil });
       }
     } catch {}
 
@@ -227,9 +283,10 @@ export async function POST(req: NextRequest) {
       dibuatOleh || 'Admin',
       '',
       narasiKustom || '',
+      tanggalKegiatanSelesai || tglSelesaiDok || '', // kolom BARU index 13 — tanggal selesai kegiatan (durasi)
     ]);
 
-    return NextResponse.json({ message: 'Poin publik berhasil disimpan.' });
+    return NextResponse.json({ message: 'Poin publik berhasil disimpan.', bucket, catatanTampil });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }

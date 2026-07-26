@@ -9,7 +9,7 @@ import {
   FiGrid, FiUsers, FiArrowRight, FiInfo, FiLogIn,
   FiActivity, FiAlertCircle, FiChevronDown, FiChevronUp,
   FiTarget, FiCheckCircle, FiUserCheck, FiX, FiDatabase,
-  FiRefreshCw, FiZap,
+  FiRefreshCw, FiZap, FiArrowUpRight,
 } from 'react-icons/fi';
 import { FaBuilding, FaHandshake, FaFileSignature, FaFileAlt, FaUserTie } from 'react-icons/fa';
 
@@ -42,9 +42,14 @@ export default function HomePage() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [stats, setStats] = useState<Stats>({ totalMitra: 0, totalDokumen: 0, totalMOU: 0, totalPKS: 0 });
   const [showLoginPicker, setShowLoginPicker] = useState(false);
+  const [rencanaTerbuka, setRencanaTerbuka] = useState<{ id: string; judul: string; jenis: string; sisaKuota: number }[]>([]);
 
   useEffect(() => {
     fetch('/api/stats-publik').then(r => r.json()).then(setStats).catch(() => {});
+    fetch('/api/rencana/publik')
+      .then(r => r.json())
+      .then(d => setRencanaTerbuka((d.data || []).filter((k: { sisaKuota: number }) => k.sisaKuota > 0)))
+      .catch(() => {});
   }, []);
 
   const navigateTo = (path: string) => router.push(path);
@@ -76,6 +81,22 @@ export default function HomePage() {
 
         {activePage === 'beranda' ? (
           <>
+            {rencanaTerbuka.length > 0 && (
+              <a href={`/daftar-kegiatan/${rencanaTerbuka[0].id}`} style={{
+                display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none',
+                background: 'linear-gradient(135deg,#FEF3C7,#FFFBEB)', border: '1px solid #FDE68A',
+                borderRadius: 16, padding: '13px 18px', marginBottom: 18,
+              }} className="fld">
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#D97706', flexShrink: 0, animation: 'pulseDot 1.8s infinite' }} />
+                <span style={{ fontSize: 12.5, color: '#92400E', flex: 1 }}>
+                  <strong>{rencanaTerbuka.length} rencana kerja sama {rencanaTerbuka.length > 1 ? 'sedang' : ''} dibuka</strong> untuk pendaftaran — {rencanaTerbuka[0].judul}{rencanaTerbuka.length > 1 ? ` dan ${rencanaTerbuka.length - 1} lainnya` : ''}. Institusi Anda berminat?
+                </span>
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: '#92400E', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  Daftar Sekarang <FiArrowUpRight size={13} />
+                </span>
+              </a>
+            )}
+
             {/* Hero */}
             <div style={heroWrap} className="fld">
               <div style={{ position:'relative', zIndex:1, textAlign:'center', padding:'3.2rem 1.5rem' }}>
@@ -313,6 +334,7 @@ function GlobalStyle() {
     <style>{`
       @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
       @keyframes fadeUp { from { opacity:0; transform: translateY(14px); filter: blur(3px);} to { opacity:1; transform: translateY(0); filter: blur(0);} }
+      @keyframes pulseDot { 0%,100% { opacity:1; transform: scale(1); } 50% { opacity:0.5; transform: scale(1.3); } }
       @keyframes scaleIn { from { opacity:0; transform: scale(0.95) translateY(6px); } to { opacity:1; transform: scale(1) translateY(0); } }
       .fld { animation: fadeUp 0.55s cubic-bezier(0.32,0.72,0,1) both; }
       .btn-hover { transition: all 0.3s cubic-bezier(0.32,0.72,0,1); }

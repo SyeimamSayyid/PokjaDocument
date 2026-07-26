@@ -116,6 +116,20 @@ export async function GET(req: NextRequest) {
     const arsipMouCount = arsipList.filter(r => String(r[2] || '').toUpperCase() === 'MOU').length;
     const arsipPksCount = arsipList.filter(r => String(r[2] || '').toUpperCase() === 'PKS').length;
 
+    // ── Dokumen Disetujui — sudah di-ACC final oleh Admin BNN Utama.
+    // Kolom index 36 (ACC_FINAL_UTAMA), format "ya|waktu|nama". ──
+    const ACC_FINAL_UTAMA_COL = 36;
+    const dokumenDisetujui = dokList
+      .filter(r => String(r[ACC_FINAL_UTAMA_COL] || '').startsWith('ya'))
+      .map(r => {
+        const [, waktu, nama] = String(r[ACC_FINAL_UTAMA_COL] || '').split('|');
+        return {
+          id: String(r[0]), jenis: String(r[1]), judul: String(r[2]),
+          namaMitra: String(r[4]), tglDisetujui: waktu || '', disetujuiOleh: nama || '',
+        };
+      })
+      .sort((a, b) => b.tglDisetujui.localeCompare(a.tglDisetujui));
+
     return NextResponse.json({
       stats: {
         pengajuanMenunggu, pengajuanDiterima, pengajuanDitolak,
@@ -129,6 +143,7 @@ export async function GET(req: NextRequest) {
         ...ksStats,
       },
       dokumenTerbaru,
+      dokumenDisetujui,
       alertExpire: alertExpire.sort((a, b) => a.sisaHari - b.sisaHari),
     });
   } catch (err) {

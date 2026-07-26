@@ -53,6 +53,7 @@ const DOK_COL = {
   TGL_BERLAKU: 6, TGL_BERAKHIR: 7, STATUS: 9, DOCS_URL: 13, DIBUAT_OLEH: 15,
   DIVISI: 23,
   TTD_TIPE: 24, TTD_STATUS: 26, TTD_TGL_FINAL: 27,
+  ACC_FINAL_UTAMA: 36, // BARU — flag dokumen sudah disetujui final BNN Utama, format "ya|waktu|nama"
 };
 const PJ_COL = { ID_MITRA: 1, NAMA: 2, EMAIL: 7, WA: 8, PIC: 18 };
 
@@ -69,6 +70,8 @@ interface ArsipItem {
   ttdTipe?: string; ttdTglFinal?: string; divisi?: string[];
   komentarUtama?: string;
   mencurigakan?: boolean; // BARU — duplikat institusi + bidang kosong + masa berakhir kosong
+  accFinalUtama?: boolean; // BARU — sudah di-ACC final oleh BNN Utama
+  dariEplanning?: boolean; // BARU — asal dari pendaftaran E-Planning
 }
 
 // Resolve kontak PIC dari Pengajuan Mitra utk dokumen sistem (idMitra dulu, fallback nama)
@@ -137,6 +140,14 @@ export async function GET(req: NextRequest) {
       let pjRows: string[][] = [];
       try { pjRows = await getSheetData('Pengajuan Mitra'); } catch { pjRows = []; }
 
+      // Deteksi dokumen yang berasal dari pendaftaran E-Planning — sama
+      // seperti logika di dokumen-list-page.tsx & kelola-kegiatan-route.ts.
+      let idDokumenDariEplanning = new Set<string>();
+      try {
+        const daftarRows = await getSheetData('Pendaftaran Kegiatan');
+        daftarRows.forEach(r => { if (r[12]) idDokumenDariEplanning.add(String(r[12]).trim()); });
+      } catch {}
+
       dataSistem = await Promise.all(
         dokRows.filter(r => r[DOK_COL.ID]).map(async r => {
           const idMitra = String(r[DOK_COL.ID_MITRA] || '').trim();
@@ -163,6 +174,8 @@ export async function GET(req: NextRequest) {
             ttdTipe:        String(r[DOK_COL.TTD_TIPE] || ''),
             ttdTglFinal:    String(r[DOK_COL.TTD_STATUS] || '') === 'Disetujui' ? String(r[DOK_COL.TTD_TGL_FINAL] || '') : '',
             divisi:         String(r[DOK_COL.DIVISI] || '').split(',').map(s => s.trim()).filter(Boolean),
+            accFinalUtama:  String(r[DOK_COL.ACC_FINAL_UTAMA] || '').startsWith('ya'),
+            dariEplanning:  idDokumenDariEplanning.has(String(r[DOK_COL.ID]).trim()),
           };
         })
       );

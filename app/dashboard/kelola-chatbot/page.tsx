@@ -11,6 +11,7 @@ import {
 interface FaqItem {
   id: string; pertanyaan: string; jawaban: string; idLanjutan: string[];
   tampilAwal: boolean; aktif: boolean; urutan: number;
+  linkAksi?: string; labelAksi?: string;
 }
 interface PertanyaanItem {
   id: string; pertanyaan: string; status: string; idFaqTerkait: string;
@@ -41,6 +42,8 @@ export default function KelolaChatbotPage() {
   const [fPertanyaan, setFPertanyaan] = useState('');
   const [fJawaban, setFJawaban] = useState('');
   const [fTampilAwal, setFTampilAwal] = useState(false);
+  const [fLinkAksi, setFLinkAksi] = useState('');
+  const [fLabelAksi, setFLabelAksi] = useState('');
   const [fLanjutan, setFLanjutan] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
@@ -88,8 +91,10 @@ export default function KelolaChatbotPage() {
     if (item) {
       setEditId(item.id); setFPertanyaan(item.pertanyaan); setFJawaban(item.jawaban);
       setFTampilAwal(item.tampilAwal); setFLanjutan(item.idLanjutan);
+      setFLinkAksi(item.linkAksi || ''); setFLabelAksi(item.labelAksi || '');
     } else {
       setEditId(null); setFPertanyaan(''); setFJawaban(''); setFTampilAwal(false); setFLanjutan([]);
+      setFLinkAksi(''); setFLabelAksi('');
     }
     setFormTerbuka(true);
   };
@@ -108,7 +113,7 @@ export default function KelolaChatbotPage() {
       if (editId) {
         const res = await fetch('/api/chatbot/faq', {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: editId, fields: { pertanyaan: fPertanyaan, jawaban: fJawaban, tampilAwal: fTampilAwal, idLanjutan: fLanjutan } }),
+          body: JSON.stringify({ id: editId, fields: { pertanyaan: fPertanyaan, jawaban: fJawaban, tampilAwal: fTampilAwal, idLanjutan: fLanjutan, linkAksi: fLinkAksi, labelAksi: fLabelAksi } }),
         });
         const d = await res.json();
         if (!res.ok) { setError(d.message || 'Gagal menyimpan.'); return; }
@@ -116,7 +121,7 @@ export default function KelolaChatbotPage() {
       } else {
         const res = await fetch('/api/chatbot/faq', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pertanyaan: fPertanyaan, jawaban: fJawaban, tampilAwal: fTampilAwal, idLanjutan: fLanjutan, urutan: faqList.length }),
+          body: JSON.stringify({ pertanyaan: fPertanyaan, jawaban: fJawaban, tampilAwal: fTampilAwal, idLanjutan: fLanjutan, urutan: faqList.length, linkAksi: fLinkAksi, labelAksi: fLabelAksi }),
         });
         const d = await res.json();
         if (!res.ok) { setError(d.message || 'Gagal menyimpan.'); return; }
@@ -281,6 +286,17 @@ export default function KelolaChatbotPage() {
             <label style={{ fontSize: 11, fontWeight: 700, color: '#475569', display: 'block', marginBottom: 5 }}>Jawaban</label>
             <textarea value={fJawaban} onChange={e => setFJawaban(e.target.value)} rows={4} placeholder="Jelaskan jawabannya di sini..."
               style={{ width: '100%', padding: '10px 13px', borderRadius: 10, border: '1.5px solid rgba(30,58,95,0.12)', fontSize: 12.5, marginBottom: 12, boxSizing: 'border-box', outline: 'none', resize: 'vertical' }} />
+
+            <label style={{ fontSize: 11, fontWeight: 700, color: '#475569', display: 'block', marginBottom: 5 }}>Tombol Aksi (opsional)</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 4 }}>
+              <input value={fLabelAksi} onChange={e => setFLabelAksi(e.target.value)} placeholder='Label tombol, mis. "Cek Status"'
+                style={{ padding: '9px 12px', borderRadius: 9, border: '1.5px solid rgba(30,58,95,0.12)', fontSize: 12, boxSizing: 'border-box', outline: 'none' }} />
+              <input value={fLinkAksi} onChange={e => setFLinkAksi(e.target.value)} placeholder="/cek-pengajuan"
+                style={{ padding: '9px 12px', borderRadius: 9, border: '1.5px solid rgba(30,58,95,0.12)', fontSize: 12, boxSizing: 'border-box', outline: 'none' }} />
+            </div>
+            <div style={{ fontSize: 10.5, color: '#94a3b8', marginBottom: 12 }}>
+              Isi keduanya kalau ingin jawaban ini menampilkan tombol navigasi (mis. langsung ke halaman Cek Status Pengajuan). Kosongkan kalau tidak perlu.
+            </div>
 
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#334155', marginBottom: 14, cursor: 'pointer' }}>
               <input type="checkbox" checked={fTampilAwal} onChange={e => setFTampilAwal(e.target.checked)} />

@@ -33,6 +33,7 @@ interface Dokumen {
   scanTtdId?: string;
   scanTtdUrl?: string;
   flagRevisi?: boolean;
+  accFinalUtama?: boolean;
   ttdTipe: string; ttdTglDiajukan: string; ttdStatus: string; ttdTglFinal: string; ttdCatatan: string;
 }
 
@@ -1132,16 +1133,24 @@ export default function AdminDokumenDetailPage({ params }: { params: Promise<{ i
                 <div style={{ ...hintText, marginBottom:10 }}>
                   Dokumen ini sudah ditandai "Selesai" oleh Admin BNNP/BNNK. Tinjau isinya, lalu setujui final atau kembalikan kalau ada yang keliru.
                 </div>
+                {dok.accFinalUtama && !showKembalikanUtama && (
+                  <div style={{ display:'flex', alignItems:'center', gap:8, background:'rgba(10,92,71,0.08)', borderRadius:11, padding:'10px 14px', marginBottom:10 }}>
+                    <FiCheckCircle size={15} style={{ color:'#0a5c47', flexShrink:0 }} />
+                    <span style={{ fontSize:12, color:'#0a5c47', fontWeight:600 }}>Sudah disetujui final oleh BNN Utama.</span>
+                  </div>
+                )}
                 {!showKembalikanUtama ? (
                   <div style={{ display:'flex', gap:8 }}>
                     <button onClick={() => setShowKembalikanUtama(true)} disabled={savingUtama}
                       style={{ ...btnSm, flex:1, color:'#A32D2D', borderColor:'#FCEBEB' }} className="btn-hover">
                       ↩ Kembalikan
                     </button>
-                    <button onClick={setujuiFinalUtama} disabled={savingUtama}
-                      style={{ ...btnPrimary, flex:2, background:'#B5813F' }} className="btn-hover">
-                      {savingUtama ? 'Memproses…' : '✓ Setujui Final (BNN Utama)'}
-                    </button>
+                    {!dok.accFinalUtama && (
+                      <button onClick={setujuiFinalUtama} disabled={savingUtama}
+                        style={{ ...btnPrimary, flex:2, background:'#B5813F' }} className="btn-hover">
+                        {savingUtama ? 'Memproses…' : '✓ Setujui Final (BNN Utama)'}
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <div style={kembaliBox}>

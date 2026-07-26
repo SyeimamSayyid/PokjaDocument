@@ -11,6 +11,7 @@ const BLUE_DARK = '#1E3A8A';
 interface FaqItem {
   id: string; pertanyaan: string; jawaban: string; idLanjutan: string[];
   tampilAwal: boolean; aktif: boolean; urutan: number;
+  linkAksi?: string; labelAksi?: string;
 }
 
 interface PesanChat {
@@ -18,6 +19,7 @@ interface PesanChat {
   teks: string;
   pilihan?: { label: string; jawabanId: string }[];
   tawarkanKirim?: string; // kalau ada, tampilkan tombol "Kirim ke Admin" dengan teks ini
+  aksi?: { link: string; label: string }; // tombol navigasi opsional, mis. "Cek Status" -> /cek-pengajuan
 }
 
 const SAPAAN_TEMPLATE = 'Halo! Saya asisten E-POKJA HUKER. Saya bisa bantu jelaskan fungsi/kegunaan bagian-bagian sistem ini. Pilih pertanyaan di bawah, atau ketik kata kunci:';
@@ -107,6 +109,7 @@ export default function ChatbotWidget({ sumberLabel, tema = 'biru', sapaan }: Ch
         dari: 'bot',
         teks: entri.jawaban,
         ...(lanjutan.length > 0 ? { pilihan: lanjutan.map(f => ({ label: f.pertanyaan, jawabanId: f.id })) } : {}),
+        ...(entri.linkAksi && entri.labelAksi ? { aksi: { link: entri.linkAksi, label: entri.labelAksi } } : {}),
       }]);
     }, 550);
   };
@@ -217,6 +220,15 @@ export default function ChatbotWidget({ sumberLabel, tema = 'biru', sapaan }: Ch
                 }}>
                   {p.teks}
                 </div>
+                {p.aksi && (
+                  <a href={p.aksi.link} style={{
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 10,
+                    border: 'none', background: `linear-gradient(135deg,${warna.terang},${warna.gelap})`, color: '#fff',
+                    fontSize: 11.5, fontWeight: 700, textDecoration: 'none', fontFamily: FONT,
+                  }}>
+                    {p.aksi.label} <ChevronRight size={13} />
+                  </a>
+                )}
                 {p.tawarkanKirim && (
                   terkirimId === i ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#0a5c47', fontWeight: 700 }}>

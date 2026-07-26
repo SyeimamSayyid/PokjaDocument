@@ -42,6 +42,10 @@ interface DokItem {
   status: string;
   manualLog?: string;
 }
+interface DokDisetujui {
+  id: string; jenis: string; judul: string; namaMitra: string;
+  tglDisetujui: string; disetujuiOleh: string;
+}
 interface AlertItem {
   id: string;
   jenis: string;
@@ -159,6 +163,7 @@ export default function AdminDashboard() {
   const [dokumenBasahMenunggu, setDokumenBasahMenunggu] = useState(0);
   const [saranBelumDibaca, setSaranBelumDibaca] = useState(0);
   const [dokumenTerbaru, setDokumenTerbaru] = useState<DokItem[]>([]);
+  const [dokumenDisetujui, setDokumenDisetujui] = useState<DokDisetujui[]>([]);
   const [alertExpire, setAlertExpire] = useState<AlertItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -194,6 +199,7 @@ export default function AdminDashboard() {
               rencanaKegiatanAktif: d.stats.rencanaKegiatanAktif || 0,
             });
             setDokumenTerbaru(d.dokumenTerbaru || []);
+            setDokumenDisetujui(d.dokumenDisetujui || []);
             setAlertExpire(d.alertExpire || []);
             setLoading(false);
           })
@@ -489,7 +495,7 @@ export default function AdminDashboard() {
               </div>
             </div>
             )}
-            <a href="/panduan/admin-bnnp-bnnk.docx" download style={{
+            <a href="https://drive.google.com/uc?export=download&id=111HT_M9hhzTKUSQCFuR5eeR7YUF0Vv1Z" target="_blank" rel="noopener noreferrer" style={{
               display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 100,
               background: 'rgba(30,58,95,0.06)', border: '1px solid rgba(30,58,95,0.1)', color: INDIGO,
               fontSize: 11.5, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap',
@@ -892,6 +898,54 @@ export default function AdminDashboard() {
                   <div style={{ textAlign: 'center', padding: '2.5rem', color: 'rgba(30,58,95,0.35)' }}>
                     <FiFile size={34} strokeWidth={1.3} style={{ opacity: 0.5, marginBottom: 8 }} />
                     <div style={{ fontSize: 13.5, fontWeight: 600 }}>Belum ada dokumen</div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={{ ...shell, marginTop: 18 }} className="rise">
+              <div style={{ ...core, padding: '1.3rem 1.4rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                  <span style={{ fontSize: 14.5, fontWeight: 800, color: INDIGO, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:20, height:20, borderRadius:'50%', background:'#1D4ED8', color:'#fff', flexShrink:0 }}>
+                      <FiCheck size={12} strokeWidth={3} />
+                    </span>
+                    Dokumen Disetujui
+                  </span>
+                </div>
+                {dokumenDisetujui.length > 0 ? (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr>
+                          {['Jenis', 'Judul', 'Mitra', 'Disetujui Oleh', 'Tanggal', ''].map(h => (
+                            <th key={h} style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 700, color: 'rgba(30,58,95,0.45)', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.08em', borderBottom: '1px solid rgba(30,58,95,0.08)' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dokumenDisetujui.map((d, i) => {
+                          const jp = jenisPill(d.jenis);
+                          return (
+                            <tr key={i} className="trow">
+                              <td style={td}><span style={{ fontSize: 10.5, fontWeight: 700, padding: '3px 9px', borderRadius: 100, background: jp.bg, color: jp.c }}>{d.jenis}</span></td>
+                              <td style={{ ...td, fontWeight: 600, color: INDIGO }}>{d.judul}</td>
+                              <td style={{ ...td, color: 'rgba(30,58,95,0.6)' }}>{d.namaMitra}</td>
+                              <td style={{ ...td, color: 'rgba(30,58,95,0.6)' }}>{d.disetujuiOleh || '—'}</td>
+                              <td style={{ ...td, color: 'rgba(30,58,95,0.6)' }}>{d.tglDisetujui || '—'}</td>
+                              <td style={td}>
+                                <a href={`/dashboard/dokumen/${d.id}`} style={{ color: INDIGO }}><FiEye size={14} strokeWidth={1.8} /></a>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div style={{ textAlign: 'center', padding: '2.5rem', color: 'rgba(30,58,95,0.35)' }}>
+                    <FiCheck size={34} strokeWidth={1.3} style={{ opacity: 0.5, marginBottom: 8 }} />
+                    <div style={{ fontSize: 13.5, fontWeight: 600 }}>Belum ada dokumen yang di-ACC final BNN Utama</div>
                   </div>
                 )}
               </div>

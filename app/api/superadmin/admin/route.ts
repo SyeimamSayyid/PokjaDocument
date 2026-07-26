@@ -67,13 +67,10 @@ export async function POST(req: NextRequest) {
     const levelBersih = level === 'BNN Utama' ? 'BNN Utama' : 'BNNP/BNNK';
 
     // Validasi silang — Admin BNNP/BNNK cuma boleh bikin akun BNNP/BNNK
-    // (tidak boleh bikin BNN Utama). Admin BNN Utama cuma boleh bikin
-    // sesama BNN Utama (tidak ikut campur bikin akun wilayah BNNP/BNNK).
+    // (tidak boleh bikin BNN Utama). Admin BNN Utama levelnya lebih tinggi,
+    // jadi BOLEH bikin akun level apa pun (BNNP/BNNK maupun sesama BNN Utama).
     if (akses.level === 'bnnp_bnnk' && levelBersih === 'BNN Utama') {
       return NextResponse.json({ message: 'Admin BNNP/BNNK tidak dapat membuat akun dengan level BNN Utama.' }, { status: 403 });
-    }
-    if (akses.level === 'utama' && levelBersih === 'BNNP/BNNK') {
-      return NextResponse.json({ message: 'Admin BNN Utama hanya dapat membuat akun sesama level BNN Utama.' }, { status: 403 });
     }
 
     // Wilayah cuma wajib buat admin BNNP/BNNK — BNN Utama mengawasi semua wilayah.
@@ -142,6 +139,10 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (action === 'ubahNamaEmail') {
+      const levelTarget = String(found.data[COL.LEVEL] || '').trim();
+      if (akses.level === 'bnnp_bnnk' && levelTarget === 'BNN Utama') {
+        return NextResponse.json({ message: 'Admin BNNP/BNNK tidak dapat mengubah nama/email milik Admin BNN Utama.' }, { status: 403 });
+      }
       const namaBersih = String(nama || '').trim();
       const emailBersih = String(email || '').trim().toLowerCase();
       if (!namaBersih || !emailBersih) {
@@ -161,9 +162,6 @@ export async function PATCH(req: NextRequest) {
       const levelBersih = level === 'BNN Utama' ? 'BNN Utama' : 'BNNP/BNNK';
       if (akses.level === 'bnnp_bnnk' && levelBersih === 'BNN Utama') {
         return NextResponse.json({ message: 'Admin BNNP/BNNK tidak dapat mengubah level akun menjadi BNN Utama.' }, { status: 403 });
-      }
-      if (akses.level === 'utama' && levelBersih === 'BNNP/BNNK') {
-        return NextResponse.json({ message: 'Admin BNN Utama tidak dapat mengubah level akun menjadi BNNP/BNNK.' }, { status: 403 });
       }
       await updateCell('Admin', found.rowNumber, COL.LEVEL + 1, levelBersih);
       return NextResponse.json({ message: `Level diubah menjadi ${levelBersih}.`, level: levelBersih });

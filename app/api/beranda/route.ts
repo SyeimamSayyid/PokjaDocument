@@ -19,15 +19,36 @@ function parseDivisi(raw: string): string[] {
 }
 
 // Hitung bucket publikasi dari tanggal kegiatan
+// Ambil tanggal HARI INI dalam format YYYY-MM-DD, dihitung berdasarkan zona
+// waktu Indonesia Tengah (WITA) — bukan UTC server. Ini penting karena kalau
+// dibandingkan sebagai Date object (new Date(...)), UTC tengah malam bisa
+// beda hari dengan WITA tengah malam, bikin kegiatan yang tanggalnya PERSIS
+// hari ini salah masuk kategori "akan berlangsung" padahal seharusnya
+// "sedang berlangsung" (atau sebaliknya) — bukan hilang, tapi nyasar tab.
+function tanggalHariIniWITA(): string {
+  const now = new Date();
+  // en-CA locale menghasilkan format YYYY-MM-DD secara native
+  return now.toLocaleDateString('en-CA', { timeZone: 'Asia/Makassar' });
+}
+
+// Ambil bagian YYYY-MM-DD saja dari string tanggal apa pun formatnya (ISO
+// dengan waktu, atau cuma tanggal) — perbandingan string, bukan Date object.
+function tanggalSaja(str: string): string {
+  if (!str) return '';
+  const m = String(str).match(/^(\d{4}-\d{2}-\d{2})/);
+  if (m) return m[1];
+  const d = new Date(str);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Makassar' });
+}
+
 function hitungBucket(tglMulai: string, tglSelesai: string, fallback: string): string {
   if (!tglMulai && !tglSelesai) return fallback || 'akan-berlangsung';
-  const now = new Date(); now.setHours(0,0,0,0);
-  const mulai   = tglMulai   ? new Date(tglMulai)   : null;
-  const selesai = tglSelesai ? new Date(tglSelesai) : null;
-  if (mulai)   mulai.setHours(0,0,0,0);
-  if (selesai) selesai.setHours(23,59,59,999);
-  if (selesai && now > selesai) return 'telah-berlangsung';
-  if (mulai && now >= mulai)    return 'berlangsung';
+  const hariIni = tanggalHariIniWITA();
+  const mulai   = tanggalSaja(tglMulai);
+  const selesai = tanggalSaja(tglSelesai);
+  if (selesai && hariIni > selesai) return 'telah-berlangsung';
+  if (mulai && hariIni >= mulai)    return 'berlangsung';
   return 'akan-berlangsung';
 }
 
@@ -122,7 +143,7 @@ export async function GET(req: NextRequest) {
         const jenis = String(r[2]); const judul = String(r[3]); const namaMitra = String(r[4]);
         const tempatKegiatan = String(r[7]||'');
         const tglMulai   = dok.tglKegMulai   || String(r[6]||'');
-        const tglSelesai = dok.tglKegSelesai || '';
+        const tglSelesai = dok.tglKegSelesai || String(r[13]||''); // r[13] = fallback dari Poin Publik Kegiatan sendiri
         const divisi = String(r[11]||'') || dok.divisi || '';
         const narasiKustom = String(r[12]||'').trim();
         const statusPublikasi = hitungBucket(tglMulai, tglSelesai, String(r[5]));

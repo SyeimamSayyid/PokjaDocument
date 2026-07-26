@@ -10,7 +10,7 @@ import {
 interface KegiatanDetail {
   id: string; idDokumen: string; jenis: string; judul: string;
   namaMitra: string; statusPublikasi: string;
-  tanggalKegiatan: string; tempatKegiatan: string;
+  tanggalKegiatan: string; tglKegiatanSelesai?: string; tempatKegiatan: string;
   poinDipilih: string[]; narasi: string; tglDibuat: string;
   divisi?: string; divisiLabel?: string;
   foto: { fileId: string; thumbnailUrl: string; nama: string; ukuran: number }[];
@@ -144,7 +144,13 @@ export default function BeritaDetailPage({ params }: { params: Promise<{ id: str
 
           <div style={{ ...shellStyle }}>
             <div style={{ ...coreStyle, padding:'11px 17px', display:'flex', gap:16, fontSize:13, color:'#64748b', flexWrap:'wrap' }}>
-              {item.tanggalKegiatan && <span style={{ display:'flex', alignItems:'center', gap:7 }}><CalendarDays size={15} style={{ color: BLUE }} />{formatTanggal(item.tanggalKegiatan)}</span>}
+              {item.tanggalKegiatan && (
+                <span style={{ display:'flex', alignItems:'center', gap:7 }}>
+                  <CalendarDays size={15} style={{ color: BLUE }} />
+                  {formatTanggal(item.tanggalKegiatan)}
+                  {item.tglKegiatanSelesai && item.tglKegiatanSelesai !== item.tanggalKegiatan && <> – {formatTanggal(item.tglKegiatanSelesai)}</>}
+                </span>
+              )}
               {item.tempatKegiatan && <span style={{ display:'flex', alignItems:'center', gap:7 }}><MapPin size={15} style={{ color: BLUE }} />{item.tempatKegiatan}</span>}
               <span style={{ display:'flex', alignItems:'center', gap:7 }}><Building size={15} style={{ color: BLUE }} />{item.namaMitra}</span>
             </div>
@@ -249,7 +255,7 @@ export default function BeritaDetailPage({ params }: { params: Promise<{ id: str
             <Info size={13} />
             <span>Informasi ini dipublikasikan sebagai bentuk transparansi kegiatan kerja sama</span>
           </div>
-          <div style={{ fontWeight:600, color:'#64748b' }}>BNN Provinsi Sulawesi Selatan — SI-POKJA HUMKER</div>
+          <div style={{ fontWeight:600, color:'#64748b' }}>BNN Provinsi Sulawesi Selatan — E-POKJA HUKER</div>
         </div>
       </div>
 

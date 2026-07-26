@@ -10,11 +10,11 @@ import {
   FiEye, FiExternalLink, FiCheckCircle, FiClock, FiAlertCircle,
   FiCalendar, FiGrid, FiPlus,
   FiX, FiSave, FiArrowLeft, FiImage, FiDatabase,
-  FiFileText, FiActivity, FiChevronDown, FiChevronRight, FiMessageCircle,
+  FiFileText, FiActivity, FiChevronDown, FiChevronRight, FiMessageCircle, FiCheck,
   FiUser, FiBookOpen, FiInfo, FiArchive, FiHome,
   FiInbox, FiKey, FiUsers, FiList, FiShield, FiMessageSquare, FiDroplet,
 } from 'react-icons/fi';
-import { FaFileSignature, FaFileAlt, FaBuilding, FaFolderOpen } from 'react-icons/fa';
+import { FaFileSignature, FaFileAlt, FaBuilding, FaFolderOpen, FaHandshake } from 'react-icons/fa';
 import { SiGoogledocs } from 'react-icons/si';
 import { STATUS_DOKUMEN } from '@/lib/constants';
 
@@ -25,6 +25,8 @@ interface DokumenItem {
   docsId: string; docsUrl: string; folderId: string; dibuatOleh: string;
   catatan?: string; divisi?: string[]; manualLog?: string; flagRevisi?: boolean;
   terakhirDiakses?: string; // format "role|nama|waktu|level"
+  dariEplanning?: boolean;
+  accFinalUtama?: boolean;
 }
 interface KontakInfo { namaPIC: string; jurusan: string; }
 interface NotifInfo { count: number; hasUnread: boolean; }
@@ -906,6 +908,16 @@ function DokFileRow({ d, kontak, notif, expanded, onToggle, onEdit, onHapus, lev
         {notif && <NotifBadge notif={notif} />}
         {d.flagRevisi && (
           <span title="Ditandai perlu revisi oleh BNN Utama" style={{ fontSize:9.5, fontWeight:700, padding:'3px 8px', borderRadius:100, background:'#FEF3C7', color:'#92400E', flexShrink:0 }}>🚩 Perlu Revisi</span>
+        )}
+        {d.dariEplanning && (
+          <span title="Dokumen ini berasal dari pendaftaran E-Planning" style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:9.5, fontWeight:700, padding:'3px 8px', borderRadius:100, background:'#EFF6FF', color:'#1E3A8A', flexShrink:0 }}>
+            <FaHandshake size={10} /> E-Planning
+          </span>
+        )}
+        {d.accFinalUtama && (
+          <span title="Sudah disetujui final oleh Admin BNN Utama" style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:18, height:18, borderRadius:'50%', background:'#1D4ED8', color:'#fff', flexShrink:0 }}>
+            <FiCheck size={11} strokeWidth={3} />
+          </span>
         )}
         <EditPencilIndicator manualLog={d.manualLog} terakhirDiakses={d.terakhirDiakses} size={22} />
         <span style={{ fontSize:9.5, fontWeight:600, padding:'3px 9px', borderRadius:100, background:sc.bg, color:sc.color, flexShrink:0, display:'inline-flex', alignItems:'center', gap:4 }}>

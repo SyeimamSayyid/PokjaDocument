@@ -11,9 +11,9 @@ import {
   FiFileText, FiHome, FiPenTool, FiEdit2, FiTrash2, FiZap,
   FiUpload, FiX, FiArchive, FiCalendar, FiSearch,
   FiFilter, FiPlus, FiCheckCircle, FiAlertCircle, FiUser,
-  FiChevronDown, FiChevronRight, FiExternalLink, FiEye,
+  FiChevronDown, FiChevronRight, FiExternalLink, FiEye, FiCheck,
 } from 'react-icons/fi';
-import { FaBuilding } from 'react-icons/fa';
+import { FaBuilding, FaHandshake } from 'react-icons/fa';
 
 const MAKS_UKURAN = 10 * 1024 * 1024; // 10 MB
 
@@ -139,6 +139,8 @@ interface Arsip {
   ttdTipe?: string; ttdTglFinal?: string; divisi?: string[];
   komentarUtama?: string;
   mencurigakan?: boolean;
+  accFinalUtama?: boolean;
+  dariEplanning?: boolean;
 }
 
 // Scan TTD Basah dan Snapshot (isi dokumen sebelum ditandatangani) itu 2 baris
@@ -843,6 +845,23 @@ export default function ArsipDokumenPage() {
               return (
                 <div key={a.id} style={{ ...shellStyle, animationDelay:`${Math.min(idx, 8) * 0.04}s`, position:'relative' }} className="fld lift">
                   {a.ttdTipe === 'basah' && <BadgeDokumenBasah />}
+                  {(a.accFinalUtama || a.dariEplanning) && (
+                    <div style={{
+                      position: 'absolute', top: 10, right: a.ttdTipe === 'basah' ? 46 : 10,
+                      display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end', zIndex: 2,
+                    }}>
+                      {a.accFinalUtama && (
+                        <span title="Sudah disetujui final oleh Admin BNN Utama" style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:20, height:20, borderRadius:'50%', background:'#1D4ED8', color:'#fff' }}>
+                          <FiCheck size={12} strokeWidth={3} />
+                        </span>
+                      )}
+                      {a.dariEplanning && (
+                        <span title="Dokumen ini berasal dari pendaftaran E-Planning" style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:9, fontWeight:700, padding:'3px 8px', borderRadius:100, background:'#EFF6FF', color:'#1E3A8A', border:'1px solid rgba(29,58,138,0.15)', whiteSpace:'nowrap' }}>
+                          <FaHandshake size={9} /> E-Planning
+                        </span>
+                      )}
+                    </div>
+                  )}
                   <div style={coreStyle}>
                     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, flexWrap:'wrap' }}>
                       <div style={{ flex:1, minWidth:200 }}>

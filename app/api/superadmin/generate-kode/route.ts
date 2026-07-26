@@ -19,6 +19,7 @@ const COL = {
   FLAG_REVISI:33, // BARU — flag "perlu revisi" dari BNN Utama, format "ya|waktu"
   MASA_BERLAKU_DIISI_OLEH:34, // BARU — siapa TERAKHIR isi/ubah tgl berlaku atau berakhir, format "role|nama|waktu|level"
   SUMBER_TEMPLATE_AKTIF:35, // BARU — "resmi" atau "mitra", nunjukin naskah kerja mana yang SEDANG dipakai
+  ACC_FINAL_UTAMA:36, // BARU — flag dokumen sudah disetujui final BNN Utama, format "ya|waktu|nama"
 };
 
 // ── POST: Generate kode + buat Docs + Drive via Apps Script ──
@@ -179,6 +180,18 @@ export async function POST(req: NextRequest) {
 export async function GET() {
   try {
     const rows = await getSheetData('Dokumen Kerja sama');
+
+    // Deteksi dokumen yang berasal dari pendaftaran E-Planning — dicek via
+    // kolom ID_DOKUMEN di sheet "Pendaftaran Kegiatan" yang sudah diisi saat
+    // admin Acc pendaftaran (lihat /api/rencana/daftar PATCH). Dipakai buat
+    // tampilkan lencana khusus di kartu dokumen (sama seperti di E-Planning),
+    // biar kelihatan asal-usulnya beda dari pengajuan mitra biasa.
+    let idDokumenDariEplanning = new Set<string>();
+    try {
+      const daftarRows = await getSheetData('Pendaftaran Kegiatan');
+      daftarRows.forEach(r => { if (r[12]) idDokumenDariEplanning.add(String(r[12]).trim()); }); // kolom ID_DOKUMEN index 12
+    } catch {}
+
     const data = rows.filter(r => r[COL.ID]).map(r => ({
       id:          r[COL.ID],
       jenis:       r[COL.JENIS],
@@ -200,6 +213,8 @@ export async function GET() {
       manualLog:   String(r[COL.LOG_EDIT] || ''),
       flagRevisi:  String(r[COL.FLAG_REVISI] || '').startsWith('ya'),
       terakhirDiakses: String(r[COL.TERAKHIR_DIAKSES] || ''), // format "role|nama|waktu|level"
+      dariEplanning: idDokumenDariEplanning.has(String(r[COL.ID]).trim()),
+      accFinalUtama: String(r[COL.ACC_FINAL_UTAMA] || '').startsWith('ya'),
     })).reverse();
     return NextResponse.json({ data });
   } catch (err) {

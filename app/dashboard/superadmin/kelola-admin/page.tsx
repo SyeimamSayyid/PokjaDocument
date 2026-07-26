@@ -158,6 +158,12 @@ export default function KelolaAdminPage() {
     } catch { setError('Terjadi kesalahan koneksi.'); }
   };
 
+  // Admin BNN Utama (readOnly=true secara nama variable lama, tapi sekarang
+  // artinya FULL AKSES) bisa kelola SEMUA admin — baik BNNP/BNNK maupun
+  // sesama BNN Utama. Admin BNNP/BNNK cuma bisa kelola sesama BNNP/BNNK,
+  // TIDAK BISA sentuh akun BNN Utama sama sekali.
+  const bisaKelola = (a: AdminItem) => readOnly ? true : a.level !== 'BNN Utama';
+
   const sidebarItems: SidebarItem[] = readOnly ? [
     { href: '/dashboard/bnn-utama', icon: <FiGrid size={17} />, label: 'Dashboard' },
     { href: '/dashboard/dokumen', icon: <FiFolder size={17} />, label: 'Dokumen & Tata Kelola' },
@@ -259,7 +265,7 @@ export default function KelolaAdminPage() {
 
         {readOnly && (
           <div className="rise" style={{ ...msgBox, background: 'rgba(171,209,198,0.15)', border: '1px solid rgba(47,84,73,0.2)', color: '#2F5449' }}>
-            <FiShield size={14} style={{ flexShrink: 0 }} /> Admin BNN Utama hanya dapat menambahkan sesama akun BNN Utama, dan tidak dapat mengubah/menonaktifkan admin BNNP/BNNK.
+            <FiShield size={14} style={{ flexShrink: 0 }} /> Sebagai Admin BNN Utama, Anda dapat mengelola seluruh admin — baik BNNP/BNNK maupun sesama BNN Utama.
           </div>
         )}
 
@@ -288,8 +294,9 @@ export default function KelolaAdminPage() {
                 <div>
                   <label style={label}>Level</label>
                   {readOnly ? (
-                    <select style={input} value="BNN Utama" disabled>
+                    <select style={input} value={level} onChange={e => { setLevel(e.target.value as 'BNNP/BNNK' | 'BNN Utama'); setWilayah(''); }}>
                       <option value="BNN Utama">BNN Utama</option>
+                      <option value="BNNP/BNNK">BNNP/BNNK</option>
                     </select>
                   ) : (
                     <select style={input} value={level} onChange={e => { setLevel(e.target.value as 'BNNP/BNNK' | 'BNN Utama'); setWilayah(''); }}>
@@ -297,7 +304,7 @@ export default function KelolaAdminPage() {
                     </select>
                   )}
                 </div>
-                {!readOnly && level === 'BNNP/BNNK' && (
+                {level === 'BNNP/BNNK' && (
                   <div>
                     <label style={label}>Wilayah</label>
                     <select style={input} value={wilayah} onChange={e => setWilayah(e.target.value)} required>
@@ -351,13 +358,13 @@ export default function KelolaAdminPage() {
                               <>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
                                 <span style={{ fontSize: 14, fontWeight: 700, color: INDIGO }}>{a.nama}</span>
-                                {!readOnly && (
+                                {bisaKelola(a) && (
                                   <button onClick={() => mulaiEditNamaEmail(a)} style={iconBtnSmGhost} className="btn-hover" title="Edit nama & email">
                                     <FiEdit2 size={11} />
                                   </button>
                                 )}
 
-                                {readOnly ? (
+                                {!bisaKelola(a) ? (
                                   <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 100, background: a.level === 'BNN Utama' ? GOLD : 'rgba(29,78,216,0.1)', color: a.level === 'BNN Utama' ? '#fff' : '#1D4ED8' }}>
                                     {a.level}
                                   </span>
@@ -398,7 +405,7 @@ export default function KelolaAdminPage() {
 
                                 {a.level === 'BNN Utama' ? (
                                   <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'rgba(30,58,95,0.4)' }}><FiMapPin size={11} /> Semua wilayah</span>
-                                ) : readOnly ? (
+                                ) : !bisaKelola(a) ? (
                                   <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><FiMapPin size={11} /> {a.wilayah || 'Belum diatur'}</span>
                                 ) : editWilayahId === a.id ? (
                                   <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
@@ -424,7 +431,7 @@ export default function KelolaAdminPage() {
                               )}
                             </div>
 
-                            {!readOnly && (
+                            {bisaKelola(a) && (
                             <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                               <button onClick={() => kirimAksesEmail(a.id)} disabled={kirimEmailLoadingId === a.id} style={{ ...btnSm, background: '#212842', color: '#fff', borderColor: '#212842', display: 'flex', alignItems: 'center', gap: 5 }} className="btn-hover">
                                 {kirimEmailLoadingId === a.id ? (

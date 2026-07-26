@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import ChatbotWidget from '@/components/ChatbotWidget';
 import {
   Calendar, Clock, PlayCircle, CheckCircle, Filter, Users, MapPin,
@@ -13,6 +12,7 @@ import {
 interface KegiatanPublik {
   id: string; idDokumen: string; jenis: string; judul: string;
   namaMitra: string; statusPublikasi: string; tanggalKegiatan: string;
+  tglKegiatanSelesai?: string;
   tempatKegiatan: string; poinDipilih: string[]; narasi: string;
   divisi: string; divisiLabel: string;
   foto: { fileId: string; thumbnailUrl: string; nama: string }[];
@@ -53,7 +53,6 @@ function formatTanggal(t: string) {
 }
 
 export default function BerandaPage() {
-  const router = useRouter();
   const [akanDatang, setAkanDatang]   = useState<AkanDatang[]>([]);
   const [data, setData]               = useState<Record<string, KegiatanPublik[]>>({});
   const [loading, setLoading]         = useState(true);
@@ -103,15 +102,15 @@ export default function BerandaPage() {
         <div style={{ position:'absolute', top:'-45%', right:'-15%', width:'55%', height:'190%', background:'rgba(255,255,255,0.05)', borderRadius:'50%', transform:'rotate(15deg)' }} />
         <div style={{ position:'absolute', bottom:'-20%', left:'-40px', width:220, height:220, background:`radial-gradient(circle, ${GOLD}33, transparent 70%)`, borderRadius:'50%' }} />
 
-        {/* Tombol kembali ke dashboard */}
+        {/* Tombol kembali ke halaman utama */}
         <div style={{ position:'relative', zIndex:1, display:'flex', justifyContent:'flex-start', marginBottom:'1.5rem' }} className="fld">
-          <button onClick={() => router.back()} style={{
+          <a href="/" style={{
             display:'flex', alignItems:'center', gap:7, background:'rgba(255,255,255,0.14)', backdropFilter:'blur(8px)',
             border:'1px solid rgba(255,255,255,0.18)', borderRadius:100, padding:'8px 16px', color:'#fff',
-            fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:FONT,
+            fontSize:12, fontWeight:600, textDecoration:'none', fontFamily:FONT,
           }} className="btn-hover">
-            <ArrowLeft size={14} /> Kembali ke Dashboard
-          </button>
+            <ArrowLeft size={14} /> Kembali ke Halaman Utama
+          </a>
         </div>
 
         <div style={{ position:'relative', zIndex:1, paddingBottom:'1.7rem' }} className="fld">
@@ -298,7 +297,13 @@ export default function BerandaPage() {
                             Kerja Sama {item.jenis} dengan {item.namaMitra}
                           </div>
                           <div style={{ display:'flex', gap:16, fontSize:12, color:'#64748b', marginBottom:12, flexWrap:'wrap', background:'#f8fafc', padding:'7px 12px', borderRadius:9 }}>
-                            {item.tanggalKegiatan && <span style={{ display:'flex', alignItems:'center', gap:5 }}><CalendarDays size={13} /> {formatTanggal(item.tanggalKegiatan)}</span>}
+                            {item.tanggalKegiatan && (
+                              <span style={{ display:'flex', alignItems:'center', gap:5 }}>
+                                <CalendarDays size={13} />
+                                {formatTanggal(item.tanggalKegiatan)}
+                                {item.tglKegiatanSelesai && item.tglKegiatanSelesai !== item.tanggalKegiatan && <> – {formatTanggal(item.tglKegiatanSelesai)}</>}
+                              </span>
+                            )}
                             {item.tempatKegiatan && <span style={{ display:'flex', alignItems:'center', gap:5 }}><MapPin size={13} /> {item.tempatKegiatan}</span>}
                           </div>
                           <p style={{ fontSize:13, color:'#64748b', lineHeight:1.7, margin:'0 0 12px', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' as any, overflow:'hidden' }}>

@@ -3,17 +3,18 @@
 import { useEffect, useState, useCallback } from 'react';
 import Sidebar, { SidebarItem } from '@/components/Sidebar';
 import {
-  FiClock, FiRadio, FiCheckCircle, FiCamera, FiTrash2,
+  FiClock, FiRadio, FiCheckCircle, FiCamera, FiTrash2, FiEdit2,
   FiCalendar, FiInbox, FiX, FiArrowRight,
   FiGrid, FiInbox as FiInboxNav, FiKey, FiFolder, FiActivity, FiFileText,
   FiUsers, FiList, FiArchive, FiShield, FiMessageCircle, FiMessageSquare, FiDroplet,
 } from 'react-icons/fi';
+import { FaHandshake } from 'react-icons/fa';
 
 interface FotoItem { fileId: string; nama: string; ukuran: number; thumbnailUrl: string; }
 interface DokItem {
   id: string; jenis: string; judul: string; idMitra: string; namaMitra: string;
   status: string; fotoFolderId: string; tglMulai: string; tglSelesai: string;
-  divisi: string; divisiLabel: string; foto?: FotoItem[];
+  divisi: string; divisiLabel: string; foto?: FotoItem[]; dariEplanning?: boolean;
 }
 interface Ringkasan {
   totalKegiatanEplanning: number; totalSlot: number; totalTerisi: number;
@@ -82,6 +83,22 @@ export default function KelolaKegiatanPage() {
       .catch(() => setError('Gagal memuat data.'))
       .finally(() => setLoading(false));
   }, []);
+
+  const hapusKegiatan = async (dok: DokItem) => {
+    const yakin = confirm(`Hapus kegiatan "${dok.judul || dok.jenis}" dari halaman Beranda publik? Poin yang sudah dipilih akan ikut terhapus, tapi dokumen kerja sama itu sendiri TIDAK terpengaruh.`);
+    if (!yakin) return;
+    setMsg(''); setError('');
+    try {
+      const res = await fetch('/api/extract-poin', {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idDokumen: dok.id }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setError(d.message || 'Gagal menghapus.'); return; }
+      setMsg(d.message || 'Kegiatan berhasil dihapus dari Beranda.');
+      load();
+    } catch { setError('Terjadi kesalahan koneksi.'); }
+  };
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -252,16 +269,33 @@ export default function KelolaKegiatanPage() {
           <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
             {list.map((dok, i) => (
               <div key={dok.id} style={{ ...shellStyle, animationDelay: mounted ? `${i * 0.02}s` : undefined }} className="fld">
-                <div style={{ ...coreStyle, padding:'1.1rem 1.3rem' }}>
-                  <div style={{ display:'flex', gap:6, marginBottom:8, flexWrap:'wrap', alignItems:'center' }}>
+                <div style={{ ...coreStyle, padding:'1.1rem 1.3rem', position:'relative' }}>
+                  <div style={{ position:'absolute', top:14, right:14, display:'flex', gap:5 }}>
+                    <a href={`/dashboard/dokumen/extract-poin?idDokumen=${dok.id}`} title="Edit di Extract Poin"
+                      style={{ width:26, height:26, borderRadius:8, border:'1px solid rgba(29,78,216,0.15)', background:'#fff', color: BLUE, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', textDecoration:'none' }}
+                      className="btn-hover">
+                      <FiEdit2 size={13} />
+                    </a>
+                    <button onClick={() => hapusKegiatan(dok)} title="Hapus dari Beranda"
+                      style={{ width:26, height:26, borderRadius:8, border:'1px solid rgba(220,38,38,0.2)', background:'#fff', color:'#DC2626', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}
+                      className="btn-hover">
+                      <FiTrash2 size={13} />
+                    </button>
+                  </div>
+                  <div style={{ display:'flex', gap:6, marginBottom:8, flexWrap:'wrap', alignItems:'center', paddingRight:64 }}>
                     <span style={pill(dok.jenis==='MOU'?BLUE_DARK:'#92400E', dok.jenis==='MOU'?'#DBEAFE':'#FEF3C7')}>{dok.jenis}</span>
                     {parseDivisi(dok.divisi).map(dv => {
                       const info = DIVISI_LABEL[dv] || { label: dv, color:'#64748b', bg:'#f1f5f9' };
                       return <span key={dv} style={pill(info.color, info.bg)}>{info.label}</span>;
                     })}
                     <span style={pill('#64748b', '#f1f5f9')}>{dok.status}</span>
+                    {dok.dariEplanning && (
+                      <span title="Dokumen ini berasal dari pendaftaran E-Planning" style={{ ...pill('#1E3A8A', '#DBEAFE'), gap: 4 }}>
+                        <FaHandshake size={10} /> E-Planning
+                      </span>
+                    )}
                   </div>
-                  <div style={{ fontSize:15, fontWeight:800, color:'#0f1f3d', letterSpacing:'-0.02em' }}>{dok.judul || `Kerja Sama ${dok.jenis}`}</div>
+                  <div style={{ fontSize:15, fontWeight:800, color:'#0f1f3d', letterSpacing:'-0.02em', paddingRight:64 }}>{dok.judul || `Kerja Sama ${dok.jenis}`}</div>
                   <div style={{ fontSize:12.5, color:'#64748b', marginTop:3 }}>{dok.namaMitra}</div>
                   <div style={{ fontSize:11.5, color:'#94a3b8', marginTop:6, display:'flex', alignItems:'center', gap:5 }}>
                     <FiCalendar size={11} /> {fmt(dok.tglMulai)} – {fmt(dok.tglSelesai)}
